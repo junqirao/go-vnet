@@ -48,10 +48,10 @@ func NewQuicTransport(ctx context.Context, address string, port int, auth *auth.
 func (c *quicTransport) dial(ctx context.Context) (err error) {
 	c.ctx = ctx
 	// extra configs
-	// tlsConfig := config.GetMappedConfig[*tls.Config](c.cfg, configKeyTLS,
+	// tlsConfig := config.GetMappedConfig[*tls.ServerConfig](c.cfg, configKeyTLS,
 	// 	// generate if not set
 	// 	tt.GenerateTLSConfig(time.Hour*24*7, 1024))
-	// quicConfig := config.GetMappedConfig[*quic.Config](c.cfg, configKeyQuicConfig)
+	// quicConfig := config.GetMappedConfig[*quic.ServerConfig](c.cfg, configKeyQuicConfig)
 
 	addr := fmt.Sprintf("%s:%d", c.address, c.port)
 	tls := tt.GenerateTLSConfig(time.Hour*24*7, 1024)

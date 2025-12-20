@@ -4,18 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
-	"github.com/quic-go/quic-go"
-
+	"go-vnet/client"
 	"go-vnet/common/auth"
-	"go-vnet/common/config"
 	"go-vnet/common/logger"
-	tt "go-vnet/common/tls"
 	"go-vnet/device"
-	"go-vnet/transport/router"
-	"go-vnet/virtual_network/client"
-	"go-vnet/virtual_network/server"
 )
 
 type localTestAuthorizedHandler struct {
@@ -73,38 +66,38 @@ func (l localTestWriter) Close() error {
 	return nil
 }
 
-func main() {
-	s := server.NewServer()
-	go func() {
-		if err := s.Serve(); err != nil {
-			return
-		}
-	}()
-
-	r := router.NewRouter()
-	if err := r.Register("192.168.125.254/32", &localTestWriter{}); err != nil {
-		panic(err)
-		return
-	}
-
-	cfg := &server.Config{
-		MappedConfig:      config.NewMappedConfig(),
-		Router:            r,
-		Port:              8000,
-		Address:           "0.0.0.0",
-		MTU:               1400,
-		AuthorizedHandler: localTestAuthorizedHandler{},
-	}
-	tls := tt.GenerateTLSConfig(time.Hour*24*7, 1024)
-	tls.InsecureSkipVerify = true
-	cfg.MappedConfig.Set("tls", tls)
-	cfg.MappedConfig.Set("quic_config", &quic.Config{
-		KeepAlivePeriod: time.Second * 3,
-		EnableDatagrams: true,
-	})
-	qs := server.NewQuicServer(cfg)
-	err := qs.Serve(context.Background())
-	if err != nil {
-		panic(err)
-	}
-}
+// func main() {
+// 	s := server.NewServer()
+// 	go func() {
+// 		if err := s.Serve(); err != nil {
+// 			return
+// 		}
+// 	}()
+//
+// 	r := router.NewRouter()
+// 	if err := r.Register("192.168.125.254/32", &localTestWriter{}); err != nil {
+// 		panic(err)
+// 		return
+// 	}
+//
+// 	cfg := &server.ServerConfig{
+// 		MappedConfig:      config.NewMappedConfig(),
+// 		Router:            r,
+// 		Port:              8000,
+// 		Address:           "0.0.0.0",
+// 		MTU:               1400,
+// 		AuthorizedHandler: localTestAuthorizedHandler{},
+// 	}
+// 	tls := tt.GenerateTLSConfig(time.Hour*24*7, 1024)
+// 	tls.InsecureSkipVerify = true
+// 	cfg.MappedConfig.Set("tls", tls)
+// 	cfg.MappedConfig.Set("quic_config", &quic.ServerConfig{
+// 		KeepAlivePeriod: time.Second * 3,
+// 		EnableDatagrams: true,
+// 	})
+// 	qs := server.NewQuicServer(cfg)
+// 	err := qs.Serve(context.Background())
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// }

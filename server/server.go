@@ -2,21 +2,54 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
-	"go-vnet/common/addresses"
-	"go-vnet/common/auth"
-	"go-vnet/common/router"
-	"go-vnet/model"
+	"go-vnet/common/config"
+	"go-vnet/common/logger"
+	"go-vnet/server/transport"
 )
 
-type Server struct {
-	mu       sync.RWMutex
-	networks map[string]*Network
+type (
+	Server struct {
+		sig              chan struct{}
+		logger           logger.Logger
+		cfg              *Config
+		transportServers []transport.Server
+		mu               sync.RWMutex
+		networks         map[string]*Network
+	}
+	Config struct {
+		config.MappedConfig
+		Transports []*transport.ServerConfig `json:"transport"`
+	}
+	ConfigOption func(cfg *Config)
+)
+
+const (
+	configKeyLogger = "logger"
+)
+
+func WithLogger(logger logger.Logger) ConfigOption {
+	return func(cfg *Config) {
+		cfg.Set(configKeyLogger, logger)
+	}
 }
 
-func NewServer() *Server {
+func NewConfig(opts ...ConfigOption) *Config {
+	cfg := &Config{
+		MappedConfig: config.NewMappedConfig(),
+	}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return cfg
+}
+
+func NewServer(cfg *Config) *Server {
 	return &Server{
+		sig:      make(chan struct{}),
+		cfg:      cfg,
 		networks: map[string]*Network{},
 	}
 }
@@ -27,67 +60,31 @@ func (s *Server) RegisterNetwork(_ context.Context, network *Network) {
 	s.networks[network.ID] = network
 }
 
-type Network struct {
-	ID   string `json:"id"`
-	CIDR string `json:"cidr"`
-
-	// todo 分布式支持
-	router          router.Router
-	pool            *addresses.IPAllocator
-	auth            auth.AuthorizedHandler
-	allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *model.Device, err error)
-	deviceSignFunc  func(d *model.Device)
-}
-
-type NetworkConfig struct {
-	ID         string `json:"id"`
-	CIDR       string `json:"cidr"`
-	RouterData []byte `json:"router_data"`
-}
-
-func NewNetwork(cfg *NetworkConfig, auth auth.AuthorizedHandler) (n *Network, err error) {
-	allocator, err := addresses.NewIPAllocator(cfg.CIDR)
-	if err != nil {
-		return
-	}
-	n = &Network{
-		ID:     cfg.ID,
-		CIDR:   cfg.CIDR,
-		router: router.NewRouter(cfg.RouterData),
-		pool:   allocator,
-		auth:   auth,
-	}
-	return
-}
-
-func (n *Network) Router() router.Router {
-	return n.router
-}
-
-func (n *Network) AcquireDevice(ctx context.Context, in []byte) (dev *model.Device, err error) {
-	payload, err := n.auth.Handle(ctx, in)
-	if err != nil {
-		return
-	}
-
-	dev = &model.Device{}
-	if n.allocDeviceFunc != nil {
-		if dev, err = n.allocDeviceFunc(ctx, payload); err != nil {
-			return
+func (s *Server) Run(ctx context.Context) (err error) {
+	// run transport servers
+	for i, cfg := range s.cfg.Transports {
+		if cfg.Name == "" {
+			cfg.Name = fmt.Sprintf("unnamed_transport_server_%d", i)
 		}
+		server := transport.NewTransportServer(cfg)
+		s.transportServers = append(s.transportServers, server)
+		go func() {
+			ctx = context.WithValue(ctx, "server", server)
+			ctx = context.WithValue(ctx, "transport_server", cfg.Name)
+			if err = server.Serve(ctx); err != nil {
+				return
+			}
+			s.logger.Infof(ctx, "transport server %s closed", cfg.Type)
+		}()
 	}
-
-	if dev.CIDR != "" {
-		err = n.pool.AssignSpecific(dev.CIDR)
-	} else {
-		dev.CIDR, err = n.pool.AssignRandom()
-	}
-	if err != nil {
+	select {
+	case <-s.sig:
+		s.logger.Infof(ctx, "server closed")
+		for _, server := range s.transportServers {
+			_ = server.Close()
+		}
 		return
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-
-	if n.deviceSignFunc != nil {
-		n.deviceSignFunc(dev)
-	}
-	return
 }
