@@ -8,7 +8,6 @@ import (
 
 	"github.com/quic-go/quic-go"
 
-	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
 	"go-vnet/common/router"
@@ -34,7 +33,6 @@ type (
 	Type         string
 	ServerConfig struct {
 		config.MappedConfig
-		auth.AuthorizedHandler
 		router.Router
 
 		Name           string `json:"name"`
@@ -108,12 +106,6 @@ func WithTLSConfig(t *tls.Config) ServerConfigOption {
 func WithLogger(l logger.Logger) ServerConfigOption {
 	return func(cfg *ServerConfig) {
 		cfg.Set(configKeyLogger, l)
-	}
-}
-
-func WithAuthenticator(a auth.AuthorizedHandler) ServerConfigOption {
-	return func(cfg *ServerConfig) {
-		cfg.AuthorizedHandler = a
 	}
 }
 
