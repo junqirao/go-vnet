@@ -35,6 +35,7 @@ func NewTransportServer(cfg *ServerConfig) Server {
 		sig:          make(chan struct{}),
 	}
 
+	var encoder auth.Encoder
 	switch cfg.AuthType {
 	case auth.TypeRSA:
 		var opts []auth.RSAEncoderOption
@@ -44,11 +45,12 @@ func NewTransportServer(cfg *ServerConfig) Server {
 		if cfg.AuthPrivateKey != "" {
 			opts = append(opts, auth.WithPrivateKey(cfg.AuthPrivateKey))
 		}
-		s.auth = auth.NewServer(auth.NewRsaEncoder(opts...))
+		encoder = auth.NewRsaEncoder(opts...)
 	default:
 		s.logger.Infof(s.ctx, "use default auth type: %s", auth.TypeSimplePassword)
-		s.auth = auth.NewServer(auth.NewSimplePasswordEncoder(cfg.AuthPassword))
+		encoder = auth.NewSimplePasswordEncoder(cfg.AuthPassword)
 	}
+	s.auth = auth.NewServer(encoder, s.authChainFunc)
 
 	switch cfg.Type {
 	case TypeQuic:
@@ -102,7 +104,9 @@ func (s *transportServer) handleFlowProxy(name string, dst io.Writer, src io.Rea
 	return written, err
 }
 
-func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any, receive func(ctx context.Context) ([]byte, error)) (payload map[string]any, src string, err error) {
+func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any,
+	receive func(ctx context.Context) ([]byte, error),
+	send func(data []byte) error) (payload map[string]any, src string, err error) {
 	// Set a context with a 10-second timeout
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer func() {
@@ -126,13 +130,27 @@ func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any, r
 		return
 	}
 
-	payload, err = s.AuthorizedHandler.Handle(ctx, datagram)
+	request, resp, err := s.auth.Auth(ctx, datagram)
 	if err != nil {
 		return
 	}
 
+	bs, err := s.auth.Encode(ctx, resp)
+	if err != nil {
+		return
+	}
+
+	if err = send(bs); err != nil {
+		return
+	}
+
+	// payload, err = s.AuthorizedHandler.Handle(ctx, datagram)
+	// if err != nil {
+	// 	return
+	// }
+
 	// register router
-	src, ok := payload["address"].(string)
+	src, ok := request["address"].(string)
 	if !ok {
 		s.logger.Error(ctx, "auth connection data format error: missing or wrong type of address")
 		return
@@ -144,5 +162,9 @@ func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any, r
 	}
 
 	s.logger.Infof(ctx, "handle connection: remote_addr=%s,route=%s", rem, src)
+	return
+}
+
+func (s *transportServer) authChainFunc(ctx context.Context, request map[string]any, resp map[string]any) (err error) {
 	return
 }

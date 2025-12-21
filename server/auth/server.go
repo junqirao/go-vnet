@@ -7,22 +7,22 @@ import (
 
 type (
 	Server struct {
-		encoder Encoder
-		fns     []ServerAuthChainFunc
+		Encoder
+		fns []ServerAuthChainFunc
 	}
 	ServerAuthChainFunc func(ctx context.Context, request map[string]any, resp map[string]any) (err error)
 )
 
 func NewServer(encoder Encoder, fns ...ServerAuthChainFunc) *Server {
-	return &Server{encoder: encoder, fns: fns}
+	return &Server{Encoder: encoder, fns: fns}
 }
 
-func (s *Server) Auth(ctx context.Context, in []byte) (resp map[string]any, err error) {
-	if s.encoder == nil {
+func (s *Server) Auth(ctx context.Context, in []byte) (request, resp map[string]any, err error) {
+	if s.Encoder == nil {
 		err = fmt.Errorf("encoder not set")
 		return
 	}
-	request, err := s.encoder.Decode(ctx, in)
+	request, err = s.Decode(ctx, in)
 	if err != nil {
 		return
 	}
