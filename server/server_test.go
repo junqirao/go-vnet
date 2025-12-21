@@ -9,7 +9,7 @@ import (
 )
 
 func TestServer_Run(t *testing.T) {
-	l := logger.NewJsonLogger(nil, "transport_server")
+	l := logger.NewStdLogger(nil, "transport_server")
 	config := NewConfig(WithLogger(l))
 	config.Transports = append(config.Transports,
 		transport.NewTransportServerConfig(

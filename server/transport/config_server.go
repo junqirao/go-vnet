@@ -37,11 +37,15 @@ type (
 		auth.AuthorizedHandler
 		router.Router
 
-		Name    string `json:"name"`
-		Port    int    `json:"port"`
-		Address string `json:"address"`
-		Type    Type   `json:"type"`
-		MTU     int    `json:"mtu"`
+		Name           string `json:"name"`
+		Port           int    `json:"port"`
+		Address        string `json:"address"`
+		Type           Type   `json:"type"`
+		MTU            int    `json:"mtu"`
+		AuthType       string `json:"auth_type"`
+		AuthPassword   string `json:"auth_password,omitempty"`
+		AuthPublicKey  string `json:"auth_public_key,omitempty"`
+		AuthPrivateKey string `json:"auth_private_key,omitempty"`
 	}
 	ServerConfigOption func(cfg *ServerConfig)
 )
@@ -64,6 +68,12 @@ const (
 func WithName(s string) ServerConfigOption {
 	return func(cfg *ServerConfig) {
 		cfg.Name = s
+	}
+}
+
+func WithAuthType(s string) ServerConfigOption {
+	return func(cfg *ServerConfig) {
+		cfg.AuthType = s
 	}
 }
 

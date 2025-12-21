@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type (
@@ -43,6 +44,9 @@ func (s stdLogger) buildCtxKeys(ctx context.Context, level string) string {
 	sb := strings.Builder{}
 	sb.WriteString("[")
 	sb.WriteString(level)
+	sb.WriteString("]")
+	sb.WriteString("[")
+	sb.WriteString(time.Now().Format(time.RFC3339))
 	sb.WriteString("]")
 
 	if ctx != nil {

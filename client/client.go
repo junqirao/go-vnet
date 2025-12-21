@@ -73,6 +73,7 @@ func NewClient(cfg Config, networkId string) (c *Client, err error) {
 		// if err != nil {
 		// 	return
 		// }
+		fallthrough
 	default:
 		err = fmt.Errorf("auth type not supported: %s", cfg.Auth.Type)
 		return

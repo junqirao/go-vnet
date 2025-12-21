@@ -10,6 +10,7 @@ import (
 
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
+	"go-vnet/server/auth"
 )
 
 type (
@@ -21,6 +22,7 @@ type (
 		ctx    context.Context
 		sig    chan struct{}
 		logger logger.Logger
+		auth   *auth.Server
 		*ServerConfig
 		Server
 	}
@@ -32,6 +34,22 @@ func NewTransportServer(cfg *ServerConfig) Server {
 		ServerConfig: cfg,
 		sig:          make(chan struct{}),
 	}
+
+	switch cfg.AuthType {
+	case auth.TypeRSA:
+		var opts []auth.RSAEncoderOption
+		if cfg.AuthPublicKey != "" {
+			opts = append(opts, auth.WithPublicKey(cfg.AuthPublicKey))
+		}
+		if cfg.AuthPrivateKey != "" {
+			opts = append(opts, auth.WithPrivateKey(cfg.AuthPrivateKey))
+		}
+		s.auth = auth.NewServer(auth.NewRsaEncoder(opts...))
+	default:
+		s.logger.Infof(s.ctx, "use default auth type: %s", auth.TypeSimplePassword)
+		s.auth = auth.NewServer(auth.NewSimplePasswordEncoder(cfg.AuthPassword))
+	}
+
 	switch cfg.Type {
 	case TypeQuic:
 		s.Server = newQuicServer(s)
@@ -41,7 +59,7 @@ func NewTransportServer(cfg *ServerConfig) Server {
 
 func (s *transportServer) Serve(ctx context.Context) error {
 	if s.Server == nil {
-		return fmt.Errorf("transportServer type not supported: %s", s.Type)
+		return fmt.Errorf("transport server type not supported: %s", s.Type)
 	}
 	s.ctx = ctx
 	return s.Server.Serve(ctx)
