@@ -2,8 +2,7 @@ package logger
 
 import (
 	"context"
-	"log"
-	"strings"
+	"fmt"
 )
 
 type (
@@ -13,52 +12,31 @@ type (
 		Error(ctx context.Context, msg string)
 		Errorf(ctx context.Context, format string, args ...any)
 	}
-	logger struct {
-		ctxKeys []string
-	}
+	defaultLogger struct{}
+	Level         = string
+)
+
+const (
+	LevelInfo  Level = "Info"
+	LevelError Level = "Error"
 )
 
 var (
-	DefaultLogger = &logger{}
+	DefaultLogger = NewStdLogger(defaultLogger{})
 )
 
-func NewLogger(ctxKeys ...string) Logger {
-	return &logger{ctxKeys: ctxKeys}
+func (d defaultLogger) Info(_ context.Context, msg string) {
+	fmt.Println(msg)
 }
 
-func (l logger) Info(ctx context.Context, msg string) {
-	log.Println(l.buildCtxKeys(ctx, "Info"), msg)
+func (d defaultLogger) Infof(_ context.Context, format string, args ...any) {
+	fmt.Println(fmt.Sprintf(format, args...))
 }
 
-func (l logger) Infof(ctx context.Context, format string, args ...any) {
-	log.Printf(l.buildCtxKeys(ctx, "Info")+format, args...)
+func (d defaultLogger) Error(_ context.Context, msg string) {
+	fmt.Println(msg)
 }
 
-func (l logger) Error(ctx context.Context, msg string) {
-	log.Println(l.buildCtxKeys(ctx, "Error"), msg)
-}
-
-func (l logger) Errorf(ctx context.Context, format string, args ...any) {
-	log.Printf(l.buildCtxKeys(ctx, "Error")+format, args...)
-}
-
-func (l logger) buildCtxKeys(ctx context.Context, level string) string {
-	sb := strings.Builder{}
-	sb.WriteString("[")
-	sb.WriteString(level)
-	sb.WriteString("]")
-
-	if ctx != nil {
-		for _, key := range l.ctxKeys {
-			if val, ok := ctx.Value(key).(string); ok {
-				sb.WriteString("[")
-				sb.WriteString(key)
-				sb.WriteString("=")
-				sb.WriteString(val)
-				sb.WriteString("]")
-			}
-		}
-	}
-	sb.WriteString(" ")
-	return sb.String()
+func (d defaultLogger) Errorf(_ context.Context, format string, args ...any) {
+	fmt.Printf(fmt.Sprintf(format, args...))
 }

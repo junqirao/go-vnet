@@ -51,6 +51,7 @@ func NewServer(cfg *Config) *Server {
 		sig:      make(chan struct{}),
 		cfg:      cfg,
 		networks: map[string]*Network{},
+		logger:   config.GetMappedConfig[logger.Logger](cfg, configKeyLogger, logger.DefaultLogger),
 	}
 }
 
@@ -66,6 +67,7 @@ func (s *Server) Run(ctx context.Context) (err error) {
 		if cfg.Name == "" {
 			cfg.Name = fmt.Sprintf("unnamed_transport_server_%d", i)
 		}
+		cfg.Set(configKeyLogger, s.logger)
 		server := transport.NewTransportServer(cfg)
 		s.transportServers = append(s.transportServers, server)
 		go func() {
