@@ -11,20 +11,20 @@ import (
 
 type (
 	Transport interface {
-		Connect(dev *device.Config, dst string) (io.ReadWriteCloser, error)
+		Connect(dst string) (io.ReadWriteCloser, error)
+		JoinedNetwork() JoinNetworkResponse
 	}
-	Type string
+	JoinNetworkResponse struct {
+		Device device.Config `json:"device"`
+		Server string        `json:"server"`
+	}
 )
 
-const (
-	TypeQuic Type = "quic"
-)
-
-func NewTransport(ctx context.Context, t Type, address string, port int, auth *auth.Client) (Transport, error) {
-	switch t {
+func NewTransport(ctx context.Context, cfg *Config, auth *auth.Client) (Transport, error) {
+	switch cfg.Type {
 	case TypeQuic:
-		return NewQuicTransport(ctx, address, port, auth)
+		return NewQuicTransport(ctx, cfg, auth)
 	default:
-		return nil, fmt.Errorf("transport type not supported: %s", t)
+		return nil, fmt.Errorf("transport type not supported: %s", cfg.Type)
 	}
 }

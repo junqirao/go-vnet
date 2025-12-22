@@ -5,19 +5,37 @@ import (
 )
 
 type Client struct {
-	encoder Encoder
+	Encoder
 }
 
 type (
 	ClientHandlerFunc func(ctx context.Context, in []byte) (out []byte, err error)
 )
 
-func NewClient(encoder Encoder) *Client {
-	return &Client{encoder: encoder}
+func NewClient(cfg Config, encoder ...Encoder) *Client {
+	c := &Client{}
+	if len(encoder) > 0 {
+		c.Encoder = encoder[0]
+		return c
+	}
+	switch cfg.Type {
+	case TypeRSA:
+		var opts []RSAEncoderOption
+		if cfg.PublicKey != "" {
+			opts = append(opts, WithPublicKey(cfg.PublicKey))
+		}
+		if cfg.PrivateKey != "" {
+			opts = append(opts, WithPrivateKey(cfg.PrivateKey))
+		}
+		c.Encoder = NewRsaEncoder(opts...)
+	default:
+		c.Encoder = NewSimplePasswordEncoder(cfg.Password)
+	}
+	return c
 }
 
 func (c *Client) Auth(ctx context.Context, request map[string]any, handler ClientHandlerFunc) (resp map[string]any, err error) {
-	in, err := c.encoder.Encode(ctx, request)
+	in, err := c.Encode(ctx, request)
 	if err != nil {
 		return
 	}
@@ -26,5 +44,5 @@ func (c *Client) Auth(ctx context.Context, request map[string]any, handler Clien
 		return
 	}
 
-	return c.encoder.Decode(ctx, out)
+	return c.Decode(ctx, out)
 }

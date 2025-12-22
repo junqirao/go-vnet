@@ -2,36 +2,32 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net/netip"
 	"sync"
 
 	"github.com/songgao/water/waterutil"
 
 	"go-vnet/client/transport"
+	"go-vnet/common/config"
 	"go-vnet/common/logger"
 	"go-vnet/common/router"
-	"go-vnet/config"
 	"go-vnet/device"
 	"go-vnet/server/auth"
 )
 
 const (
-	funcNameJoinNetwork = "join_network"
-	maxRetryCount       = 5
+	maxRetryCount   = 5
+	configKeyLogger = "logger"
 )
 
 type Client struct {
-	ctx       context.Context
-	server    string
-	networkId string
-	dev       device.Device
-	bufPool   sync.Pool
-	sig       chan struct{}
-	logger    logger.Logger
+	ctx     context.Context
+	dev     device.Device
+	bufPool sync.Pool
+	sig     chan struct{}
+	logger  logger.Logger
 
 	// router
 	router router.Router
@@ -41,48 +37,22 @@ type Client struct {
 
 	// auth
 	auth *auth.Client
+
+	// config
+	cfg *Config
+
+	// joined
+	joined transport.JoinNetworkResponse
 }
 
-type AuthConfig struct {
-	config.Auth
-	// method http only
-	Url         string            `json:"url,omitempty"`
-	HTTPHeaders map[string]string `json:"http_headers,omitempty"`
-}
-
-type Config struct {
-	NetworkId string      `json:"network_id"`
-	Server    string      `json:"server"`
-	Auth      auth.Config `json:"auth"`
-}
-
-type JoinNetworkResponse struct {
-	Device device.Config `json:"device"`
-	Server string        `json:"server"`
-}
-
-func NewClient(cfg Config, networkId string) (c *Client, err error) {
+func NewClient(cfg Config) (c *Client, err error) {
 	c = &Client{
-		networkId: networkId,
-		sig:       make(chan struct{}),
+		sig:    make(chan struct{}),
+		cfg:    &cfg,
+		logger: config.GetMappedConfig[logger.Logger](cfg, configKeyLogger, logger.DefaultLogger),
 	}
 
-	var encoder auth.Encoder
-	switch cfg.Auth.Type {
-	case auth.TypeRSA:
-		var opts []auth.RSAEncoderOption
-		if cfg.Auth.PublicKey != "" {
-			opts = append(opts, auth.WithPublicKey(cfg.Auth.PublicKey))
-		}
-		if cfg.Auth.PrivateKey != "" {
-			opts = append(opts, auth.WithPrivateKey(cfg.Auth.PrivateKey))
-		}
-		encoder = auth.NewRsaEncoder(opts...)
-	default:
-		c.logger.Infof(c.ctx, "use default auth type: %s", auth.TypeSimplePassword)
-		encoder = auth.NewSimplePasswordEncoder(cfg.Auth.Password)
-	}
-	c.auth = auth.NewClient(encoder)
+	c.auth = auth.NewClient(cfg.Auth)
 	return
 }
 
@@ -94,70 +64,60 @@ func (c *Client) SetRouter(r router.Router) {
 	c.router = r
 }
 
-func (c *Client) joinNetwork(ctx context.Context, id string) (resp JoinNetworkResponse, err error) {
-	// err = c.auth.CallPtr(ctx, funcNameJoinNetwork, map[string]any{
-	// 	"network_id": id,
-	// }, &resp)
-	m, err := c.auth.Auth(ctx,
-		map[string]any{
-			"network_id": id,
-		},
-		func(ctx context.Context, in []byte) (out []byte, err error) {
-			return
-		},
+// func (c *Client) joinNetwork(ctx context.Context, id string) (resp JoinNetworkResponse, err error) {
+// 	// err = c.auth.CallPtr(ctx, funcNameJoinNetwork, map[string]any{
+// 	// 	"network_id": id,
+// 	// }, &resp)
+// 	m, err := c.auth.Auth(ctx,
+// 		map[string]any{
+// 			"network_id": id,
+// 		},
+// 		func(ctx context.Context, in []byte) (out []byte, err error) {
+// 			return
+// 		},
+// 	)
+// 	if err != nil {
+// 		return
+// 	}
+// 	resp = JoinNetworkResponse{}
+// 	bs, _ := json.Marshal(m)
+// 	_ = json.Unmarshal(bs, &resp)
+// 	return
+// }
+
+func (c *Client) Run(ctx context.Context) (err error) {
+	c.ctx = ctx
+	// 1. connect to server
+	c.logger.Infof(ctx, "connect to server: %s", c.cfg.Server)
+	t, err := transport.NewTransport(ctx,
+		transport.NewConfig(
+			transport.WithAddress(c.cfg.Server),
+			transport.WithAuthenticationPayload(map[string]any{
+				"network_id": c.cfg.NetworkId,
+			}),
+		),
+		c.auth,
 	)
 	if err != nil {
 		return
 	}
-	resp = JoinNetworkResponse{}
-	bs, _ := json.Marshal(m)
-	_ = json.Unmarshal(bs, &resp)
-	return
-}
-
-func (c *Client) Run(ctx context.Context) (err error) {
-	c.ctx = ctx
-	// 1. join network
-	join, err := c.joinNetwork(ctx, c.networkId)
-	if err != nil {
-		return
-	}
-	c.server = join.Server
-
-	c.logger.Infof(ctx, "received connect info: %+v", join)
 
 	// 2. setup device
 	if c.dev != nil {
 		_ = c.dev.Close()
 	}
-	c.dev = device.NewTunDevice(join.Device)
+	c.joined = t.JoinedNetwork()
+	c.dev = device.NewTunDevice(c.joined.Device)
 	if err = c.dev.Setup(); err != nil {
 		return
 	}
 
 	c.bufPool.New = func() any {
-		return make([]byte, join.Device.MTU)
+		return make([]byte, c.joined.Device.MTU)
 	}
 
-	// 3. connect to server
-	server, err := netip.ParseAddrPort(c.server)
-	if err != nil {
-		c.logger.Errorf(ctx, "parse server address error: err=%s, server=%s", err.Error(), c.server)
-		return
-	}
-
-	var (
-		address = server.Addr().String()
-		port    = server.Port()
-	)
-
-	c.logger.Infof(ctx, "connect to server: %s:%d", address, port)
-	t, err := transport.NewTransport(ctx, transport.TypeQuic, address, int(port), c.auth)
-	if err != nil {
-		return
-	}
 	c.cm = NewConnectionManager(ctx, func(dst string) (io.ReadWriteCloser, error) {
-		return t.Connect(&join.Device, dst)
+		return t.Connect(dst)
 	})
 	c.cm.SetLogger(c.logger)
 

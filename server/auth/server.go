@@ -13,8 +13,26 @@ type (
 	ServerAuthChainFunc func(ctx context.Context, request map[string]any, resp map[string]any) (err error)
 )
 
-func NewServer(encoder Encoder, fns ...ServerAuthChainFunc) *Server {
-	return &Server{Encoder: encoder, fns: fns}
+func NewServer(cfg Config, fns []ServerAuthChainFunc, encoder ...Encoder) *Server {
+	s := &Server{fns: fns}
+	if len(encoder) > 0 {
+		s.Encoder = encoder[0]
+		return s
+	}
+	switch cfg.Type {
+	case TypeRSA:
+		var opts []RSAEncoderOption
+		if cfg.PublicKey != "" {
+			opts = append(opts, WithPublicKey(cfg.PublicKey))
+		}
+		if cfg.PrivateKey != "" {
+			opts = append(opts, WithPrivateKey(cfg.PrivateKey))
+		}
+		s.Encoder = NewRsaEncoder(opts...)
+	default:
+		s.Encoder = NewSimplePasswordEncoder(cfg.Password)
+	}
+	return s
 }
 
 func (s *Server) Auth(ctx context.Context, in []byte) (request, resp map[string]any, err error) {

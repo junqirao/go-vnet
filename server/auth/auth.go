@@ -10,9 +10,12 @@ type Config struct {
 
 	// password
 	Password string `json:"password,omitempty"`
-	Md5Salt  string `json:"md5_salt,omitempty"`
 
 	// rsa
 	PrivateKey string `json:"private_key,omitempty"`
 	PublicKey  string `json:"public_key,omitempty"`
+}
+
+func NewEncoderFromConfig(cfg Config) {
+
 }
