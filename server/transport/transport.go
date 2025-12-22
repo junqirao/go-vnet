@@ -36,19 +36,19 @@ func NewTransportServer(cfg *ServerConfig) Server {
 	}
 
 	var encoder auth.Encoder
-	switch cfg.AuthType {
+	switch cfg.Auth.Type {
 	case auth.TypeRSA:
 		var opts []auth.RSAEncoderOption
-		if cfg.AuthPublicKey != "" {
-			opts = append(opts, auth.WithPublicKey(cfg.AuthPublicKey))
+		if cfg.Auth.PublicKey != "" {
+			opts = append(opts, auth.WithPublicKey(cfg.Auth.PublicKey))
 		}
-		if cfg.AuthPrivateKey != "" {
-			opts = append(opts, auth.WithPrivateKey(cfg.AuthPrivateKey))
+		if cfg.Auth.PrivateKey != "" {
+			opts = append(opts, auth.WithPrivateKey(cfg.Auth.PrivateKey))
 		}
 		encoder = auth.NewRsaEncoder(opts...)
 	default:
 		s.logger.Infof(s.ctx, "use default auth type: %s", auth.TypeSimplePassword)
-		encoder = auth.NewSimplePasswordEncoder(cfg.AuthPassword)
+		encoder = auth.NewSimplePasswordEncoder(cfg.Auth.Password)
 	}
 	s.auth = auth.NewServer(encoder, s.authChainFunc)
 

@@ -11,6 +11,7 @@ import (
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
 	"go-vnet/common/router"
+	"go-vnet/server/auth"
 )
 
 var (
@@ -35,15 +36,12 @@ type (
 		config.MappedConfig
 		router.Router
 
-		Name           string `json:"name"`
-		Port           int    `json:"port"`
-		Address        string `json:"address"`
-		Type           Type   `json:"type"`
-		MTU            int    `json:"mtu"`
-		AuthType       string `json:"auth_type"`
-		AuthPassword   string `json:"auth_password,omitempty"`
-		AuthPublicKey  string `json:"auth_public_key,omitempty"`
-		AuthPrivateKey string `json:"auth_private_key,omitempty"`
+		Name    string      `json:"name"`
+		Port    int         `json:"port"`
+		Address string      `json:"address"`
+		Type    Type        `json:"type"`
+		MTU     int         `json:"mtu"`
+		Auth    auth.Config `json:"auth"`
 	}
 	ServerConfigOption func(cfg *ServerConfig)
 )
@@ -69,9 +67,9 @@ func WithName(s string) ServerConfigOption {
 	}
 }
 
-func WithAuthType(s string) ServerConfigOption {
+func WithAuthConfig(a auth.Config) ServerConfigOption {
 	return func(cfg *ServerConfig) {
-		cfg.AuthType = s
+		cfg.Auth = a
 	}
 }
 
