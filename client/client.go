@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,11 +11,12 @@ import (
 
 	"github.com/songgao/water/waterutil"
 
-	"go-vnet/common/auth"
+	"go-vnet/client/transport"
 	"go-vnet/common/logger"
 	"go-vnet/common/router"
 	"go-vnet/config"
 	"go-vnet/device"
+	"go-vnet/server/auth"
 )
 
 const (
@@ -27,7 +29,6 @@ type Client struct {
 	server    string
 	networkId string
 	dev       device.Device
-	auth      *auth.Handler
 	bufPool   sync.Pool
 	sig       chan struct{}
 	logger    logger.Logger
@@ -37,6 +38,9 @@ type Client struct {
 
 	// connection manager
 	cm *ConnectionManager
+
+	// auth
+	auth *auth.Client
 }
 
 type AuthConfig struct {
@@ -47,9 +51,9 @@ type AuthConfig struct {
 }
 
 type Config struct {
-	NetworkId string     `json:"network_id"`
-	Server    string     `json:"server"`
-	Auth      AuthConfig `json:"auth"`
+	NetworkId string      `json:"network_id"`
+	Server    string      `json:"server"`
+	Auth      auth.Config `json:"auth"`
 }
 
 type JoinNetworkResponse struct {
@@ -62,44 +66,23 @@ func NewClient(cfg Config, networkId string) (c *Client, err error) {
 		networkId: networkId,
 		sig:       make(chan struct{}),
 	}
-	// auth
-	var au auth.AuthorizedHandler
+
+	var encoder auth.Encoder
 	switch cfg.Auth.Type {
-	case config.AuthTypeSimplePassword:
-		au = auth.NewSimplePasswordAuthenticator(cfg.Auth.Password, cfg.Auth.Md5Salt)
-	case config.AuthTypeRSA:
-		// todo
-		// au, err = auth.NewRSAAuthenticator()
-		// if err != nil {
-		// 	return
-		// }
-		fallthrough
+	case auth.TypeRSA:
+		var opts []auth.RSAEncoderOption
+		if cfg.Auth.PublicKey != "" {
+			opts = append(opts, auth.WithPublicKey(cfg.Auth.PublicKey))
+		}
+		if cfg.Auth.PrivateKey != "" {
+			opts = append(opts, auth.WithPrivateKey(cfg.Auth.PrivateKey))
+		}
+		encoder = auth.NewRsaEncoder(opts...)
 	default:
-		err = fmt.Errorf("auth type not supported: %s", cfg.Auth.Type)
-		return
+		c.logger.Infof(c.ctx, "use default auth type: %s", auth.TypeSimplePassword)
+		encoder = auth.NewSimplePasswordEncoder(cfg.Auth.Password)
 	}
-
-	var method auth.HandleFunc
-	switch cfg.Auth.Method {
-	case config.AuthMethodHTTP:
-		method = auth.NewHTTPHandler(cfg.Auth.Url, cfg.Auth.HTTPHeaders)
-	case config.AuthMethodIO:
-		// todo
-	default:
-		err = fmt.Errorf("auth method not supported: %s", cfg.Auth.Method)
-		return
-	}
-	c.auth = auth.NewHandler(au, method)
-	return
-}
-
-func NewClientWithAuthorizedHandler(networkId string, au *auth.Handler) (c *Client, err error) {
-	c = &Client{
-		networkId: networkId,
-		sig:       make(chan struct{}),
-		auth:      au,
-		logger:    logger.DefaultLogger,
-	}
+	c.auth = auth.NewClient(encoder)
 	return
 }
 
@@ -112,9 +95,23 @@ func (c *Client) SetRouter(r router.Router) {
 }
 
 func (c *Client) joinNetwork(ctx context.Context, id string) (resp JoinNetworkResponse, err error) {
-	err = c.auth.CallPtr(ctx, funcNameJoinNetwork, map[string]any{
-		"network_id": id,
-	}, &resp)
+	// err = c.auth.CallPtr(ctx, funcNameJoinNetwork, map[string]any{
+	// 	"network_id": id,
+	// }, &resp)
+	m, err := c.auth.Auth(ctx,
+		map[string]any{
+			"network_id": id,
+		},
+		func(ctx context.Context, in []byte) (out []byte, err error) {
+			return
+		},
+	)
+	if err != nil {
+		return
+	}
+	resp = JoinNetworkResponse{}
+	bs, _ := json.Marshal(m)
+	_ = json.Unmarshal(bs, &resp)
 	return
 }
 
@@ -155,11 +152,13 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	)
 
 	c.logger.Infof(ctx, "connect to server: %s:%d", address, port)
-	transport, err := NewTransport(ctx, TransportTypeQuic, address, int(port), c.auth, &join.Device)
+	t, err := transport.NewTransport(ctx, transport.TypeQuic, address, int(port), c.auth)
 	if err != nil {
 		return
 	}
-	c.cm = NewConnectionManager(ctx, transport.Connect)
+	c.cm = NewConnectionManager(ctx, func(dst string) (io.ReadWriteCloser, error) {
+		return t.Connect(&join.Device, dst)
+	})
 	c.cm.SetLogger(c.logger)
 
 	// 4. block and read device

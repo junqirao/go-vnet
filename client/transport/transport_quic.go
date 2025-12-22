@@ -1,4 +1,4 @@
-package client
+package transport
 
 import (
 	"context"
@@ -8,10 +8,10 @@ import (
 
 	"github.com/quic-go/quic-go"
 
-	"go-vnet/common/auth"
 	"go-vnet/common/logger"
 	tt "go-vnet/common/tls"
 	"go-vnet/device"
+	"go-vnet/server/auth"
 )
 
 type (
@@ -22,7 +22,7 @@ type (
 		conn    *quic.Conn
 		streams map[string]*quic.Stream
 		logger  logger.Logger
-		auth    *auth.Handler
+		auth    *auth.Client
 		dev     *device.Config
 	}
 	streamWrapper struct {
@@ -31,14 +31,13 @@ type (
 	}
 )
 
-func NewQuicTransport(ctx context.Context, address string, port int, auth *auth.Handler, dev *device.Config) (t Transport, err error) {
+func NewQuicTransport(ctx context.Context, address string, port int, auth *auth.Client) (t Transport, err error) {
 	qt := &quicTransport{
 		address: address,
 		port:    port,
 		logger:  logger.DefaultLogger,
 		streams: make(map[string]*quic.Stream),
 		auth:    auth,
-		dev:     dev,
 	}
 	err = qt.dial(ctx)
 	t = qt
@@ -64,21 +63,12 @@ func (c *quicTransport) dial(ctx context.Context) (err error) {
 		return
 	}
 
-	bs, err := c.auth.AuthorizedHandler().Make(ctx, map[string]any{
-		"address": c.dev.CIDR,
-	})
-	if err != nil {
-		return
-	}
-
-	if err = conn.SendDatagram(bs); err != nil {
-		return
-	}
 	c.conn = conn
 	return
 }
 
-func (c *quicTransport) Connect(dst string) (wc io.ReadWriteCloser, err error) {
+func (c *quicTransport) Connect(dev *device.Config, dst string) (wc io.ReadWriteCloser, err error) {
+	c.dev = dev
 	stream, err := c.conn.OpenStreamSync(context.Background())
 	if err != nil {
 		c.logger.Errorf(c.ctx, "open stream error: %s", err.Error())
