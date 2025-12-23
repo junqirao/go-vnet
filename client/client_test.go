@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"go-vnet/server/auth"
+	"go-vnet/common/auth"
 )
 
 func TestClient_Run(t *testing.T) {

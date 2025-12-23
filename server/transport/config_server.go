@@ -8,9 +8,9 @@ import (
 
 	"github.com/quic-go/quic-go"
 
+	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
-	"go-vnet/server/auth"
 )
 
 var (

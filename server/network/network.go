@@ -5,7 +5,7 @@ import (
 
 	"go-vnet/common/addresses"
 	"go-vnet/common/router"
-	"go-vnet/model"
+	"go-vnet/device"
 )
 
 type (
@@ -14,15 +14,15 @@ type (
 		// todo 分布式支持
 		router          router.Router
 		pool            *addresses.IPAllocator
-		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *model.Device, err error)
+		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *device.Device, err error)
 	}
 	Config struct {
 		ID              string `json:"id"`
 		CIDR            string `json:"cidr"`
 		MTU             int    `json:"mtu"`
 		RouterData      []byte `json:"router_data"`
-		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *model.Device, err error)
-		deviceSignFunc  func(d *model.Device)
+		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *device.Device, err error)
+		deviceSignFunc  func(d *device.IDevice)
 	}
 )
 
@@ -43,8 +43,8 @@ func (n *Network) Router() router.Router {
 	return n.router
 }
 
-func (n *Network) AcquireDevice(ctx context.Context, request map[string]any) (dev *model.Device, err error) {
-	dev = &model.Device{}
+func (n *Network) AcquireDevice(ctx context.Context, request map[string]any) (dev *device.Device, err error) {
+	dev = &device.Device{}
 	if n.allocDeviceFunc != nil {
 		if dev, err = n.allocDeviceFunc(ctx, request); err != nil {
 			return

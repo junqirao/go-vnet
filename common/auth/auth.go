@@ -1,20 +1,21 @@
 package auth
 
-import (
-	"context"
+const (
+	TypeSimplePassword = "simple_password"
+	TypeRSA            = "rsa"
 )
 
-type AuthorizedHandler interface {
-	Make(ctx context.Context, payload ...map[string]any) (data []byte, err error)
-	Handle(ctx context.Context, in []byte) (payload map[string]any, err error)
+type Config struct {
+	Type string `json:"type"`
+
+	// password
+	Password string `json:"password,omitempty"`
+
+	// rsa
+	PrivateKey string `json:"private_key,omitempty"`
+	PublicKey  string `json:"public_key,omitempty"`
 }
 
-type NopAuthorizedHandler struct{}
+func NewEncoderFromConfig(cfg Config) {
 
-func (NopAuthorizedHandler) Make(ctx context.Context, payload ...map[string]any) (data []byte, err error) {
-	return
-}
-
-func (NopAuthorizedHandler) Handle(ctx context.Context, in []byte) (meta map[string]any, err error) {
-	return
 }

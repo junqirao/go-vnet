@@ -10,8 +10,8 @@ import (
 const DefaultTunDeviceName = "default-tun-device"
 
 type (
-	// Device ...
-	Device interface {
+	// IDevice ...
+	IDevice interface {
 		Name() string                           // return device name if device exists
 		Setup() error                           // create device
 		Close() error                           // close device
@@ -45,7 +45,7 @@ type (
 )
 
 // NewTunDevice ...
-func NewTunDevice(cfg Config, opts ...option) (device Device) {
+func NewTunDevice(cfg Config, opts ...option) (device IDevice) {
 	options := append(defaultOptions, WithConfig(cfg))
 	d := newController(append(options, opts...)...)
 	d.config = cfg

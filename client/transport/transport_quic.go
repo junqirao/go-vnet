@@ -10,10 +10,10 @@ import (
 
 	"github.com/quic-go/quic-go"
 
+	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
 	tt "go-vnet/common/tls"
-	"go-vnet/server/auth"
 )
 
 type (

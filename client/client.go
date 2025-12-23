@@ -10,11 +10,11 @@ import (
 	"github.com/songgao/water/waterutil"
 
 	"go-vnet/client/transport"
+	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
 	"go-vnet/common/router"
 	"go-vnet/device"
-	"go-vnet/server/auth"
 )
 
 const (
@@ -24,7 +24,7 @@ const (
 
 type Client struct {
 	ctx     context.Context
-	dev     device.Device
+	dev     device.IDevice
 	bufPool sync.Pool
 	sig     chan struct{}
 	logger  logger.Logger

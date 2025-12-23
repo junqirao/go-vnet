@@ -1,9 +1,9 @@
 package client
 
 import (
+	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
-	"go-vnet/server/auth"
 )
 
 type Config struct {

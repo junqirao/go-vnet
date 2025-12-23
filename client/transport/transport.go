@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
+	"go-vnet/common/auth"
 	"go-vnet/device"
-	"go-vnet/server/auth"
 )
 
 type (
