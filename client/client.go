@@ -50,6 +50,7 @@ func NewClient(cfg Config) (c *Client, err error) {
 		sig:    make(chan struct{}),
 		cfg:    &cfg,
 		logger: config.GetMappedConfig[logger.Logger](cfg, configKeyLogger, logger.DefaultLogger),
+		router: router.NewRouter(),
 	}
 
 	c.auth = auth.NewClient(cfg.Auth)
@@ -146,6 +147,9 @@ func (c *Client) handleTX(buf []byte, n int) {
 	defer func() {
 		c.bufPool.Put(buf)
 	}()
+	if n == 0 {
+		return
+	}
 
 	dst := waterutil.IPv4Destination(buf[:n]).String()
 	v, ok := c.router.RouteString(dst)

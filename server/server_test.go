@@ -18,6 +18,7 @@ func TestServer_Run(t *testing.T) {
 		ID:         "test",
 		CIDR:       "192.168.98.0/24",
 		RouterData: nil,
+		MTU:        1400,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -10,9 +10,7 @@ import (
 
 type (
 	Network struct {
-		ID   string `json:"id"`
-		CIDR string `json:"cidr"`
-
+		Config
 		// todo 分布式支持
 		router          router.Router
 		pool            *addresses.IPAllocator
@@ -21,6 +19,7 @@ type (
 	Config struct {
 		ID              string `json:"id"`
 		CIDR            string `json:"cidr"`
+		MTU             int    `json:"mtu"`
 		RouterData      []byte `json:"router_data"`
 		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *model.Device, err error)
 		deviceSignFunc  func(d *model.Device)
@@ -33,8 +32,7 @@ func NewNetwork(cfg *Config) (n *Network, err error) {
 		return
 	}
 	n = &Network{
-		ID:     cfg.ID,
-		CIDR:   cfg.CIDR,
+		Config: *cfg,
 		router: router.NewRouter(cfg.RouterData),
 		pool:   allocator,
 	}
@@ -57,6 +55,9 @@ func (n *Network) AcquireDevice(ctx context.Context, request map[string]any) (de
 		err = n.pool.AssignSpecific(dev.CIDR)
 	} else {
 		dev.CIDR, err = n.pool.AssignRandom()
+	}
+	if dev.MTU == 0 {
+		dev.MTU = n.MTU
 	}
 	return
 }
