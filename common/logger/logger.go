@@ -38,5 +38,5 @@ func (d defaultLogger) Error(_ context.Context, msg string) {
 }
 
 func (d defaultLogger) Errorf(_ context.Context, format string, args ...any) {
-	fmt.Printf(fmt.Sprintf(format, args...))
+	fmt.Println(fmt.Sprintf(format, args...))
 }

@@ -63,7 +63,7 @@ func (s *quicServer) Serve(ctx context.Context) (err error) {
 }
 
 func (s *quicServer) handleConnection(ctx context.Context, conn *quic.Conn) {
-	nwk, _, src, err := s.authAndRegisterRouter(ctx, conn, conn.ReceiveDatagram, conn.SendDatagram)
+	info, err := s.authAndRegisterRouter(ctx, conn, conn.ReceiveDatagram, conn.SendDatagram)
 	if err != nil {
 		_ = conn.CloseWithError(403, "connection auth failed: "+err.Error())
 		s.logger.Errorf(conn.Context(), "auth connection error: %s", err.Error())
@@ -72,6 +72,13 @@ func (s *quicServer) handleConnection(ctx context.Context, conn *quic.Conn) {
 
 	defer func() {
 		_ = conn.CloseWithError(0, "connection closed")
+		err := info.network.ReleaseDevice(info.device)
+		if err != nil {
+			s.logger.Errorf(conn.Context(), "release device error: %s", err.Error())
+			return
+		}
+		s.logger.Infof(conn.Context(), "device released: %+v", info.device)
+		s.logger.Infof(conn.Context(), "connection closed")
 	}()
 
 	handle := func(stream *quic.Stream) {
@@ -79,7 +86,7 @@ func (s *quicServer) handleConnection(ctx context.Context, conn *quic.Conn) {
 			_ = stream.Close()
 		}()
 		// route
-		dst, err := nwk.Router().Route(ctx, stream)
+		dst, err := info.network.Router().Route(ctx, stream)
 		if err != nil {
 			s.logger.Errorf(conn.Context(), "route error: %s", err.Error())
 			return
@@ -88,7 +95,7 @@ func (s *quicServer) handleConnection(ctx context.Context, conn *quic.Conn) {
 		s.logger.Infof(ctx, "handle flow start. stream_id=%v", stream.StreamID())
 
 		// block and redirect flow to s.dst
-		if _, err = s.handleFlowProxy(fmt.Sprintf("%s -> %s", src, dst), dst, stream, make([]byte, s.MTU)); err != nil {
+		if _, err = s.handleFlowProxy(fmt.Sprintf("%s -> %s", info.src, dst), dst, stream, make([]byte, s.MTU)); err != nil {
 			s.logger.Errorf(conn.Context(), "handle flow stopped. stream_id=%v error: %s", stream.StreamID(), err.Error())
 			return
 		}

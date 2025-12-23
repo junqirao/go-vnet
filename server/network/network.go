@@ -61,3 +61,7 @@ func (n *Network) AcquireDevice(ctx context.Context, request map[string]any) (de
 	}
 	return
 }
+
+func (n *Network) ReleaseDevice(dev *device.Device) (err error) {
+	return n.pool.ReleaseIP(dev.CIDR)
+}

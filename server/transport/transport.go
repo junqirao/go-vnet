@@ -11,6 +11,7 @@ import (
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
+	"go-vnet/device"
 	"go-vnet/server/network"
 )
 
@@ -26,6 +27,11 @@ type (
 		auth   *auth.Server
 		*ServerConfig
 		Server
+	}
+	connectionInfo struct {
+		network *network.Network
+		device  *device.Device
+		src     string
 	}
 )
 
@@ -92,7 +98,7 @@ func (s *transportServer) handleFlowProxy(name string, dst io.Writer, src io.Rea
 
 func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any,
 	receive func(ctx context.Context) ([]byte, error),
-	send func(data []byte) error) (nwk *network.Network, payload map[string]any, src string, err error) {
+	send func(data []byte) error) (ci connectionInfo, err error) {
 	// Set a context with a 10-second timeout
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer func() {
@@ -135,8 +141,6 @@ func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any,
 		_ = send(bs)
 	}()
 
-	payload = request
-
 	// 通过network_id获取network
 	networkID, ok := request["network_id"].(string)
 	if !ok {
@@ -145,7 +149,7 @@ func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any,
 		return
 	}
 
-	nwk, ok = network.GetManager().GetNetwork(networkID)
+	nwk, ok := network.GetManager().GetNetwork(networkID)
 	if !ok {
 		err = fmt.Errorf("network not found: network_id=%s", networkID)
 		s.logger.Error(ctx, err.Error())
@@ -163,10 +167,16 @@ func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any,
 	resp["device"] = device
 
 	// register router
-	src = device.CIDR
+	src := device.CIDR
 	if err = nwk.Router().Register(src, conn); err != nil {
 		s.logger.Errorf(ctx, "register router error: %s", err.Error())
 		return
+	}
+
+	ci = connectionInfo{
+		network: nwk,
+		device:  device,
+		src:     src,
 	}
 
 	s.logger.Infof(ctx, "handle connection: remote_addr=%s,route=%s", rem, src)
