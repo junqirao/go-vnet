@@ -11,6 +11,7 @@ import (
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
 	"go-vnet/server/auth"
+	"go-vnet/server/network"
 )
 
 type (
@@ -91,7 +92,7 @@ func (s *transportServer) handleFlowProxy(name string, dst io.Writer, src io.Rea
 
 func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any,
 	receive func(ctx context.Context) ([]byte, error),
-	send func(data []byte) error) (payload map[string]any, src string, err error) {
+	send func(data []byte) error) (nwk *network.Network, payload map[string]any, src string, err error) {
 	// Set a context with a 10-second timeout
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer func() {
@@ -120,28 +121,50 @@ func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any,
 		return
 	}
 
-	bs, err := s.auth.Encode(ctx, resp)
+	defer func() {
+		if err != nil {
+			resp["error"] = err.Error()
+		}
+		// send to client
+		bs, err := s.auth.Encode(ctx, resp)
+		if err != nil {
+			s.logger.Errorf(ctx, "encode auth response error: %s", err.Error())
+			return
+		}
+
+		_ = send(bs)
+	}()
+
+	payload = request
+
+	// 通过network_id获取network
+	networkID, ok := request["network_id"].(string)
+	if !ok {
+		err = fmt.Errorf("network_id field from request not found")
+		s.logger.Error(ctx, err.Error())
+		return
+	}
+
+	nwk, ok = network.GetManager().GetNetwork(networkID)
+	if !ok {
+		err = fmt.Errorf("network not found: network_id=%s", networkID)
+		s.logger.Error(ctx, err.Error())
+		return
+	}
+
+	device, err := nwk.AcquireDevice(ctx, request)
 	if err != nil {
+		err = fmt.Errorf("acquire device error: %s", err.Error())
+		s.logger.Errorf(ctx, err.Error())
 		return
 	}
+	s.logger.Infof(ctx, "dispatch device: id=%v cidr=%v", device.Id, device.CIDR)
 
-	if err = send(bs); err != nil {
-		return
-	}
-
-	// payload, err = s.AuthorizedHandler.Handle(ctx, datagram)
-	// if err != nil {
-	// 	return
-	// }
+	resp["device"] = device
 
 	// register router
-	src, ok := request["address"].(string)
-	if !ok {
-		s.logger.Error(ctx, "auth connection data format error: missing or wrong type of address")
-		return
-	}
-
-	if err = s.Router.Register(src, conn); err != nil {
+	src = device.CIDR
+	if err = nwk.Router().Register(src, conn); err != nil {
 		s.logger.Errorf(ctx, "register router error: %s", err.Error())
 		return
 	}
@@ -151,5 +174,6 @@ func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any,
 }
 
 func (s *transportServer) authChainFunc(ctx context.Context, request map[string]any, resp map[string]any) (err error) {
+	s.logger.Infof(ctx, "auth chain func: %v", request)
 	return
 }

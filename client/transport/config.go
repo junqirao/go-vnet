@@ -80,6 +80,12 @@ func WithAuthenticationPayload(payload map[string]any) ConfigOption {
 	}
 }
 
+func WithInsecureSkipVerify(b bool) ConfigOption {
+	return func(cfg *Config) {
+		cfg.InsecureSkipVerify = b
+	}
+}
+
 // -------------------- QUIC OPTIONS --------------------
 
 const (

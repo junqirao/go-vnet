@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
@@ -16,8 +15,6 @@ type (
 		logger           logger.Logger
 		cfg              *Config
 		transportServers []transport.Server
-		mu               sync.RWMutex
-		networks         map[string]*Network
 	}
 	Config struct {
 		config.MappedConfig
@@ -48,17 +45,10 @@ func NewConfig(opts ...ConfigOption) *Config {
 
 func NewServer(cfg *Config) *Server {
 	return &Server{
-		sig:      make(chan struct{}),
-		cfg:      cfg,
-		networks: map[string]*Network{},
-		logger:   config.GetMappedConfig[logger.Logger](cfg, configKeyLogger, logger.DefaultLogger),
+		sig:    make(chan struct{}),
+		cfg:    cfg,
+		logger: config.GetMappedConfig[logger.Logger](cfg, configKeyLogger, logger.DefaultLogger),
 	}
-}
-
-func (s *Server) RegisterNetwork(_ context.Context, network *Network) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.networks[network.ID] = network
 }
 
 func (s *Server) Run(ctx context.Context) (err error) {
@@ -74,6 +64,7 @@ func (s *Server) Run(ctx context.Context) (err error) {
 			ctx = context.WithValue(ctx, "server", server)
 			ctx = context.WithValue(ctx, "transport_server", cfg.Name)
 			if err = server.Serve(ctx); err != nil {
+				s.logger.Errorf(ctx, "run transport server %s error: %v", cfg.Type, err)
 				return
 			}
 			s.logger.Infof(ctx, "transport server %s closed", cfg.Type)

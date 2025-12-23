@@ -91,6 +91,7 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	c.logger.Infof(ctx, "connect to server: %s", c.cfg.Server)
 	t, err := transport.NewTransport(ctx,
 		transport.NewConfig(
+			transport.WithInsecureSkipVerify(c.cfg.InsecureSkipVerify),
 			transport.WithAddress(c.cfg.Server),
 			transport.WithAuthenticationPayload(map[string]any{
 				"network_id": c.cfg.NetworkId,
@@ -107,6 +108,7 @@ func (c *Client) Run(ctx context.Context) (err error) {
 		_ = c.dev.Close()
 	}
 	c.joined = t.JoinedNetwork()
+	c.logger.Infof(ctx, "joined network: %+v", c.joined)
 	c.dev = device.NewTunDevice(c.joined.Device)
 	if err = c.dev.Setup(); err != nil {
 		return

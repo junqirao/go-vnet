@@ -8,9 +8,10 @@ import (
 
 type Config struct {
 	config.MappedConfig
-	NetworkId string      `json:"network_id"`
-	Server    string      `json:"server"`
-	Auth      auth.Config `json:"auth"`
+	NetworkId          string      `json:"network_id"`
+	Server             string      `json:"server"`
+	InsecureSkipVerify bool        `json:"insecure_skip_verify"`
+	Auth               auth.Config `json:"auth"`
 }
 
 type ConfigOption func(cfg *Config)
@@ -36,6 +37,12 @@ func WithAuth(auth auth.Config) ConfigOption {
 func WithLogger(l logger.Logger) ConfigOption {
 	return func(cfg *Config) {
 		cfg.Set(configKeyLogger, l)
+	}
+}
+
+func WithInsecureSkipVerify(b bool) ConfigOption {
+	return func(cfg *Config) {
+		cfg.InsecureSkipVerify = b
 	}
 }
 

@@ -63,7 +63,7 @@ func (s *quicServer) Serve(ctx context.Context) (err error) {
 }
 
 func (s *quicServer) handleConnection(ctx context.Context, conn *quic.Conn) {
-	_, src, err := s.authAndRegisterRouter(ctx, conn, conn.ReceiveDatagram, conn.SendDatagram)
+	nwk, _, src, err := s.authAndRegisterRouter(ctx, conn, conn.ReceiveDatagram, conn.SendDatagram)
 	if err != nil {
 		_ = conn.CloseWithError(403, "connection auth failed: "+err.Error())
 		s.logger.Errorf(conn.Context(), "auth connection error: %s", err.Error())
@@ -79,7 +79,7 @@ func (s *quicServer) handleConnection(ctx context.Context, conn *quic.Conn) {
 			_ = stream.Close()
 		}()
 		// route
-		dst, err := s.Route(ctx, stream)
+		dst, err := nwk.Router().Route(ctx, stream)
 		if err != nil {
 			s.logger.Errorf(conn.Context(), "route error: %s", err.Error())
 			return

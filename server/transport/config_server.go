@@ -10,7 +10,6 @@ import (
 
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
-	"go-vnet/common/router"
 	"go-vnet/server/auth"
 )
 
@@ -34,7 +33,6 @@ type (
 	Type         string
 	ServerConfig struct {
 		config.MappedConfig
-		router.Router
 
 		Name    string      `json:"name"`
 		Port    int         `json:"port"`
@@ -104,12 +102,6 @@ func WithTLSConfig(t *tls.Config) ServerConfigOption {
 func WithLogger(l logger.Logger) ServerConfigOption {
 	return func(cfg *ServerConfig) {
 		cfg.Set(configKeyLogger, l)
-	}
-}
-
-func WithRouter(r router.Router) ServerConfigOption {
-	return func(cfg *ServerConfig) {
-		cfg.Router = r
 	}
 }
 

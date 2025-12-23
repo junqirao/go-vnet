@@ -10,8 +10,9 @@ import (
 func TestClient_Run(t *testing.T) {
 	c, err := NewClient(
 		NewConfig(
+			WithInsecureSkipVerify(true),
 			WithNetworkId("test"),
-			WithServer("127.0.0.1:8080"),
+			WithServer("127.0.0.1:9800"),
 			WithAuth(auth.Config{
 				Type:       auth.TypeSimplePassword,
 				Password:   "",
@@ -26,6 +27,7 @@ func TestClient_Run(t *testing.T) {
 	}
 	err = c.Run(context.Background())
 	if err != nil {
+		t.Fatal(err)
 		return
 	}
 }
