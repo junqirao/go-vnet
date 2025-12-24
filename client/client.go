@@ -80,6 +80,7 @@ func (c *Client) Run(ctx context.Context) (err error) {
 		c.auth,
 	)
 	if err != nil {
+		err = fmt.Errorf("failed to connect to server: %w", err)
 		return
 	}
 
@@ -89,6 +90,9 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	}
 	c.joined = t.JoinedNetwork()
 	c.logger.Infof(ctx, "joined network: %+v", c.joined)
+	if c.cfg.DeviceType != "" {
+		c.joined.Device.Type = device.Type(c.cfg.DeviceType)
+	}
 	c.dev = device.NewTunDevice(c.joined.Device)
 	if err = c.dev.Setup(); err != nil {
 		return
@@ -114,6 +118,7 @@ txLoop:
 		buf := c.bufPool.Get().([]byte)
 		n, err := c.dev.Read(buf)
 		if err != nil {
+			err = fmt.Errorf("failed to read device: %w", err)
 			return err
 		}
 		c.handleTX(buf, n)

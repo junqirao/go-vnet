@@ -12,6 +12,7 @@ type Config struct {
 	Server             string      `yaml:"server" json:"server"`
 	InsecureSkipVerify bool        `yaml:"insecure_skip_verify" json:"insecure_skip_verify"`
 	Auth               auth.Config `yaml:"auth" json:"auth"`
+	DeviceType         string      `yaml:"device_type" json:"device_type"`
 }
 
 type ConfigOption func(cfg *Config)
