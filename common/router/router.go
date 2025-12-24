@@ -13,6 +13,7 @@ type (
 		Route(ctx context.Context, r io.ReadWriteCloser) (dst io.Writer, err error)
 		RouteString(dst string) (v any, ok bool)
 		Dump() []byte
+		Delete(addr string) (err error)
 	}
 	router struct {
 		table    *RouteTable
@@ -59,14 +60,14 @@ func (r *router) Route(_ context.Context, src io.ReadWriteCloser) (dst io.Writer
 	return
 }
 
-func (r *router) Delete(_ context.Context, addr string) (err error) {
-	return r.table.DeleteRoute(addr)
-}
-
 func (r *router) RouteString(dst string) (v any, ok bool) {
 	return r.table.Lookup(dst)
 }
 
 func (r *router) Dump() []byte {
 	return r.table.MarshalRouteTable()
+}
+
+func (r *router) Delete(addr string) (err error) {
+	return r.table.DeleteRoute(addr)
 }
