@@ -10,8 +10,8 @@ import (
 
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
+	"go-vnet/common/device"
 	"go-vnet/common/logger"
-	"go-vnet/device"
 	"go-vnet/server/network"
 )
 

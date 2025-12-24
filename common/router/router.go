@@ -2,7 +2,6 @@ package router
 
 import (
 	"context"
-	"fmt"
 	"io"
 
 	"go-vnet/common/logger"
@@ -40,15 +39,13 @@ func (r *router) Register(addr string, conn any) (err error) {
 	return r.table.AddRoute(addr, conn)
 }
 
-func (r *router) Route(ctx context.Context, src io.ReadWriteCloser) (dst io.Writer, err error) {
+func (r *router) Route(_ context.Context, src io.ReadWriteCloser) (dst io.Writer, err error) {
 	buf := make([]byte, 15)
 	n, err := src.Read(buf)
 	if err != nil {
 		return
 	}
-	fmt.Printf("recv route pkg : %s\n", string(buf[:n]))
 	res, ok := r.table.Lookup(string(buf[:n]))
-	fmt.Printf("route: res=%+v,ok=%v\n", res, ok)
 	if ok {
 		if d, ok := res.(io.Writer); ok {
 			dst = d
@@ -60,6 +57,10 @@ func (r *router) Route(ctx context.Context, src io.ReadWriteCloser) (dst io.Writ
 	}
 	_, err = src.Write([]byte{writeBack})
 	return
+}
+
+func (r *router) Delete(_ context.Context, addr string) (err error) {
+	return r.table.DeleteRoute(addr)
 }
 
 func (r *router) RouteString(dst string) (v any, ok bool) {

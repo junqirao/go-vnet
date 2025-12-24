@@ -6,7 +6,7 @@ import (
 	"io"
 
 	"go-vnet/common/auth"
-	"go-vnet/device"
+	"go-vnet/common/device"
 )
 
 type (

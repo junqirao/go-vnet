@@ -12,9 +12,9 @@ import (
 	"go-vnet/client/transport"
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
+	"go-vnet/common/device"
 	"go-vnet/common/logger"
 	"go-vnet/common/router"
-	"go-vnet/device"
 )
 
 const (
