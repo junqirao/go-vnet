@@ -156,18 +156,18 @@ func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any,
 		return
 	}
 
-	device, err := nwk.AcquireDevice(ctx, request)
+	dev, err := nwk.AcquireDevice(ctx, request)
 	if err != nil {
 		err = fmt.Errorf("acquire device error: %s", err.Error())
 		s.logger.Errorf(ctx, err.Error())
 		return
 	}
-	s.logger.Infof(ctx, "dispatch device: id=%v cidr=%v", device.Id, device.CIDR)
+	s.logger.Infof(ctx, "dispatch device: id=%v cidr=%v", dev.Id, dev.CIDR)
 
-	resp["device"] = device
+	resp["device"] = dev
 
 	// register router
-	src := device.CIDR
+	src := dev.CIDR
 	if err = nwk.Router().Register(src, conn); err != nil {
 		s.logger.Errorf(ctx, "register router error: %s", err.Error())
 		return
@@ -175,7 +175,7 @@ func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any,
 
 	ci = connectionInfo{
 		network: nwk,
-		device:  device,
+		device:  dev,
 		src:     src,
 	}
 

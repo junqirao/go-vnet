@@ -16,7 +16,6 @@ type (
 	}
 	JoinNetworkResponse struct {
 		Device device.Config `json:"device"`
-		Server string        `json:"server"`
 	}
 )
 

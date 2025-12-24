@@ -8,10 +8,10 @@ import (
 
 type Config struct {
 	config.MappedConfig
-	NetworkId          string      `json:"network_id"`
-	Server             string      `json:"server"`
-	InsecureSkipVerify bool        `json:"insecure_skip_verify"`
-	Auth               auth.Config `json:"auth"`
+	NetworkId          string      `yaml:"network_id" json:"network_id"`
+	Server             string      `yaml:"server" json:"server"`
+	InsecureSkipVerify bool        `yaml:"insecure_skip_verify" json:"insecure_skip_verify"`
+	Auth               auth.Config `yaml:"auth" json:"auth"`
 }
 
 type ConfigOption func(cfg *Config)

@@ -6,14 +6,14 @@ const (
 )
 
 type Config struct {
-	Type string `json:"type"`
+	Type string `yaml:"type" json:"type"`
 
 	// password
-	Password string `json:"password,omitempty"`
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
 
 	// rsa
-	PrivateKey string `json:"private_key,omitempty"`
-	PublicKey  string `json:"public_key,omitempty"`
+	PrivateKey string `yaml:"private_key,omitempty" json:"private_key,omitempty"`
+	PublicKey  string `yaml:"public_key,omitempty" json:"public_key,omitempty"`
 }
 
 func NewEncoderFromConfig(cfg Config) {

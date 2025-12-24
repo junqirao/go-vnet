@@ -65,27 +65,6 @@ func (c *Client) SetRouter(r router.Router) {
 	c.router = r
 }
 
-// func (c *Client) joinNetwork(ctx context.Context, id string) (resp JoinNetworkResponse, err error) {
-// 	// err = c.auth.CallPtr(ctx, funcNameJoinNetwork, map[string]any{
-// 	// 	"network_id": id,
-// 	// }, &resp)
-// 	m, err := c.auth.Auth(ctx,
-// 		map[string]any{
-// 			"network_id": id,
-// 		},
-// 		func(ctx context.Context, in []byte) (out []byte, err error) {
-// 			return
-// 		},
-// 	)
-// 	if err != nil {
-// 		return
-// 	}
-// 	resp = JoinNetworkResponse{}
-// 	bs, _ := json.Marshal(m)
-// 	_ = json.Unmarshal(bs, &resp)
-// 	return
-// }
-
 func (c *Client) Run(ctx context.Context) (err error) {
 	c.ctx = ctx
 	// 1. connect to server
