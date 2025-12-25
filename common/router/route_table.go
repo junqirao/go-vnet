@@ -1,7 +1,6 @@
 package router
 
 import (
-	"encoding/binary"
 	"errors"
 	"net"
 )
@@ -153,12 +152,28 @@ func (rt *RouteTable) Lookup(ipStr string) (any, bool) {
 }
 
 // MarshalTriNode 序列化TrieNode为字节数组
+// 优化格式：
+// - bit 0: isLeaf
+// - bit 1: hasZero
+// - bit 2: hasOne
+// - bit 3: zeroLenInFlags (如果为1，说明zero长度编码在flags的bit 4-7)
+// - bit 4-7: zeroLen (如果bit 3为1，存储zero长度，范围0-15)
+// 然后依次是：zero长度(如果bit 3为0)、zero数据、one长度、one数据
 func MarshalTriNode(tr *TrieNode) []byte {
 	if tr == nil {
 		return []byte{}
 	}
 
 	var data []byte
+
+	// 预先序列化子节点以获取长度
+	var zeroData, oneData []byte
+	if tr.zero != nil {
+		zeroData = MarshalTriNode(tr.zero)
+	}
+	if tr.one != nil {
+		oneData = MarshalTriNode(tr.one)
+	}
 
 	// 序列化当前节点信息
 	var flags byte
@@ -173,24 +188,63 @@ func MarshalTriNode(tr *TrieNode) []byte {
 	}
 	data = append(data, flags)
 
-	// 递归序列化子节点
+	// 序列化zero子节点
 	if tr.zero != nil {
-		zeroData := MarshalTriNode(tr.zero)
-		zeroLen := make([]byte, 4)
-		binary.BigEndian.PutUint32(zeroLen, uint32(len(zeroData)))
-		data = append(data, zeroLen...)
+		zeroLen := len(zeroData)
+		if zeroLen < 16 {
+			// 长度小于16，编码在flags字节中
+			flags |= (1 << 3) | (byte(zeroLen) << 4)
+			data[0] = flags // 更新第一个字节
+		} else {
+			// 长度>=16，使用变长编码
+			data = append(data, encodeVarUint(uint32(zeroLen))...)
+		}
 		data = append(data, zeroData...)
 	}
 
+	// 序列化one子节点
 	if tr.one != nil {
-		oneData := MarshalTriNode(tr.one)
-		oneLen := make([]byte, 4)
-		binary.BigEndian.PutUint32(oneLen, uint32(len(oneData)))
-		data = append(data, oneLen...)
+		oneLen := len(oneData)
+		data = append(data, encodeVarUint(uint32(oneLen))...)
 		data = append(data, oneData...)
 	}
 
 	return data
+}
+
+// encodeVarUint 编码变长无符号整数，每个字节使用7位存储数据，最高位表示是否还有后续字节
+func encodeVarUint(n uint32) []byte {
+	if n == 0 {
+		return []byte{0}
+	}
+	var buf []byte
+	for n > 0 {
+		b := byte(n & 0x7F)
+		n >>= 7
+		if n > 0 {
+			b |= 0x80 // 设置最高位表示还有后续字节
+		}
+		buf = append(buf, b)
+	}
+	return buf
+}
+
+// decodeVarUint 解码变长无符号整数
+func decodeVarUint(bs []byte, offset int) (uint32, int, error) {
+	var result uint32
+	var shift uint
+	for i := offset; i < len(bs); i++ {
+		b := bs[i]
+		result |= uint32(b&0x7F) << shift
+		shift += 7
+		if (b & 0x80) == 0 {
+			return result, i - offset + 1, nil
+		}
+		if shift >= 35 {
+			return 0, 0, errors.New("varuint too large")
+		}
+	}
+	return 0, 0, errors.New("invalid varuint: unexpected end of data")
 }
 
 // UnMarshalTriNode 从字节数组反序列化为TrieNode
@@ -210,13 +264,22 @@ func UnMarshalTriNode(bs []byte) (*TrieNode, error) {
 	hasZero := (flags & (1 << 1)) != 0
 	hasOne := (flags & (1 << 2)) != 0
 
-	// 递归解析子节点
+	// 解析zero子节点
 	if hasZero {
-		if offset+4 > len(bs) {
-			return nil, errors.New("invalid data: zero child length out of bounds")
+		var zeroLen uint32
+		if (flags & (1 << 3)) != 0 {
+			// zero长度编码在flags的bit 4-7
+			zeroLen = uint32((flags >> 4) & 0x0F)
+		} else {
+			// 使用变长解码长度
+			var bytesConsumed int
+			var err error
+			zeroLen, bytesConsumed, err = decodeVarUint(bs, offset)
+			if err != nil {
+				return nil, err
+			}
+			offset += bytesConsumed
 		}
-		zeroLen := binary.BigEndian.Uint32(bs[offset : offset+4])
-		offset += 4
 
 		if offset+int(zeroLen) > len(bs) {
 			return nil, errors.New("invalid data: zero child data out of bounds")
@@ -229,12 +292,13 @@ func UnMarshalTriNode(bs []byte) (*TrieNode, error) {
 		offset += int(zeroLen)
 	}
 
+	// 解析one子节点
 	if hasOne {
-		if offset+4 > len(bs) {
-			return nil, errors.New("invalid data: one child length out of bounds")
+		oneLen, bytesConsumed, err := decodeVarUint(bs, offset)
+		if err != nil {
+			return nil, err
 		}
-		oneLen := binary.BigEndian.Uint32(bs[offset : offset+4])
-		offset += 4
+		offset += bytesConsumed
 
 		if offset+int(oneLen) > len(bs) {
 			return nil, errors.New("invalid data: one child data out of bounds")

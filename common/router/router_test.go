@@ -16,6 +16,12 @@ func TestRouter_DumpSize(t *testing.T) {
 		{"50 routes", 50},
 		{"100 routes", 100},
 		{"254 routes", 254},
+		{"512 routes", 512},
+		{"1K routes", 1 * 1024},
+		{"6K routes", 6 * 1024},
+		{"10K routes", 10 * 1024},
+		{"60K routes", 60 * 1024},
+		{"100K routes", 100 * 1024},
 	}
 
 	for _, tc := range testCases {
@@ -24,7 +30,11 @@ func TestRouter_DumpSize(t *testing.T) {
 
 			// 注册指定数量的路由
 			for i := 0; i < tc.routeCount; i++ {
-				cidr := fmt.Sprintf("192.168.%d.0/24", i)
+				// 使用多个IP段来支持大量路由
+				octet1 := 10 + i/65536
+				octet2 := (i / 256) % 256
+				octet3 := i % 256
+				cidr := fmt.Sprintf("%d.%d.%d.0/24", octet1, octet2, octet3)
 				conn := fmt.Sprintf("conn-%d", i)
 				err := r.Register(cidr, conn)
 				if err != nil {
@@ -36,7 +46,7 @@ func TestRouter_DumpSize(t *testing.T) {
 			data := r.Dump()
 			size := len(data)
 
-			t.Logf("路由数量: %d, Dump后大小: %d bytes (%.2f KB)", tc.routeCount, size, float64(size)/1024)
+			t.Logf("路由数量: %d, Dump后大小: %d bytes (%.2f KB, %.2f MB)", tc.routeCount, size, float64(size)/1024, float64(size)/1024/1024)
 		})
 	}
 }
@@ -51,6 +61,7 @@ func TestRouter_RestoreFromDump(t *testing.T) {
 		{"50 routes", 50},
 		{"100 routes", 100},
 		{"254 routes", 254},
+		{"512 routes", 512},
 	}
 
 	for _, tc := range testCases {
@@ -58,7 +69,9 @@ func TestRouter_RestoreFromDump(t *testing.T) {
 			// 创建原始路由器并注册路由
 			original := NewRouter()
 			for i := 0; i < tc.routeCount; i++ {
-				cidr := fmt.Sprintf("192.168.%d.0/24", i)
+				octet1 := 10 + i/256
+				octet2 := i % 256
+				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
 				conn := fmt.Sprintf("conn-%d", i)
 				err := original.Register(cidr, conn)
 				if err != nil {
@@ -75,7 +88,9 @@ func TestRouter_RestoreFromDump(t *testing.T) {
 
 			// 验证恢复的路由表结构（target为nil是正常的）
 			for i := 0; i < tc.routeCount; i++ {
-				cidr := fmt.Sprintf("192.168.%d.0/24", i)
+				octet1 := 10 + i/256
+				octet2 := i % 256
+				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
 				// 提取 IP 进行测试 (去掉掩码)
 				ip := cidr[:strings.Index(cidr, "/")]
 				v, ok := restored.RouteString(ip)
@@ -104,6 +119,7 @@ func BenchmarkRouter_DumpAndRestore(b *testing.B) {
 		{"50 routes", 50},
 		{"100 routes", 100},
 		{"254 routes", 254},
+		{"512 routes", 512},
 	}
 
 	for _, tc := range testCases {
@@ -111,7 +127,9 @@ func BenchmarkRouter_DumpAndRestore(b *testing.B) {
 			// 预先生成路由数据
 			original := NewRouter()
 			for i := 0; i < tc.routeCount; i++ {
-				cidr := fmt.Sprintf("192.168.%d.0/24", i)
+				octet1 := 10 + i/256
+				octet2 := i % 256
+				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
 				conn := fmt.Sprintf("conn-%d", i)
 				_ = original.Register(cidr, conn)
 			}
@@ -138,6 +156,7 @@ func TestRouter_Restore(t *testing.T) {
 		{"50 routes", 50},
 		{"100 routes", 100},
 		{"254 routes", 254},
+		{"512 routes", 512},
 	}
 
 	for _, tc := range testCases {
@@ -146,7 +165,9 @@ func TestRouter_Restore(t *testing.T) {
 			r := NewRouter()
 			routes := make(map[string]string)
 			for i := 0; i < tc.routeCount; i++ {
-				cidr := fmt.Sprintf("192.168.%d.0/24", i)
+				octet1 := 10 + i/256
+				octet2 := i % 256
+				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
 				conn := fmt.Sprintf("conn-%d", i)
 				routes[cidr] = conn
 				err := r.Register(cidr, conn)
@@ -288,6 +309,7 @@ func BenchmarkRouter_Restore(b *testing.B) {
 		{"50 routes", 50},
 		{"100 routes", 100},
 		{"254 routes", 254},
+		{"512 routes", 512},
 	}
 
 	for _, tc := range testCases {
@@ -295,7 +317,9 @@ func BenchmarkRouter_Restore(b *testing.B) {
 			// 预先生成路由数据
 			original := NewRouter()
 			for i := 0; i < tc.routeCount; i++ {
-				cidr := fmt.Sprintf("192.168.%d.0/24", i)
+				octet1 := 10 + i/256
+				octet2 := i % 256
+				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
 				conn := fmt.Sprintf("conn-%d", i)
 				_ = original.Register(cidr, conn)
 			}
@@ -322,13 +346,16 @@ func BenchmarkRouter_Dump(b *testing.B) {
 		{"50 routes", 50},
 		{"100 routes", 100},
 		{"254 routes", 254},
+		{"512 routes", 512},
 	}
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			r := NewRouter()
 			for i := 0; i < tc.routeCount; i++ {
-				cidr := fmt.Sprintf("192.168.%d.0/24", i)
+				octet1 := 10 + i/256
+				octet2 := i % 256
+				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
 				conn := fmt.Sprintf("conn-%d", i)
 				_ = r.Register(cidr, conn)
 			}
