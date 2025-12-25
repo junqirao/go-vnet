@@ -488,3 +488,100 @@ func BenchmarkRouter_Hash_Scales(b *testing.B) {
 		})
 	}
 }
+
+// 测试Dump缓存机制
+func TestRouter_DumpCache(t *testing.T) {
+	r := NewRouter()
+
+	// 注册一些路由
+	for i := 0; i < 100; i++ {
+		cidr := fmt.Sprintf("192.168.%d.0/24", i)
+		conn := fmt.Sprintf("conn-%d", i)
+		_ = r.Register(cidr, conn)
+	}
+
+	// 第一次Dump，应该生成缓存
+	data1 := r.Dump()
+	t.Logf("第一次Dump: %d bytes", len(data1))
+
+	// 第二次Dump，应该返回缓存（相同的数据）
+	data2 := r.Dump()
+	t.Logf("第二次Dump: %d bytes", len(data2))
+
+	// 验证两次Dump的数据相同
+	if string(data1) != string(data2) {
+		t.Error("两次Dump的数据应该相同")
+	}
+
+	// 修改路由表
+	_ = r.Register("10.0.1.0/24", "new-conn")
+
+	// 第三次Dump，应该生成新的缓存
+	data3 := r.Dump()
+	t.Logf("第三次Dump（修改后）: %d bytes", len(data3))
+
+	// 验证修改后的数据与之前不同
+	if string(data1) == string(data3) {
+		t.Error("修改路由表后，Dump数据应该不同")
+	}
+
+	// 第四次Dump，应该返回新的缓存
+	data4 := r.Dump()
+	t.Logf("第四次Dump: %d bytes", len(data4))
+
+	// 验证返回的是同一个slice（新缓存）
+	if string(data3) != string(data4) {
+		t.Error("第四次Dump的数据应该与第三次相同（使用缓存）")
+	}
+}
+
+// 测试Dump缓存的并发安全性
+func TestRouter_DumpCache_Concurrent(t *testing.T) {
+	r := NewRouter()
+
+	// 注册一些路由
+	for i := 0; i < 100; i++ {
+		cidr := fmt.Sprintf("192.168.%d.0/24", i)
+		conn := fmt.Sprintf("conn-%d", i)
+		_ = r.Register(cidr, conn)
+	}
+
+	// 并发测试
+	done := make(chan bool)
+	for i := 0; i < 100; i++ {
+		go func() {
+			data := r.Dump()
+			if len(data) == 0 {
+				t.Error("Dump返回空数据")
+			}
+			done <- true
+		}()
+	}
+
+	// 等待所有goroutine完成
+	for i := 0; i < 100; i++ {
+		<-done
+	}
+}
+
+// 测试Dump缓存的性能
+func BenchmarkRouter_Dump_WithCache(b *testing.B) {
+	r := NewRouter()
+
+	// 预先生成路由表
+	for i := 0; i < 1000; i++ {
+		cidr := fmt.Sprintf("192.168.%d.0/24", i%256)
+		conn := fmt.Sprintf("conn-%d", i)
+		_ = r.Register(cidr, conn)
+	}
+
+	// 预热：生成缓存
+	_ = r.Dump()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_ = r.Dump()
+	}
+}

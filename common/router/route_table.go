@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net"
+	"sync"
 )
 
 // TrieNode 表示前缀树的节点
@@ -17,7 +18,10 @@ type TrieNode struct {
 
 // RouteTable 表示IP路由表
 type RouteTable struct {
-	root *TrieNode // 根节点
+	root          *TrieNode    // 根节点
+	dumpCache     []byte       // Dump缓存
+	dumpCacheHash string       // Dump缓存的Hash值
+	dumpCacheMu   sync.RWMutex // 保护Dump缓存的读写锁
 }
 
 // NewRouteTable 创建一个新的路由表
@@ -64,6 +68,8 @@ func (rt *RouteTable) AddRoute(cidr string, target any) error {
 	}
 	current.isLeaf = true
 	current.target = target
+	// 清除Dump缓存，因为路由表已修改
+	rt.invalidateDumpCache()
 	return nil
 }
 
@@ -105,6 +111,8 @@ func (rt *RouteTable) DeleteRoute(cidr string) error {
 	}
 	current.isLeaf = false
 	current.target = nil
+	// 清除Dump缓存，因为路由表已修改
+	rt.invalidateDumpCache()
 	return nil
 }
 
@@ -317,8 +325,43 @@ func UnMarshalTriNode(bs []byte) (*TrieNode, error) {
 }
 
 // MarshalRouteTable 序列化整个路由表
+// 使用缓存机制：先获取序列化数据并计算Hash，如果与缓存相同则返回缓存，否则更新缓存
 func (rt *RouteTable) MarshalRouteTable() []byte {
-	return MarshalTriNode(rt.root)
+	// 尝试从缓存读取
+	rt.dumpCacheMu.RLock()
+	if rt.dumpCache != nil {
+		cached := rt.dumpCache
+		rt.dumpCacheMu.RUnlock()
+		return cached
+	}
+	rt.dumpCacheMu.RUnlock()
+
+	// 缓存不存在，重新序列化
+	data := MarshalTriNode(rt.root)
+
+	// 更新缓存（此时路由表可能已被修改，需要重新获取锁检查）
+	rt.dumpCacheMu.Lock()
+	if rt.dumpCache == nil {
+		rt.dumpCacheHash = HashFromData(data)
+		rt.dumpCache = data
+		rt.dumpCacheMu.Unlock()
+	} else {
+		// 缓存已被其他goroutine设置，使用那个缓存
+		cached := rt.dumpCache
+		rt.dumpCacheMu.Unlock()
+		return cached
+	}
+
+	return data
+}
+
+// invalidateDumpCache 清除Dump缓存
+// 在路由表修改时调用
+func (rt *RouteTable) invalidateDumpCache() {
+	rt.dumpCacheMu.Lock()
+	rt.dumpCacheHash = ""
+	rt.dumpCache = nil
+	rt.dumpCacheMu.Unlock()
 }
 
 // Hash 计算路由表的MD5哈希值
