@@ -72,12 +72,40 @@ func (r *router) Restore(data []byte) (err error) {
 	if len(data) == 0 {
 		return nil
 	}
-	root, err := UnMarshalTriNode(data)
+	newRoot, err := UnMarshalTriNode(data)
 	if err != nil {
 		return err
 	}
-	r.table = NewRouteTable(root)
+	// 合并路由表，不覆盖已有的路由
+	mergeTrieNodes(r.table.root, newRoot)
 	return nil
+}
+
+// mergeTrieNodes 合并两个TrieNode，不覆盖已存在的叶子节点
+func mergeTrieNodes(dest, src *TrieNode) {
+	if src == nil {
+		return
+	}
+
+	// 如果源节点是叶子节点且目标节点不是叶子节点，则复制
+	if src.isLeaf && !dest.isLeaf {
+		dest.isLeaf = src.isLeaf
+		dest.target = src.target
+	}
+
+	// 递归合并子节点
+	if src.zero != nil {
+		if dest.zero == nil {
+			dest.zero = &TrieNode{}
+		}
+		mergeTrieNodes(dest.zero, src.zero)
+	}
+	if src.one != nil {
+		if dest.one == nil {
+			dest.one = &TrieNode{}
+		}
+		mergeTrieNodes(dest.one, src.one)
+	}
 }
 
 func (r *router) Delete(addr string) (err error) {

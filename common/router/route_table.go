@@ -1,24 +1,10 @@
 package router
 
 import (
-	"bytes"
 	"encoding/binary"
-	"encoding/gob"
 	"errors"
 	"net"
 )
-
-// GobWrapper 用于 gob 编码/解码任意类型
-type GobWrapper struct {
-	Value any
-}
-
-func init() {
-	// 注册 gob 解码所需的类型
-	gob.Register(GobWrapper{})
-	gob.Register("")
-	gob.Register(0)
-}
 
 // TrieNode 表示前缀树的节点
 type TrieNode struct {
@@ -134,9 +120,11 @@ func (rt *RouteTable) Lookup(ipStr string) (any, bool) {
 
 	current := rt.root
 	var bestMatch any
+	var found bool
 	for i := 0; i < 32; i++ {
 		if current.isLeaf {
 			bestMatch = current.target
+			found = true
 		}
 		byteIndex := i / 8
 		bitOffset := 7 - (i % 8)
@@ -156,8 +144,9 @@ func (rt *RouteTable) Lookup(ipStr string) (any, bool) {
 	}
 	if current.isLeaf {
 		bestMatch = current.target
+		found = true
 	}
-	if bestMatch != nil {
+	if found {
 		return bestMatch, true
 	}
 	return nil, false
@@ -183,26 +172,6 @@ func MarshalTriNode(tr *TrieNode) []byte {
 		flags |= 1 << 2
 	}
 	data = append(data, flags)
-
-	// 序列化target（如果是叶子节点）
-	if tr.isLeaf {
-		// 使用 gob 编码任意类型的target
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
-		wrapper := GobWrapper{Value: tr.target}
-		err := enc.Encode(wrapper)
-		if err != nil {
-			// 实际应用中应处理错误，这里简化处理
-			panic(err)
-		}
-		targetBytes := buf.Bytes()
-
-		// 写入target长度和内容
-		length := make([]byte, 4)
-		binary.BigEndian.PutUint32(length, uint32(len(targetBytes)))
-		data = append(data, length...)
-		data = append(data, targetBytes...)
-	}
 
 	// 递归序列化子节点
 	if tr.zero != nil {
@@ -240,31 +209,6 @@ func UnMarshalTriNode(bs []byte) (*TrieNode, error) {
 	tr.isLeaf = (flags & (1 << 0)) != 0
 	hasZero := (flags & (1 << 1)) != 0
 	hasOne := (flags & (1 << 2)) != 0
-
-	// 解析target（如果是叶子节点）
-	if tr.isLeaf {
-		if offset+4 > len(bs) {
-			return nil, errors.New("invalid data: target length out of bounds")
-		}
-		targetLen := binary.BigEndian.Uint32(bs[offset : offset+4])
-		offset += 4
-
-		if offset+int(targetLen) > len(bs) {
-			return nil, errors.New("invalid data: target data out of bounds")
-		}
-		targetBytes := bs[offset : offset+int(targetLen)]
-		offset += int(targetLen)
-
-		// 使用 gob 解码任意类型的target
-		buf := bytes.NewBuffer(targetBytes)
-		dec := gob.NewDecoder(buf)
-		var wrapper GobWrapper
-		err := dec.Decode(&wrapper)
-		if err != nil {
-			return nil, err
-		}
-		tr.target = wrapper.Value
-	}
 
 	// 递归解析子节点
 	if hasZero {
