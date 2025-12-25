@@ -13,11 +13,11 @@ type (
 		Route(ctx context.Context, r io.ReadWriteCloser) (dst io.Writer, err error)
 		RouteString(dst string) (v any, ok bool)
 		Dump() []byte
+		Restore(data []byte) (err error)
 		Delete(addr string) (err error)
 	}
 	router struct {
-		table    *RouteTable
-		fallback io.Writer
+		table *RouteTable
 	}
 )
 
@@ -66,6 +66,18 @@ func (r *router) RouteString(dst string) (v any, ok bool) {
 
 func (r *router) Dump() []byte {
 	return r.table.MarshalRouteTable()
+}
+
+func (r *router) Restore(data []byte) (err error) {
+	if len(data) == 0 {
+		return nil
+	}
+	root, err := UnMarshalTriNode(data)
+	if err != nil {
+		return err
+	}
+	r.table = NewRouteTable(root)
+	return nil
 }
 
 func (r *router) Delete(addr string) (err error) {

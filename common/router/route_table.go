@@ -8,6 +8,18 @@ import (
 	"net"
 )
 
+// GobWrapper 用于 gob 编码/解码任意类型
+type GobWrapper struct {
+	Value any
+}
+
+func init() {
+	// 注册 gob 解码所需的类型
+	gob.Register(GobWrapper{})
+	gob.Register("")
+	gob.Register(0)
+}
+
 // TrieNode 表示前缀树的节点
 type TrieNode struct {
 	zero   *TrieNode // 0分支
@@ -174,10 +186,11 @@ func MarshalTriNode(tr *TrieNode) []byte {
 
 	// 序列化target（如果是叶子节点）
 	if tr.isLeaf {
-		// 使用gob编码任意类型的target
+		// 使用 gob 编码任意类型的target
 		var buf bytes.Buffer
 		enc := gob.NewEncoder(&buf)
-		err := enc.Encode(tr.target)
+		wrapper := GobWrapper{Value: tr.target}
+		err := enc.Encode(wrapper)
 		if err != nil {
 			// 实际应用中应处理错误，这里简化处理
 			panic(err)
@@ -242,15 +255,15 @@ func UnMarshalTriNode(bs []byte) (*TrieNode, error) {
 		targetBytes := bs[offset : offset+int(targetLen)]
 		offset += int(targetLen)
 
-		// 使用gob解码任意类型的target
+		// 使用 gob 解码任意类型的target
 		buf := bytes.NewBuffer(targetBytes)
 		dec := gob.NewDecoder(buf)
-		var target interface{}
-		err := dec.Decode(&target)
+		var wrapper GobWrapper
+		err := dec.Decode(&wrapper)
 		if err != nil {
 			return nil, err
 		}
-		tr.target = target
+		tr.target = wrapper.Value
 	}
 
 	// 递归解析子节点
