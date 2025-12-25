@@ -1,6 +1,8 @@
 package router
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"net"
 )
@@ -317,4 +319,34 @@ func UnMarshalTriNode(bs []byte) (*TrieNode, error) {
 // MarshalRouteTable 序列化整个路由表
 func (rt *RouteTable) MarshalRouteTable() []byte {
 	return MarshalTriNode(rt.root)
+}
+
+// Hash 计算路由表的MD5哈希值
+// 用于快速判断路由表是否发生变化
+func (rt *RouteTable) Hash() string {
+	data := MarshalTriNode(rt.root)
+	hash := md5.Sum(data)
+	return hex.EncodeToString(hash[:])
+}
+
+// HashWithSalt 使用盐值计算路由表的MD5哈希值
+// 可以用于区分不同场景下的路由表
+func (rt *RouteTable) HashWithSalt(salt string) string {
+	data := MarshalTriNode(rt.root)
+	saltedData := append([]byte(salt), data...)
+	hash := md5.Sum(saltedData)
+	return hex.EncodeToString(hash[:])
+}
+
+// HashBytes 计算路由表的MD5哈希值并返回原始字节数组
+func (rt *RouteTable) HashBytes() []byte {
+	data := MarshalTriNode(rt.root)
+	hash := md5.Sum(data)
+	return hash[:]
+}
+
+// HashFromData 从已序列化的数据计算MD5哈希值
+func HashFromData(data []byte) string {
+	hash := md5.Sum(data)
+	return hex.EncodeToString(hash[:])
 }

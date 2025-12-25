@@ -402,3 +402,89 @@ func BenchmarkRouteTable_Lookup(b *testing.B) {
 		table.Lookup("192.168.1.55")
 	}
 }
+
+// 测试路由表Hash功能
+func TestRouter_Hash(t *testing.T) {
+	r1 := NewRouter()
+	r2 := NewRouter()
+
+	// 添加相同的路由
+	for i := 0; i < 100; i++ {
+		cidr := fmt.Sprintf("192.168.%d.0/24", i)
+		conn := fmt.Sprintf("conn-%d", i)
+		_ = r1.Register(cidr, conn)
+		_ = r2.Register(cidr, conn)
+	}
+
+	// 相同的路由表应该有相同的Hash
+	hash1 := r1.Hash()
+	hash2 := r2.Hash()
+	if hash1 != hash2 {
+		t.Errorf("相同路由表的Hash不同: %s vs %s", hash1, hash2)
+	}
+
+	// 添加一条新路由到r2
+	_ = r2.Register("10.0.1.0/24", "new-conn")
+
+	// 不同的路由表应该有不同的Hash
+	hash3 := r2.Hash()
+	if hash1 == hash3 {
+		t.Error("不同路由表的Hash相同，应该不同")
+	}
+
+	t.Logf("Hash1: %s", hash1)
+	t.Logf("Hash2: %s", hash2)
+	t.Logf("Hash3 (modified): %s", hash3)
+}
+
+// 测试Hash性能
+func BenchmarkRouter_Hash(b *testing.B) {
+	r := NewRouter()
+	for i := 0; i < 1000; i++ {
+		cidr := fmt.Sprintf("192.168.%d.0/24", i%256)
+		conn := fmt.Sprintf("conn-%d", i)
+		_ = r.Register(cidr, conn)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_ = r.Hash()
+	}
+}
+
+// 测试Hash性能 - 不同路由数量的基准测试
+func BenchmarkRouter_Hash_Scales(b *testing.B) {
+	testCases := []struct {
+		name       string
+		routeCount int
+	}{
+		{"10 routes", 10},
+		{"50 routes", 50},
+		{"100 routes", 100},
+		{"254 routes", 254},
+		{"512 routes", 512},
+		{"1024 routes", 1024},
+	}
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			r := NewRouter()
+			for i := 0; i < tc.routeCount; i++ {
+				octet1 := 10 + i/256
+				octet2 := i % 256
+				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
+				conn := fmt.Sprintf("conn-%d", i)
+				_ = r.Register(cidr, conn)
+			}
+
+			b.ResetTimer()
+			b.ReportAllocs()
+
+			for i := 0; i < b.N; i++ {
+				_ = r.Hash()
+			}
+		})
+	}
+}

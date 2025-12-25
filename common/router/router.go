@@ -15,6 +15,7 @@ type (
 		Dump() []byte
 		Restore(data []byte) (err error)
 		Delete(addr string) (err error)
+		Hash() string
 	}
 	router struct {
 		table *RouteTable
@@ -110,4 +111,8 @@ func mergeTrieNodes(dest, src *TrieNode) {
 
 func (r *router) Delete(addr string) (err error) {
 	return r.table.DeleteRoute(addr)
+}
+
+func (r *router) Hash() string {
+	return r.table.Hash()
 }
