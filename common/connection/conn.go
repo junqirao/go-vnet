@@ -1,4 +1,4 @@
-package client
+package connection
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 type ConnectFunc func(dst string) (io.ReadWriteCloser, error)
 
-type ConnectionManager struct {
+type Manager struct {
 	ctx      context.Context
 	mu       sync.Mutex
 	p        map[string]io.ReadWriteCloser // dst(ip):writer
@@ -19,25 +19,25 @@ type ConnectionManager struct {
 	logger   logger.Logger
 }
 
-func NewConnectionManager(ctx context.Context, cf ConnectFunc) *ConnectionManager {
-	return &ConnectionManager{
+func NewManager(ctx context.Context, cf ConnectFunc) *Manager {
+	return &Manager{
 		p:        make(map[string]io.ReadWriteCloser),
 		ctx:      ctx,
 		connFunc: cf,
 	}
 }
 
-func (p *ConnectionManager) SetLogger(l logger.Logger) {
+func (p *Manager) SetLogger(l logger.Logger) {
 	p.logger = l
 }
 
-func (p *ConnectionManager) Del(dst string) {
+func (p *Manager) Del(dst string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.p, dst)
 }
 
-func (p *ConnectionManager) Get(dst string) (rwc io.ReadWriteCloser, err error) {
+func (p *Manager) Get(dst string) (rwc io.ReadWriteCloser, err error) {
 	defer func() {
 		if err != nil {
 			p.mu.Lock()
@@ -83,7 +83,7 @@ func (p *ConnectionManager) Get(dst string) (rwc io.ReadWriteCloser, err error) 
 	return
 }
 
-func (p *ConnectionManager) makeConnectOrWrite(dst string, data []byte) (n int, err error) {
+func (p *Manager) makeConnectOrWrite(dst string, data []byte) (n int, err error) {
 	rwc, err := p.Get(dst)
 	if err != nil {
 		return

@@ -12,6 +12,7 @@ import (
 	"go-vnet/client/transport"
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
+	"go-vnet/common/connection"
 	"go-vnet/common/device"
 	"go-vnet/common/logger"
 	"go-vnet/common/router"
@@ -33,7 +34,7 @@ type Client struct {
 	router router.Router
 
 	// connection manager
-	cm *ConnectionManager
+	cm *connection.Manager
 
 	// auth
 	auth *auth.Client
@@ -102,7 +103,7 @@ func (c *Client) Run(ctx context.Context) (err error) {
 		return make([]byte, c.joined.Device.MTU)
 	}
 
-	c.cm = NewConnectionManager(ctx, func(dst string) (io.ReadWriteCloser, error) {
+	c.cm = connection.NewManager(ctx, func(dst string) (io.ReadWriteCloser, error) {
 		return t.Connect(dst)
 	})
 	c.cm.SetLogger(c.logger)

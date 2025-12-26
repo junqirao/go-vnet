@@ -121,3 +121,26 @@ func (s *quicServer) Close() (err error) {
 	close(s.sig)
 	return
 }
+
+func (s *quicServer) handleStream(ctx context.Context, stream *quic.Stream, info *connectionInfo) {
+	defer func() {
+		_ = stream.Close()
+	}()
+
+	// read stream max 10s for first pkg
+
+	// route
+	dst, err := info.network.Router().Route(ctx, stream)
+	if err != nil {
+		s.logger.Errorf(ctx, "route error: %s", err.Error())
+		return
+	}
+
+	s.logger.Infof(ctx, "handle flow start. stream_id=%v", stream.StreamID())
+
+	// block and redirect flow to s.dst
+	if _, err = s.handleFlowProxy(fmt.Sprintf("%s -> %s", info.src, dst), dst, stream, make([]byte, s.MTU)); err != nil {
+		s.logger.Errorf(ctx, "handle flow stopped. stream_id=%v error: %s", stream.StreamID(), err.Error())
+		return
+	}
+}
