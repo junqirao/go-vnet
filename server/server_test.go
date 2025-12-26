@@ -36,16 +36,8 @@ func TestServer_Run(t *testing.T) {
 		KeepAlivePeriod: time.Second * 3,
 	}
 	config.Transports = append(config.Transports,
-		transport.NewTransportServerConfig(
-			transport.WithName("test-transport-server-1"),
-			transport.WithAddress(":9800"),
-			transport.WithQuicConfig(quicConfig),
-		),
-		transport.NewTransportServerConfig(
-			transport.WithName("test-transport-server-2"),
-			transport.WithAddress(":9801"),
-			transport.WithQuicConfig(quicConfig),
-		),
+		transport.NewTransportServerConfig(transport.WithName("test-transport-server-1"), transport.WithAddress(":9800"), transport.WithQuicConfig(quicConfig)),
+		transport.NewTransportServerConfig(transport.WithName("test-transport-server-2"), transport.WithAddress(":9801"), transport.WithQuicConfig(quicConfig)),
 	)
 
 	// create and run server

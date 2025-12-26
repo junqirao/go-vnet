@@ -11,10 +11,11 @@ import (
 
 type (
 	Server struct {
-		sig              chan struct{}
-		logger           logger.Logger
-		cfg              *Config
-		transportServers []transport.Server
+		sig               chan struct{}
+		logger            logger.Logger
+		cfg               *Config
+		transportServers  []transport.Server
+		funcCallEventChan chan *transport.FuncCallEvent
 	}
 	Config struct {
 		config.MappedConfig
@@ -45,9 +46,10 @@ func NewConfig(opts ...ConfigOption) *Config {
 
 func NewServer(cfg *Config) *Server {
 	return &Server{
-		sig:    make(chan struct{}),
-		cfg:    cfg,
-		logger: config.GetMappedConfig[logger.Logger](cfg, configKeyLogger, logger.DefaultLogger),
+		sig:               make(chan struct{}),
+		cfg:               cfg,
+		logger:            config.GetMappedConfig[logger.Logger](cfg, configKeyLogger, logger.DefaultLogger),
+		funcCallEventChan: make(chan *transport.FuncCallEvent, 1024),
 	}
 }
 
@@ -58,8 +60,12 @@ func (s *Server) Run(ctx context.Context) (err error) {
 			cfg.Name = fmt.Sprintf("unnamed_transport_server_%d", i)
 		}
 		cfg.Set(configKeyLogger, s.logger)
-		server := transport.NewTransportServer(cfg)
+
+		// new transport server
+		server := transport.NewTransportServer(s.funcCallEventChan, cfg)
 		s.transportServers = append(s.transportServers, server)
+
+		// run transport server
 		go func() {
 			ctx = context.WithValue(ctx, "server", server)
 			ctx = context.WithValue(ctx, "transport_server", cfg.Name)
@@ -70,6 +76,11 @@ func (s *Server) Run(ctx context.Context) (err error) {
 			s.logger.Infof(ctx, "transport server %s closed", cfg.Type)
 		}()
 	}
+
+	// run func call server
+	go s.processFuncCallLoop(ctx)
+
+	// wait for signal
 	select {
 	case <-s.sig:
 		s.logger.Infof(ctx, "server closed")

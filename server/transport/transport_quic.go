@@ -72,34 +72,14 @@ func (s *quicServer) handleConnection(ctx context.Context, conn *quic.Conn) {
 
 	defer func() {
 		_ = conn.CloseWithError(0, "connection closed")
-		err := info.network.ReleaseDevice(info.device)
+		err := info.Network.ReleaseDevice(info.Device)
 		if err != nil {
 			s.logger.Errorf(conn.Context(), "release device error: %s", err.Error())
 			return
 		}
-		s.logger.Infof(conn.Context(), "device released: %+v", info.device)
+		s.logger.Infof(conn.Context(), "device released: %+v", info.Device)
 		s.logger.Infof(conn.Context(), "connection closed")
 	}()
-
-	handle := func(stream *quic.Stream) {
-		defer func() {
-			_ = stream.Close()
-		}()
-		// route
-		dst, err := info.network.Router().Route(ctx, stream)
-		if err != nil {
-			s.logger.Errorf(conn.Context(), "route error: %s", err.Error())
-			return
-		}
-
-		s.logger.Infof(ctx, "handle flow start. stream_id=%v", stream.StreamID())
-
-		// block and redirect flow to s.dst
-		if _, err = s.handleFlowProxy(fmt.Sprintf("%s -> %s", info.src, dst), dst, stream, make([]byte, s.MTU)); err != nil {
-			s.logger.Errorf(conn.Context(), "handle flow stopped. stream_id=%v error: %s", stream.StreamID(), err.Error())
-			return
-		}
-	}
 
 	for {
 		select {
@@ -110,37 +90,14 @@ func (s *quicServer) handleConnection(ctx context.Context, conn *quic.Conn) {
 		}
 		stream, err := conn.AcceptStream(context.Background())
 		if err != nil {
-			s.logger.Errorf(conn.Context(), "accept stream error: %s", err.Error())
+			s.logger.Errorf(ctx, "accept stream error: %s", err.Error())
 			return
 		}
-		go handle(stream)
+		go s.handleConn(conn.Context(), stream, info)
 	}
 }
 
 func (s *quicServer) Close() (err error) {
 	close(s.sig)
 	return
-}
-
-func (s *quicServer) handleStream(ctx context.Context, stream *quic.Stream, info *connectionInfo) {
-	defer func() {
-		_ = stream.Close()
-	}()
-
-	// read stream max 10s for first pkg
-
-	// route
-	dst, err := info.network.Router().Route(ctx, stream)
-	if err != nil {
-		s.logger.Errorf(ctx, "route error: %s", err.Error())
-		return
-	}
-
-	s.logger.Infof(ctx, "handle flow start. stream_id=%v", stream.StreamID())
-
-	// block and redirect flow to s.dst
-	if _, err = s.handleFlowProxy(fmt.Sprintf("%s -> %s", info.src, dst), dst, stream, make([]byte, s.MTU)); err != nil {
-		s.logger.Errorf(ctx, "handle flow stopped. stream_id=%v error: %s", stream.StreamID(), err.Error())
-		return
-	}
 }

@@ -1,12 +1,16 @@
 package connection
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"go-vnet/common/logger"
+	"go-vnet/server"
 )
 
 type ConnectFunc func(dst string) (io.ReadWriteCloser, error)
@@ -14,6 +18,7 @@ type ConnectFunc func(dst string) (io.ReadWriteCloser, error)
 type Manager struct {
 	ctx      context.Context
 	mu       sync.Mutex
+	execMu   sync.Mutex
 	p        map[string]io.ReadWriteCloser // dst(ip):writer
 	connFunc ConnectFunc
 	logger   logger.Logger
@@ -65,7 +70,12 @@ func (p *Manager) Get(dst string) (rwc io.ReadWriteCloser, err error) {
 		return
 	}
 
-	if _, err = conn.Write([]byte(dst)); err != nil {
+	first := []byte(dst)
+	if dst == "" {
+		first = []byte{0x01}
+	}
+
+	if _, err = conn.Write(first); err != nil {
 		err = fmt.Errorf("send route pkg failed: %w", err)
 		return
 	}
@@ -75,7 +85,11 @@ func (p *Manager) Get(dst string) (rwc io.ReadWriteCloser, err error) {
 		return
 	}
 	if read != 1 || res[0] != 1 {
-		err = fmt.Errorf("no route to dst: %s", dst)
+		if dst == "" {
+			err = fmt.Errorf("no manager connection")
+		} else {
+			err = fmt.Errorf("no route to dst: %s", dst)
+		}
 		return
 	}
 	p.p[dst] = conn
@@ -83,10 +97,48 @@ func (p *Manager) Get(dst string) (rwc io.ReadWriteCloser, err error) {
 	return
 }
 
-func (p *Manager) makeConnectOrWrite(dst string, data []byte) (n int, err error) {
-	rwc, err := p.Get(dst)
+func (p *Manager) ExecFunc(name string, args map[string]any) (res []byte, err error) {
+	p.execMu.Lock()
+	defer p.execMu.Unlock()
+
+	conn, err := p.Get("")
 	if err != nil {
 		return
 	}
-	return rwc.Write(data)
+
+	req, _ := json.Marshal(server.FuncCallRequest{
+		FuncName: name,
+		Args:     args,
+	})
+
+	_, err = conn.Write(req)
+	if err != nil {
+		return
+	}
+
+	var (
+		buf   = &bytes.Buffer{}
+		bs    = make([]byte, 1024)
+		timer = time.NewTimer(time.Second * 10)
+	)
+
+	for {
+		select {
+		case <-timer.C:
+			err = fmt.Errorf("exec func timeout")
+			return
+		default:
+		}
+		n, err := conn.Read(bs)
+		if err != nil {
+			break
+		}
+		buf.Write(bs[:n])
+		if n < 1024 {
+			break
+		}
+	}
+
+	res = buf.Bytes()
+	return
 }

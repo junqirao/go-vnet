@@ -108,6 +108,9 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	})
 	c.cm.SetLogger(c.logger)
 
+	// 3. start connection manager
+	go c.startManager()
+
 	// 4. block and read device
 txLoop:
 	for {

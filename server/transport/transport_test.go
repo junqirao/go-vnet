@@ -17,12 +17,7 @@ func TestServer_Serve(t *testing.T) {
 		EnableDatagrams: true,
 		KeepAlivePeriod: time.Second * 3,
 	}
-	ts := NewTransportServer(
-		NewTransportServerConfig(
-			WithQuicConfig(quicConfig),
-			WithTLSConfig(tlsConfig),
-		),
-	)
+	ts := NewTransportServer(nil, NewTransportServerConfig(WithQuicConfig(quicConfig), WithTLSConfig(tlsConfig)))
 	if err := ts.Serve(context.Background()); err != nil {
 		t.Fatal(err)
 		return
