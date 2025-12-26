@@ -1,11 +1,14 @@
 package router
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
 	"net"
 	"sync"
+
+	"go-vnet/common/logger"
 )
 
 // TrieNode 表示前缀树的节点
@@ -19,9 +22,10 @@ type TrieNode struct {
 // RouteTable 表示IP路由表
 type RouteTable struct {
 	root          *TrieNode    // 根节点
-	dumpCache     []byte       // Dump缓存
-	dumpCacheHash string       // Dump缓存的Hash值
-	dumpCacheMu   sync.RWMutex // 保护Dump缓存的读写锁
+	dumpCache     []byte       // Dump 缓存
+	dumpCacheHash string       // Dump 缓存的 Hash 值
+	dumpCacheMu   sync.RWMutex // 保护 Dump 缓存的读写锁
+	logger        logger.Logger
 }
 
 // NewRouteTable 创建一个新的路由表
@@ -30,11 +34,14 @@ func NewRouteTable(root ...*TrieNode) *RouteTable {
 	if len(root) > 0 && root[0] != nil {
 		r = root[0]
 	}
-	return &RouteTable{root: r}
+	return &RouteTable{
+		root:   r,
+		logger: logger.DefaultLogger,
+	}
 }
 
 // AddRoute 添加路由条目，cidr格式如"192.168.1.0/24"，target如"any"
-func (rt *RouteTable) AddRoute(cidr string, target any) error {
+func (rt *RouteTable) AddRoute(ctx context.Context, cidr string, target any) error {
 	ip, ipnet, err := net.ParseCIDR(cidr)
 	if err != nil {
 		return err
@@ -68,13 +75,14 @@ func (rt *RouteTable) AddRoute(cidr string, target any) error {
 	}
 	current.isLeaf = true
 	current.target = target
+	rt.logger.Infof(ctx, "Route added successfully: cidr=%s, target=%v", cidr, target)
 	// 清除Dump缓存，因为路由表已修改
 	rt.invalidateDumpCache()
 	return nil
 }
 
 // DeleteRoute 删除路由条目
-func (rt *RouteTable) DeleteRoute(cidr string) error {
+func (rt *RouteTable) DeleteRoute(ctx context.Context, cidr string) error {
 	ip, ipnet, err := net.ParseCIDR(cidr)
 	if err != nil {
 		return err
@@ -111,6 +119,7 @@ func (rt *RouteTable) DeleteRoute(cidr string) error {
 	}
 	current.isLeaf = false
 	current.target = nil
+	rt.logger.Infof(ctx, "Route deleted successfully: cidr=%s", cidr)
 	// 清除Dump缓存，因为路由表已修改
 	rt.invalidateDumpCache()
 	return nil
@@ -254,7 +263,7 @@ func decodeVarUint(bs []byte, offset int) (uint32, int, error) {
 			return 0, 0, errors.New("varuint too large")
 		}
 	}
-	return 0, 0, errors.New("invalid varuint: unexpected end of data")
+	return 0, 0, errors.New("invalid var uint: unexpected end of data")
 }
 
 // UnMarshalTriNode 从字节数组反序列化为TrieNode

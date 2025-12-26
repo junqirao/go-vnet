@@ -150,7 +150,7 @@ func (c *Client) handleTX(buf []byte, n int) {
 			c.logger.Errorf(c.ctx, "failed to get connection %s: %s", dst, err.Error())
 			return
 		}
-		if err = c.router.Register(fmt.Sprintf("%s/32", dst), rwc); err != nil {
+		if err = c.router.Register(c.ctx, fmt.Sprintf("%s/32", dst), rwc); err != nil {
 			c.logger.Errorf(c.ctx, "failed to register router: %v", err)
 			return
 		}

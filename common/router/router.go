@@ -9,12 +9,12 @@ import (
 
 type (
 	Router interface {
-		Register(addr string, conn any) (err error)
+		Register(ctx context.Context, addr string, conn any) (err error)
 		Route(ctx context.Context, r io.ReadWriteCloser) (dst io.Writer, err error)
 		RouteString(dst string) (v any, ok bool)
 		Dump() []byte
 		Restore(data []byte) (err error)
-		Delete(addr string) (err error)
+		Delete(ctx context.Context, addr string) (err error)
 		Hash() string
 	}
 	router struct {
@@ -37,8 +37,8 @@ func NewRouter(data ...[]byte) Router {
 	}
 }
 
-func (r *router) Register(addr string, conn any) (err error) {
-	return r.table.AddRoute(addr, conn)
+func (r *router) Register(ctx context.Context, addr string, conn any) (err error) {
+	return r.table.AddRoute(ctx, addr, conn)
 }
 
 func (r *router) Route(_ context.Context, src io.ReadWriteCloser) (dst io.Writer, err error) {
@@ -109,8 +109,8 @@ func mergeTrieNodes(dest, src *TrieNode) {
 	}
 }
 
-func (r *router) Delete(addr string) (err error) {
-	return r.table.DeleteRoute(addr)
+func (r *router) Delete(ctx context.Context, addr string) (err error) {
+	return r.table.DeleteRoute(ctx, addr)
 }
 
 func (r *router) Hash() string {

@@ -168,7 +168,7 @@ func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any,
 
 	// register router
 	src := dev.CIDR
-	if err = nwk.Router().Register(src, conn); err != nil {
+	if err = nwk.Router().Register(ctx, src, conn); err != nil {
 		s.logger.Errorf(ctx, "register router error: %s", err.Error())
 		return
 	}

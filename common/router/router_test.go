@@ -36,7 +36,7 @@ func TestRouter_DumpSize(t *testing.T) {
 				octet3 := i % 256
 				cidr := fmt.Sprintf("%d.%d.%d.0/24", octet1, octet2, octet3)
 				conn := fmt.Sprintf("conn-%d", i)
-				err := r.Register(cidr, conn)
+				err := r.Register(nil, cidr, conn)
 				if err != nil {
 					t.Fatalf("Register failed for %s: %v", cidr, err)
 				}
@@ -73,7 +73,7 @@ func TestRouter_RestoreFromDump(t *testing.T) {
 				octet2 := i % 256
 				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
 				conn := fmt.Sprintf("conn-%d", i)
-				err := original.Register(cidr, conn)
+				err := original.Register(nil, cidr, conn)
 				if err != nil {
 					t.Fatalf("Register failed for %s: %v", cidr, err)
 				}
@@ -131,7 +131,7 @@ func BenchmarkRouter_DumpAndRestore(b *testing.B) {
 				octet2 := i % 256
 				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
 				conn := fmt.Sprintf("conn-%d", i)
-				_ = original.Register(cidr, conn)
+				_ = original.Register(nil, cidr, conn)
 			}
 			dumpData := original.Dump()
 
@@ -170,7 +170,7 @@ func TestRouter_Restore(t *testing.T) {
 				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
 				conn := fmt.Sprintf("conn-%d", i)
 				routes[cidr] = conn
-				err := r.Register(cidr, conn)
+				err := r.Register(nil, cidr, conn)
 				if err != nil {
 					t.Fatalf("Register failed for %s: %v", cidr, err)
 				}
@@ -213,21 +213,21 @@ func TestRouter_Restore_Merge(t *testing.T) {
 	router2 := NewRouter()
 
 	// router1 注册路由1
-	err := router1.Register("10.0.1.0/24", "target-1")
+	err := router1.Register(nil, "10.0.1.0/24", "target-1")
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
-	err = router1.Register("10.0.2.0/24", "target-2")
+	err = router1.Register(nil, "10.0.2.0/24", "target-2")
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 
 	// router2 注册路由2
-	err = router2.Register("10.0.2.0/24", "target-2-new")
+	err = router2.Register(nil, "10.0.2.0/24", "target-2-new")
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
-	err = router2.Register("10.0.3.0/24", "target-3")
+	err = router2.Register(nil, "10.0.3.0/24", "target-3")
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestRouter_Restore_Merge(t *testing.T) {
 func TestRouter_Restore_Empty(t *testing.T) {
 	r := NewRouter()
 	// 先注册一些路由
-	err := r.Register("10.0.1.0/24", "target-1")
+	err := r.Register(nil, "10.0.1.0/24", "target-1")
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -321,7 +321,7 @@ func BenchmarkRouter_Restore(b *testing.B) {
 				octet2 := i % 256
 				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
 				conn := fmt.Sprintf("conn-%d", i)
-				_ = original.Register(cidr, conn)
+				_ = original.Register(nil, cidr, conn)
 			}
 			dumpData := original.Dump()
 
@@ -357,7 +357,7 @@ func BenchmarkRouter_Dump(b *testing.B) {
 				octet2 := i % 256
 				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
 				conn := fmt.Sprintf("conn-%d", i)
-				_ = r.Register(cidr, conn)
+				_ = r.Register(nil, cidr, conn)
 			}
 
 			b.ResetTimer()
@@ -373,10 +373,10 @@ func BenchmarkRouter_Dump(b *testing.B) {
 func TestRouteTable_Lookup(t *testing.T) {
 	table := NewRouteTable()
 	for i := 0; i < 255; i++ {
-		_ = table.AddRoute(fmt.Sprintf("192.168.%v.0/24", i), "123")
+		_ = table.AddRoute(nil, fmt.Sprintf("192.168.%v.0/24", i), "123")
 	}
 	for i := 0; i < 255; i++ {
-		_ = table.AddRoute(fmt.Sprintf("192.168.1.%v/32", i), i)
+		_ = table.AddRoute(nil, fmt.Sprintf("192.168.1.%v/32", i), i)
 	}
 	res, ok := table.Lookup("192.168.1.55")
 	if !ok {
@@ -392,10 +392,10 @@ func TestRouteTable_Lookup(t *testing.T) {
 func BenchmarkRouteTable_Lookup(b *testing.B) {
 	table := NewRouteTable()
 	for i := 0; i < 255; i++ {
-		_ = table.AddRoute(fmt.Sprintf("192.168.%v.0/24", i), "123")
+		_ = table.AddRoute(nil, fmt.Sprintf("192.168.%v.0/24", i), "123")
 	}
 	for i := 0; i < 255; i++ {
-		_ = table.AddRoute(fmt.Sprintf("192.168.1.%v/32", i), i)
+		_ = table.AddRoute(nil, fmt.Sprintf("192.168.1.%v/32", i), i)
 	}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -412,8 +412,8 @@ func TestRouter_Hash(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		cidr := fmt.Sprintf("192.168.%d.0/24", i)
 		conn := fmt.Sprintf("conn-%d", i)
-		_ = r1.Register(cidr, conn)
-		_ = r2.Register(cidr, conn)
+		_ = r1.Register(nil, cidr, conn)
+		_ = r2.Register(nil, cidr, conn)
 	}
 
 	// 相同的路由表应该有相同的Hash
@@ -424,7 +424,7 @@ func TestRouter_Hash(t *testing.T) {
 	}
 
 	// 添加一条新路由到r2
-	_ = r2.Register("10.0.1.0/24", "new-conn")
+	_ = r2.Register(nil, "10.0.1.0/24", "new-conn")
 
 	// 不同的路由表应该有不同的Hash
 	hash3 := r2.Hash()
@@ -443,7 +443,7 @@ func BenchmarkRouter_Hash(b *testing.B) {
 	for i := 0; i < 1000; i++ {
 		cidr := fmt.Sprintf("192.168.%d.0/24", i%256)
 		conn := fmt.Sprintf("conn-%d", i)
-		_ = r.Register(cidr, conn)
+		_ = r.Register(nil, cidr, conn)
 	}
 
 	b.ResetTimer()
@@ -476,7 +476,7 @@ func BenchmarkRouter_Hash_Scales(b *testing.B) {
 				octet2 := i % 256
 				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
 				conn := fmt.Sprintf("conn-%d", i)
-				_ = r.Register(cidr, conn)
+				_ = r.Register(nil, cidr, conn)
 			}
 
 			b.ResetTimer()
@@ -497,7 +497,7 @@ func TestRouter_DumpCache(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		cidr := fmt.Sprintf("192.168.%d.0/24", i)
 		conn := fmt.Sprintf("conn-%d", i)
-		_ = r.Register(cidr, conn)
+		_ = r.Register(nil, cidr, conn)
 	}
 
 	// 第一次Dump，应该生成缓存
@@ -514,7 +514,7 @@ func TestRouter_DumpCache(t *testing.T) {
 	}
 
 	// 修改路由表
-	_ = r.Register("10.0.1.0/24", "new-conn")
+	_ = r.Register(nil, "10.0.1.0/24", "new-conn")
 
 	// 第三次Dump，应该生成新的缓存
 	data3 := r.Dump()
@@ -543,7 +543,7 @@ func TestRouter_DumpCache_Concurrent(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		cidr := fmt.Sprintf("192.168.%d.0/24", i)
 		conn := fmt.Sprintf("conn-%d", i)
-		_ = r.Register(cidr, conn)
+		_ = r.Register(nil, cidr, conn)
 	}
 
 	// 并发测试
@@ -572,7 +572,7 @@ func BenchmarkRouter_Dump_WithCache(b *testing.B) {
 	for i := 0; i < 1000; i++ {
 		cidr := fmt.Sprintf("192.168.%d.0/24", i%256)
 		conn := fmt.Sprintf("conn-%d", i)
-		_ = r.Register(cidr, conn)
+		_ = r.Register(nil, cidr, conn)
 	}
 
 	// 预热：生成缓存
