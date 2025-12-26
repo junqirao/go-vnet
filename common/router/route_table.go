@@ -36,7 +36,7 @@ func NewRouteTable(root ...*TrieNode) *RouteTable {
 	}
 	return &RouteTable{
 		root:   r,
-		logger: logger.DefaultLogger,
+		logger: logger.NopLogger,
 	}
 }
 

@@ -13,12 +13,14 @@ type (
 		Route(ctx context.Context, r io.ReadWriteCloser) (dst io.Writer, err error)
 		RouteString(dst string) (v any, ok bool)
 		Dump() []byte
-		Restore(data []byte) (err error)
+		Restore(ctx context.Context, data []byte) (err error)
 		Delete(ctx context.Context, addr string) (err error)
 		Hash() string
+		SetLogger(logger logger.Logger)
 	}
 	router struct {
-		table *RouteTable
+		table  *RouteTable
+		logger logger.Logger
 	}
 )
 
@@ -33,7 +35,8 @@ func NewRouter(data ...[]byte) Router {
 		}
 	}
 	return &router{
-		table: NewRouteTable(root),
+		table:  NewRouteTable(root),
+		logger: logger.NopLogger,
 	}
 }
 
@@ -69,7 +72,7 @@ func (r *router) Dump() []byte {
 	return r.table.MarshalRouteTable()
 }
 
-func (r *router) Restore(data []byte) (err error) {
+func (r *router) Restore(ctx context.Context, data []byte) (err error) {
 	if len(data) == 0 {
 		return nil
 	}
@@ -78,12 +81,12 @@ func (r *router) Restore(data []byte) (err error) {
 		return err
 	}
 	// 合并路由表，不覆盖已有的路由
-	mergeTrieNodes(r.table.root, newRoot)
+	r.mergeTrieNodes(ctx, r.table.root, newRoot)
 	return nil
 }
 
 // mergeTrieNodes 合并两个TrieNode，不覆盖已存在的叶子节点
-func mergeTrieNodes(dest, src *TrieNode) {
+func (r *router) mergeTrieNodes(ctx context.Context, dest, src *TrieNode) {
 	if src == nil {
 		return
 	}
@@ -92,6 +95,10 @@ func mergeTrieNodes(dest, src *TrieNode) {
 	if src.isLeaf && !dest.isLeaf {
 		dest.isLeaf = src.isLeaf
 		dest.target = src.target
+		r.logger.Infof(ctx, "Route merged: target=%v", src.target)
+	} else if src.isLeaf && dest.isLeaf {
+		// 目标节点已存在路由，跳过处理
+		r.logger.Info(ctx, "Route skipped: existing route preserved")
 	}
 
 	// 递归合并子节点
@@ -99,13 +106,13 @@ func mergeTrieNodes(dest, src *TrieNode) {
 		if dest.zero == nil {
 			dest.zero = &TrieNode{}
 		}
-		mergeTrieNodes(dest.zero, src.zero)
+		r.mergeTrieNodes(ctx, dest.zero, src.zero)
 	}
 	if src.one != nil {
 		if dest.one == nil {
 			dest.one = &TrieNode{}
 		}
-		mergeTrieNodes(dest.one, src.one)
+		r.mergeTrieNodes(ctx, dest.one, src.one)
 	}
 }
 
@@ -115,4 +122,9 @@ func (r *router) Delete(ctx context.Context, addr string) (err error) {
 
 func (r *router) Hash() string {
 	return r.table.Hash()
+}
+
+func (r *router) SetLogger(logger logger.Logger) {
+	r.logger = logger
+	r.table.logger = logger
 }

@@ -182,7 +182,7 @@ func TestRouter_Restore(t *testing.T) {
 
 			// 使用 Restore 方法恢复路由表（合并模式）
 			// 由于是合并到同一个路由表，原有的target应该保持不变
-			err := r.Restore(data)
+			err := r.Restore(nil, data)
 			if err != nil {
 				t.Fatalf("Restore failed: %v", err)
 			}
@@ -236,7 +236,7 @@ func TestRouter_Restore_Merge(t *testing.T) {
 	data := router2.Dump()
 
 	// 将 router2 的数据合并到 router1
-	err = router1.Restore(data)
+	err = router1.Restore(nil, data)
 	if err != nil {
 		t.Fatalf("Restore failed: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestRouter_Restore_Empty(t *testing.T) {
 		t.Fatalf("Register failed: %v", err)
 	}
 
-	err = r.Restore(nil)
+	err = r.Restore(nil, nil)
 	if err != nil {
 		t.Fatalf("Restore with nil data failed: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestRouter_Restore_Empty(t *testing.T) {
 		t.Error("Existing route lost after Restore with nil")
 	}
 
-	err = r.Restore([]byte{})
+	err = r.Restore(nil, []byte{})
 	if err != nil {
 		t.Fatalf("Restore with empty data failed: %v", err)
 	}
@@ -330,7 +330,7 @@ func BenchmarkRouter_Restore(b *testing.B) {
 
 			for i := 0; i < b.N; i++ {
 				r := NewRouter()
-				_ = r.Restore(dumpData)
+				_ = r.Restore(nil, dumpData)
 			}
 		})
 	}
