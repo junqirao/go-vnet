@@ -170,6 +170,25 @@ func (rt *RouteTable) Lookup(ipStr string) (any, bool) {
 	return nil, false
 }
 
+// Len 获取当前路由表的记录条数
+func (rt *RouteTable) Len() int {
+	return countLeafNodes(rt.root)
+}
+
+// countLeafNodes 递归计算TrieNode中的叶子节点数量
+func countLeafNodes(node *TrieNode) int {
+	if node == nil {
+		return 0
+	}
+	count := 0
+	if node.isLeaf {
+		count++
+	}
+	count += countLeafNodes(node.zero)
+	count += countLeafNodes(node.one)
+	return count
+}
+
 // MarshalTriNode 序列化TrieNode为字节数组
 // 优化格式：
 // - bit 0: isLeaf

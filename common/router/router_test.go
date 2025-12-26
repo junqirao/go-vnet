@@ -585,3 +585,169 @@ func BenchmarkRouter_Dump_WithCache(b *testing.B) {
 		_ = r.Dump()
 	}
 }
+
+// 测试Len方法 - 空路由表
+func TestRouter_Len_Empty(t *testing.T) {
+	r := NewRouter()
+	if r.Len() != 0 {
+		t.Errorf("Expected empty router length to be 0, got %d", r.Len())
+	}
+}
+
+// 测试Len方法 - 单条路由
+func TestRouter_Len_Single(t *testing.T) {
+	r := NewRouter()
+	_ = r.Register(nil, "192.168.1.0/24", "target-1")
+	if r.Len() != 1 {
+		t.Errorf("Expected router length to be 1, got %d", r.Len())
+	}
+}
+
+// 测试Len方法 - 多条路由
+func TestRouter_Len_Multiple(t *testing.T) {
+	testCases := []struct {
+		name       string
+		routeCount int
+	}{
+		{"10 routes", 10},
+		{"50 routes", 50},
+		{"100 routes", 100},
+		{"254 routes", 254},
+		{"512 routes", 512},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := NewRouter()
+			for i := 0; i < tc.routeCount; i++ {
+				// 使用多个IP段来支持大量路由
+				octet1 := 10 + i/256
+				octet2 := i % 256
+				cidr := fmt.Sprintf("%d.%d.0.0/16", octet1, octet2)
+				conn := fmt.Sprintf("conn-%d", i)
+				_ = r.Register(nil, cidr, conn)
+			}
+			if r.Len() != tc.routeCount {
+				t.Errorf("Expected router length to be %d, got %d", tc.routeCount, r.Len())
+			}
+		})
+	}
+}
+
+// 测试Len方法 - AddRoute后增加
+func TestRouter_Len_AddRoute(t *testing.T) {
+	r := NewRouter()
+	_ = r.Register(nil, "192.168.1.0/24", "target-1")
+	if r.Len() != 1 {
+		t.Errorf("Expected router length to be 1, got %d", r.Len())
+	}
+
+	_ = r.Register(nil, "192.168.2.0/24", "target-2")
+	if r.Len() != 2 {
+		t.Errorf("Expected router length to be 2, got %d", r.Len())
+	}
+}
+
+// 测试Len方法 - DeleteRoute后减少
+func TestRouter_Len_DeleteRoute(t *testing.T) {
+	r := NewRouter()
+	_ = r.Register(nil, "192.168.1.0/24", "target-1")
+	_ = r.Register(nil, "192.168.2.0/24", "target-2")
+	_ = r.Register(nil, "192.168.3.0/24", "target-3")
+
+	if r.Len() != 3 {
+		t.Errorf("Expected router length to be 3, got %d", r.Len())
+	}
+
+	_ = r.Delete(nil, "192.168.2.0/24")
+	if r.Len() != 2 {
+		t.Errorf("Expected router length to be 2 after delete, got %d", r.Len())
+	}
+}
+
+// 测试Len方法 - Restore后合并路由
+func TestRouter_Len_Restore(t *testing.T) {
+	r := NewRouter()
+	_ = r.Register(nil, "192.168.1.0/24", "target-1")
+	_ = r.Register(nil, "192.168.2.0/24", "target-2")
+
+	data := r.Dump()
+	initialLen := r.Len()
+
+	// Restore到同一个路由器（合并模式，不覆盖已有路由）
+	_ = r.Restore(nil, data)
+	if r.Len() != initialLen {
+		t.Errorf("Expected router length to remain %d after restore, got %d", initialLen, r.Len())
+	}
+}
+
+// 测试Len方法 - Restore到新路由器
+func TestRouter_Len_RestoreToNewRouter(t *testing.T) {
+	r1 := NewRouter()
+	for i := 0; i < 100; i++ {
+		cidr := fmt.Sprintf("192.168.%d.0/24", i)
+		conn := fmt.Sprintf("conn-%d", i)
+		_ = r1.Register(nil, cidr, conn)
+	}
+
+	data := r1.Dump()
+	originalLen := r1.Len()
+
+	// 从数据恢复到新路由器
+	r2 := NewRouter(data)
+	if r2.Len() != originalLen {
+		t.Errorf("Expected new router length to be %d, got %d", originalLen, r2.Len())
+	}
+}
+
+// 测试Len方法的性能
+func BenchmarkRouter_Len(b *testing.B) {
+	testCases := []struct {
+		name       string
+		routeCount int
+	}{
+		{"10 routes", 10},
+		{"50 routes", 50},
+		{"100 routes", 100},
+		{"254 routes", 254},
+		{"512 routes", 512},
+		{"1024 routes", 1024},
+	}
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			r := NewRouter()
+			for i := 0; i < tc.routeCount; i++ {
+				cidr := fmt.Sprintf("192.168.%d.0/24", i%256)
+				conn := fmt.Sprintf("conn-%d", i)
+				_ = r.Register(nil, cidr, conn)
+			}
+
+			b.ResetTimer()
+			b.ReportAllocs()
+
+			for i := 0; i < b.N; i++ {
+				_ = r.Len()
+			}
+		})
+	}
+}
+
+// 测试RouteTable的Len方法
+func TestRouteTable_Len(t *testing.T) {
+	table := NewRouteTable()
+	if table.Len() != 0 {
+		t.Errorf("Expected empty route table length to be 0, got %d", table.Len())
+	}
+
+	_ = table.AddRoute(nil, "192.168.1.0/24", "target-1")
+	if table.Len() != 1 {
+		t.Errorf("Expected route table length to be 1, got %d", table.Len())
+	}
+
+	_ = table.AddRoute(nil, "192.168.2.0/24", "target-2")
+	_ = table.AddRoute(nil, "192.168.3.0/24", "target-3")
+	if table.Len() != 3 {
+		t.Errorf("Expected route table length to be 3, got %d", table.Len())
+	}
+}

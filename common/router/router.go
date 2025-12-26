@@ -17,6 +17,7 @@ type (
 		Delete(ctx context.Context, addr string) (err error)
 		Hash() string
 		SetLogger(logger logger.Logger)
+		Len() int
 	}
 	router struct {
 		table  *RouteTable
@@ -127,4 +128,8 @@ func (r *router) Hash() string {
 func (r *router) SetLogger(logger logger.Logger) {
 	r.logger = logger
 	r.table.logger = logger
+}
+
+func (r *router) Len() int {
+	return r.table.Len()
 }
