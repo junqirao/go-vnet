@@ -5,7 +5,9 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net"
+	"strings"
 	"sync"
 
 	"go-vnet/common/logger"
@@ -420,4 +422,71 @@ func (rt *RouteTable) HashBytes() []byte {
 func HashFromData(data []byte) string {
 	hash := md5.Sum(data)
 	return hex.EncodeToString(hash[:])
+}
+
+// Print 打印路由表中所有路由记录，按顺序排列
+func (rt *RouteTable) Print() string {
+	var routes []routeEntry
+	collectRoutes(rt.root, "", 0, &routes)
+	return formatRoutes(routes)
+}
+
+// routeEntry 表示一个路由条目
+type routeEntry struct {
+	cidr   string
+	target any
+}
+
+// collectRoutes 递归收集路由表中所有路由条目
+func collectRoutes(node *TrieNode, prefix string, depth int, routes *[]routeEntry) {
+	if node == nil {
+		return
+	}
+
+	// 如果是叶子节点，记录路由
+	if node.isLeaf {
+		cidr := prefixToCIDR(prefix, depth)
+		*routes = append(*routes, routeEntry{cidr: cidr, target: node.target})
+	}
+
+	// 递归处理子节点 (0分支在前，1分支在后，保证顺序)
+	collectRoutes(node.zero, prefix+"0", depth+1, routes)
+	collectRoutes(node.one, prefix+"1", depth+1, routes)
+}
+
+// prefixToCIDR 将二进制前缀转换为CIDR格式
+func prefixToCIDR(prefix string, bits int) string {
+	if bits == 0 {
+		return "0.0.0.0/0"
+	}
+	if len(prefix) < 32 {
+		prefix = prefix + string(make([]byte, 32-len(prefix)))
+	}
+
+	var ip [4]byte
+	for i := 0; i < 32; i++ {
+		if prefix[i] == '1' {
+			byteIndex := i / 8
+			bitOffset := 7 - (i % 8)
+			ip[byteIndex] |= 1 << bitOffset
+		}
+	}
+
+	return fmt.Sprintf("%d.%d.%d.%d/%d", ip[0], ip[1], ip[2], ip[3], bits)
+}
+
+// formatRoutes 格式化路由条目为字符串
+func formatRoutes(routes []routeEntry) string {
+	if len(routes) == 0 {
+		return "No routes"
+	}
+
+	var sb strings.Builder
+	for i, route := range routes {
+		if i > 0 {
+			sb.WriteString("\n")
+		}
+		sb.WriteString(fmt.Sprintf("%-20s -> %v", route.cidr, route.target))
+	}
+	return sb.String()
 }

@@ -18,6 +18,7 @@ type (
 		Hash() string
 		SetLogger(logger logger.Logger)
 		Len() int
+		Print() string
 	}
 	router struct {
 		table  *RouteTable
@@ -42,6 +43,7 @@ func NewRouter(data ...[]byte) Router {
 }
 
 func (r *router) Register(ctx context.Context, addr string, conn any) (err error) {
+	r.logger.Infof(ctx, "register route: addr=%s", addr)
 	return r.table.AddRoute(ctx, addr, conn)
 }
 
@@ -132,4 +134,8 @@ func (r *router) SetLogger(logger logger.Logger) {
 
 func (r *router) Len() int {
 	return r.table.Len()
+}
+
+func (r *router) Print() string {
+	return r.table.Print()
 }
