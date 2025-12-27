@@ -97,7 +97,7 @@ func (p *Manager) Get(dst string) (rwc io.ReadWriteCloser, err error) {
 	return
 }
 
-func (p *Manager) ExecFunc(name string, args map[string]any) (res []byte, err error) {
+func (p *Manager) ExecFunc(name string, args ...map[string]any) (resp *server.FuncCallResponse, err error) {
 	p.execMu.Lock()
 	defer p.execMu.Unlock()
 
@@ -106,10 +106,14 @@ func (p *Manager) ExecFunc(name string, args map[string]any) (res []byte, err er
 		return
 	}
 
-	req, _ := json.Marshal(server.FuncCallRequest{
+	request := server.FuncCallRequest{
 		FuncName: name,
-		Args:     args,
-	})
+	}
+	if len(args) > 0 {
+		request.Args = args[0]
+	}
+
+	req, _ := json.Marshal(request)
 
 	_, err = conn.Write(req)
 	if err != nil {
@@ -139,6 +143,9 @@ func (p *Manager) ExecFunc(name string, args map[string]any) (res []byte, err er
 		}
 	}
 
-	res = buf.Bytes()
+	resp = new(server.FuncCallResponse)
+	if err = json.Unmarshal(buf.Bytes(), &resp); err != nil {
+		return
+	}
 	return
 }

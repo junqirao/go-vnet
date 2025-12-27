@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"sync"
 
 	"github.com/songgao/water/waterutil"
@@ -44,6 +45,9 @@ type Client struct {
 
 	// joined
 	joined transport.JoinNetworkResponse
+
+	// src
+	src string
 }
 
 func NewClient(cfg Config) (c *Client, err error) {
@@ -99,6 +103,10 @@ func (c *Client) Run(ctx context.Context) (err error) {
 		return
 	}
 
+	ip, _, _ := net.ParseCIDR(c.joined.Device.CIDR)
+	c.src = ip.To4().String()
+	c.logger.Infof(ctx, "client ip: %s", c.src)
+
 	c.bufPool.New = func() any {
 		return make([]byte, c.joined.Device.MTU)
 	}
@@ -140,6 +148,13 @@ func (c *Client) handleTX(buf []byte, n int) {
 	}
 
 	dst := waterutil.IPv4Destination(buf[:n]).String()
+
+	// drop current loopback packet
+	if dst == "127.0.0.1" || dst == c.src {
+		c.logger.Infof(c.ctx, "drop loopback packet: %s", dst)
+		return
+	}
+
 	v, ok := c.router.RouteString(dst)
 	if !ok || v == nil {
 		// drop

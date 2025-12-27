@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 
 	"go-vnet/server/transport"
@@ -20,7 +21,8 @@ type (
 )
 
 const (
-	FuncNamePing = "ping"
+	FuncNamePing          = "ping"
+	FuncNameGetRouterData = "get_router_data"
 )
 
 func (s *Server) processFuncCallLoop(ctx context.Context) {
@@ -58,6 +60,9 @@ func (s *Server) handleFuncCall(ctx context.Context, ci transport.ConnectionInfo
 	switch req.FuncName {
 	case FuncNamePing:
 		return &FuncCallResponse{Code: 0, Data: ci.Network.Router().Hash()}, nil
+	case FuncNameGetRouterData:
+		data := ci.Network.Router().Dump()
+		return &FuncCallResponse{Code: 0, Data: base64.StdEncoding.EncodeToString(data)}, nil
 	}
 	return
 }
