@@ -94,6 +94,8 @@ func printConfig(config *client.Config) {
 		maskedPublicKey := maskSensitiveInfo(config.Auth.PublicKey)
 		fmt.Printf("Public Key: %s\n", maskedPublicKey)
 	}
+
+	fmt.Println()
 }
 
 // maskSensitiveInfo 隐藏敏感信息，只显示前3位和后3位

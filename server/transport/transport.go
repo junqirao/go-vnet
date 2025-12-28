@@ -11,8 +11,8 @@ import (
 
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
-	"go-vnet/common/device"
 	"go-vnet/common/logger"
+	"go-vnet/server/connection"
 	"go-vnet/server/network"
 )
 
@@ -36,14 +36,8 @@ type (
 		*ServerConfig
 		Server
 	}
-	ConnectionInfo struct {
-		Network *network.Network
-		Device  *device.Device
-		Src     string
-		RWC     io.ReadWriteCloser
-	}
 	FuncCallEvent struct {
-		Info    ConnectionInfo
+		Info    *connection.Info
 		Payload []byte
 	}
 )
@@ -77,34 +71,36 @@ func (s *transportServer) Serve(ctx context.Context) error {
 func (s *transportServer) Close() error {
 	close(s.sig)
 	s.mgrWriter.Range(func(key, value any) bool {
-		info := value.(ConnectionInfo)
-		_ = info.RWC.Close()
+		info := value.(*connection.Info)
+		_ = info.Close()
 		return true
 	})
 	s.mgrWg.Wait()
 	return nil
 }
 
-func (s *transportServer) handleConn(ctx context.Context, conn io.ReadWriteCloser, info ConnectionInfo) {
+func (s *transportServer) handleConn(ctx context.Context, conn io.ReadWriteCloser, info *connection.Info) {
+	if conn == nil {
+		return
+	}
+
 	// read stream max 10s for first pkg
 	var (
 		buf       = make([]byte, 15)
 		ch        = make(chan []byte)
 		dst       io.Writer
-		cancel    context.CancelFunc
 		first     []byte
 		writeBack byte = 0
 		isManager bool
 	)
 
-	info.RWC = conn
-
 	defer func() {
 		if isManager {
 			return
 		}
-		_ = conn.Close()
-		cancel()
+		if conn != nil {
+			_ = conn.Close()
+		}
 	}()
 
 	go func() {
@@ -123,21 +119,31 @@ func (s *transportServer) handleConn(ctx context.Context, conn io.ReadWriteClose
 	case first = <-ch:
 	}
 
+	var (
+		from = string(first)
+		to   string
+	)
+
 	if len(first) == 1 && first[0] == ManagerMark {
 		dst = conn
 		writeBack = 1
 		isManager = true
 	} else {
-		res, ok := info.Network.Router().RouteString(string(first))
+		res, ok := info.Network.Router().RouteString(from)
 		if ok {
-			if d, ok := res.(io.Writer); ok {
-				dst = d
+			if ci, ok := res.(*connection.Info); ok {
+				to = ci.Src
+				dst = ci.GetRWC()
 				writeBack = 1
 			}
 		}
 	}
 
 	_, err := conn.Write([]byte{writeBack})
+	if err != nil {
+		s.logger.Errorf(ctx, "write back failed. src=%v, dst=%v, writeBack=%v, err=%v", info.Src, to, writeBack, err)
+		return
+	}
 
 	// register manager connection
 	if isManager {
@@ -147,10 +153,15 @@ func (s *transportServer) handleConn(ctx context.Context, conn io.ReadWriteClose
 		return
 	}
 
-	s.logger.Infof(ctx, "handle flow start. %s -> %s", info.Src, dst)
+	s.logger.Infof(ctx, "handle flow start: %s -> %s", info.Src, to)
+
+	if dst == nil {
+		s.logger.Errorf(ctx, "no connection to dst: %s", to)
+		return
+	}
 
 	// block and redirect flow to s.dst
-	if _, err = s.handleFlowProxy(fmt.Sprintf("%s -> %s", info.Src, dst), dst, conn, make([]byte, s.MTU)); err != nil {
+	if _, err = s.handleFlowProxy(fmt.Sprintf("%s -> %s", info.Src, to), dst, conn, make([]byte, s.MTU)); err != nil {
 		s.logger.Errorf(ctx, "handle flow stopped. src=%v error: %s", info.Src, err.Error())
 		return
 	}
@@ -195,7 +206,7 @@ func (s *transportServer) handleFlowProxy(name string, dst io.Writer, src io.Rea
 
 func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any,
 	receive func(ctx context.Context) ([]byte, error),
-	send func(data []byte) error) (ci ConnectionInfo, err error) {
+	send func(data []byte) error) (ci *connection.Info, err error) {
 	// Set a context with a 10-second timeout
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer func() {
@@ -264,16 +275,18 @@ func (s *transportServer) authAndRegisterRouter(ctx context.Context, conn any,
 	resp["device"] = dev
 
 	// register router
-	src := dev.CIDR
-	if err = nwk.Router().Register(ctx, src, conn); err != nil {
-		s.logger.Errorf(ctx, "register router error: %s", err.Error())
-		return
-	}
+	ip, _, _ := net.ParseCIDR(dev.CIDR)
+	src := fmt.Sprintf("%s/32", ip.To4().String())
 
-	ci = ConnectionInfo{
+	ci = &connection.Info{
 		Network: nwk,
 		Device:  dev,
 		Src:     src,
+	}
+
+	if err = nwk.Router().Register(ctx, src, ci); err != nil {
+		s.logger.Errorf(ctx, "register router error: %s", err.Error())
+		return
 	}
 
 	s.logger.Infof(ctx, "handle connection: remote_addr=%s,route=%s", rem, src)
@@ -285,13 +298,13 @@ func (s *transportServer) authChainFunc(ctx context.Context, request map[string]
 	return
 }
 
-func (s *transportServer) startManagerReader(info ConnectionInfo) {
+func (s *transportServer) startManagerReader(info *connection.Info) {
 	s.mgrWg.Add(1)
 	go func() {
 		defer s.mgrWg.Done()
 		defer s.mgrWriter.Delete(info.Device.CIDR)
 		defer func() {
-			_ = info.RWC.Close()
+			_ = info.GetRWC().Close()
 		}()
 
 		buf := make([]byte, 4096)
@@ -304,7 +317,7 @@ func (s *transportServer) startManagerReader(info ConnectionInfo) {
 			default:
 			}
 
-			n, err := info.RWC.Read(buf)
+			n, err := info.GetRWC().Read(buf)
 			if err != nil {
 				if err != io.EOF {
 					s.logger.Errorf(s.ctx, "manager read error: %s, src=%s", err.Error(), info.Src)

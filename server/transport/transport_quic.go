@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -78,8 +79,22 @@ func (s *quicServer) handleConnection(ctx context.Context, conn *quic.Conn) {
 			return
 		}
 		s.logger.Infof(conn.Context(), "device released: %+v", info.Device)
+		if err = info.Network.Router().Delete(conn.Context(), info.Src); err != nil {
+			s.logger.Errorf(conn.Context(), "delete router error: %s", err.Error())
+			return
+		}
+		s.logger.Infof(conn.Context(), "router deleted: %s", info.Src)
 		s.logger.Infof(conn.Context(), "connection closed")
 	}()
+
+	getConn := func() io.ReadWriteCloser {
+		stream, err := conn.OpenStream()
+		if err != nil {
+			s.logger.Errorf(ctx, "open stream error: %s", err.Error())
+			return nil
+		}
+		return stream
+	}
 
 	for {
 		select {
@@ -88,11 +103,17 @@ func (s *quicServer) handleConnection(ctx context.Context, conn *quic.Conn) {
 			return
 		default:
 		}
+
 		stream, err := conn.AcceptStream(context.Background())
 		if err != nil {
 			s.logger.Errorf(ctx, "accept stream error: %s", err.Error())
 			return
 		}
+
+		info.GetRWCFunc = getConn
+		// clone
+		info := info.Clone()
+		info.SetRWC(stream)
 		go s.handleConn(conn.Context(), stream, info)
 	}
 }

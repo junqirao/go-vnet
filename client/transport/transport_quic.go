@@ -105,6 +105,11 @@ func (c *quicTransport) Connect(dst string) (wc io.ReadWriteCloser, err error) {
 		},
 	}
 	c.streams[dst] = stream
+	if dst == "" {
+		c.logger.Info(c.ctx, "manager stream opened")
+		return
+	}
+	c.logger.Infof(c.ctx, "stream opened: %s", dst)
 	return
 }
 

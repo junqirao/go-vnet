@@ -13,7 +13,6 @@ import (
 	"go-vnet/client/transport"
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
-	"go-vnet/common/connection"
 	"go-vnet/common/device"
 	"go-vnet/common/logger"
 	"go-vnet/common/router"
@@ -35,7 +34,7 @@ type Client struct {
 	router router.Router
 
 	// connection manager
-	cm *connection.Manager
+	cm *ConnectionManager
 
 	// auth
 	auth *auth.Client
@@ -111,7 +110,7 @@ func (c *Client) Run(ctx context.Context) (err error) {
 		return make([]byte, c.joined.Device.MTU)
 	}
 
-	c.cm = connection.NewManager(ctx, func(dst string) (io.ReadWriteCloser, error) {
+	c.cm = NewManager(ctx, func(dst string) (io.ReadWriteCloser, error) {
 		return t.Connect(dst)
 	})
 	c.cm.SetLogger(c.logger)
@@ -156,35 +155,31 @@ func (c *Client) handleTX(buf []byte, n int) {
 	}
 
 	v, ok := c.router.RouteString(dst)
-	if !ok || v == nil {
+	if !ok {
 		// drop
 		return
 	}
 
 	var rwc io.ReadWriteCloser
 
-	createFunc := func() (err error) {
-		rwc, err = c.cm.Get(dst)
-		if err != nil {
-			c.logger.Errorf(c.ctx, "failed to get connection %s: %s", dst, err.Error())
-			return
-		}
-		if err = c.router.Register(c.ctx, fmt.Sprintf("%s/32", dst), rwc); err != nil {
-			c.logger.Errorf(c.ctx, "failed to register router: %v", err)
-			return
-		}
-		return
+	if v != nil {
+		rwc, ok = v.(io.ReadWriteCloser)
 	}
-
-	rwc, ok = v.(io.ReadWriteCloser)
-	if !ok {
-		_ = createFunc()
+	if !ok || rwc == nil {
+		var err error
+		rwc, err = c.getConnAndRegisterRouter(dst)
+		if err != nil {
+			c.logger.Errorf(c.ctx, "failed to create connection %s: %s", dst, err.Error())
+			return
+		}
 	}
 
 	retryCount := 0
 	for retryCount < maxRetryCount {
 		var err error
 		if rwc != nil {
+			// var nw int
+			// nw, err = rwc.Write(buf[:n])
 			_, err = rwc.Write(buf[:n])
 			if err == nil {
 				return
@@ -195,14 +190,30 @@ func (c *Client) handleTX(buf []byte, n int) {
 		c.logger.Errorf(c.ctx, "failed to write to %s: %v", dst, err)
 		// 尝试创建新的 stream
 		c.logger.Infof(c.ctx, "try create stream...")
-		if err = createFunc(); err != nil {
-			break
+		if rwc, err = c.getConnAndRegisterRouter(dst); err == nil {
+			continue
 		}
 		retryCount++
 	}
+	c.logger.Errorf(c.ctx, "failed to write to %s, retry count exceeded", dst)
 }
 
 func (c *Client) Close() error {
 	close(c.sig)
 	return nil
+}
+
+func (c *Client) getConnAndRegisterRouter(dst string) (rwc io.ReadWriteCloser, err error) {
+	rwc, err = c.cm.Get(dst)
+	if err != nil {
+		c.logger.Errorf(c.ctx, "failed to get connection %s: %s", dst, err.Error())
+		return
+	}
+	c.logger.Infof(c.ctx, "success to get connection %s: %v", dst, rwc)
+	if err = c.router.Register(c.ctx, fmt.Sprintf("%s/32", dst), rwc); err != nil {
+		c.logger.Errorf(c.ctx, "failed to register router: %v", err)
+		return
+	}
+	c.logger.Infof(c.ctx, "register router: %v", dst)
+	return
 }

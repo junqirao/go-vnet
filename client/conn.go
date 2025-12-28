@@ -1,4 +1,4 @@
-package connection
+package client
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ import (
 
 type ConnectFunc func(dst string) (io.ReadWriteCloser, error)
 
-type Manager struct {
+type ConnectionManager struct {
 	ctx      context.Context
 	mu       sync.Mutex
 	execMu   sync.Mutex
@@ -24,25 +24,25 @@ type Manager struct {
 	logger   logger.Logger
 }
 
-func NewManager(ctx context.Context, cf ConnectFunc) *Manager {
-	return &Manager{
+func NewManager(ctx context.Context, cf ConnectFunc) *ConnectionManager {
+	return &ConnectionManager{
 		p:        make(map[string]io.ReadWriteCloser),
 		ctx:      ctx,
 		connFunc: cf,
 	}
 }
 
-func (p *Manager) SetLogger(l logger.Logger) {
+func (p *ConnectionManager) SetLogger(l logger.Logger) {
 	p.logger = l
 }
 
-func (p *Manager) Del(dst string) {
+func (p *ConnectionManager) Del(dst string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.p, dst)
 }
 
-func (p *Manager) Get(dst string) (rwc io.ReadWriteCloser, err error) {
+func (p *ConnectionManager) Get(dst string) (rwc io.ReadWriteCloser, err error) {
 	defer func() {
 		if err != nil {
 			p.mu.Lock()
@@ -67,6 +67,7 @@ func (p *Manager) Get(dst string) (rwc io.ReadWriteCloser, err error) {
 
 	conn, err := p.connFunc(dst)
 	if err != nil {
+		err = fmt.Errorf("connect to server failed: %w", err)
 		return
 	}
 
@@ -75,13 +76,15 @@ func (p *Manager) Get(dst string) (rwc io.ReadWriteCloser, err error) {
 		first = []byte{0x01}
 	}
 
-	if _, err = conn.Write(first); err != nil {
+	_, err = conn.Write(first)
+	if err != nil {
 		err = fmt.Errorf("send route pkg failed: %w", err)
 		return
 	}
 	res := make([]byte, 1)
 	read, err := conn.Read(res)
 	if err != nil {
+		err = fmt.Errorf("read route pkg failed: %w", err)
 		return
 	}
 	if read != 1 || res[0] != 1 {
@@ -97,7 +100,7 @@ func (p *Manager) Get(dst string) (rwc io.ReadWriteCloser, err error) {
 	return
 }
 
-func (p *Manager) ExecFunc(name string, args ...map[string]any) (resp *server.FuncCallResponse, err error) {
+func (p *ConnectionManager) ExecFunc(name string, args ...map[string]any) (resp *server.FuncCallResponse, err error) {
 	p.execMu.Lock()
 	defer p.execMu.Unlock()
 

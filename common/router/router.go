@@ -83,40 +83,74 @@ func (r *router) Restore(ctx context.Context, data []byte) (err error) {
 	if err != nil {
 		return err
 	}
-	// 合并路由表，不覆盖已有的路由
-	r.mergeTrieNodes(ctx, r.table.root, newRoot)
+	// 同步路由表：合并data中的路由，删除目标中不存在于data的路由
+	r.syncTrieNodes(ctx, r.table.root, newRoot)
 	return nil
 }
 
-// mergeTrieNodes 合并两个TrieNode，不覆盖已存在的叶子节点
-func (r *router) mergeTrieNodes(ctx context.Context, dest, src *TrieNode) {
-	if src == nil {
+// syncTrieNodes 同步两个TrieNode：
+// 1. 添加src中存在但dest中不存在的路由
+// 2. 删除dest中存在但src中不存在的路由
+// 3. 保留dest中已有的路由（不覆盖target）
+func (r *router) syncTrieNodes(ctx context.Context, dest, src *TrieNode) {
+	if dest == nil {
 		return
 	}
 
-	// 如果源节点是叶子节点且目标节点不是叶子节点，则复制
-	if src.isLeaf && !dest.isLeaf {
+	// 处理当前节点
+	if dest.isLeaf {
+		if src == nil || !src.isLeaf {
+			// dest是叶子节点但src不是或src不存在，删除dest中的路由
+			r.logger.Infof(ctx, "Route deleted: target=%v", dest.target)
+			dest.isLeaf = false
+			dest.target = nil
+		}
+		// 如果dest和src都是叶子节点，保留dest的target（不覆盖）
+	} else if src != nil && src.isLeaf && !dest.isLeaf {
+		// src是叶子节点但dest不是，添加路由
 		dest.isLeaf = src.isLeaf
 		dest.target = src.target
 		r.logger.Infof(ctx, "Route merged: target=%v", src.target)
-	} else if src.isLeaf && dest.isLeaf {
-		// 目标节点已存在路由，跳过处理
-		r.logger.Info(ctx, "Route skipped: existing route preserved")
 	}
 
-	// 递归合并子节点
-	if src.zero != nil {
+	// 递归处理子节点
+	// 处理zero分支
+	if src != nil && src.zero != nil {
+		// src有zero分支，递归同步
 		if dest.zero == nil {
 			dest.zero = &TrieNode{}
 		}
-		r.mergeTrieNodes(ctx, dest.zero, src.zero)
+		r.syncTrieNodes(ctx, dest.zero, src.zero)
+	} else if dest.zero != nil {
+		// src没有zero分支但dest有，递归删除dest.zero中的路由
+		r.cleanTrieNodes(ctx, dest.zero)
 	}
-	if src.one != nil {
+
+	// 处理one分支
+	if src != nil && src.one != nil {
+		// src有one分支，递归同步
 		if dest.one == nil {
 			dest.one = &TrieNode{}
 		}
-		r.mergeTrieNodes(ctx, dest.one, src.one)
+		r.syncTrieNodes(ctx, dest.one, src.one)
+	} else if dest.one != nil {
+		// src没有one分支但dest有，递归删除dest.one中的路由
+		r.cleanTrieNodes(ctx, dest.one)
 	}
+}
+
+// cleanTrieNodes 递归删除TrieNode中的所有路由（清除叶子节点标记和target）
+func (r *router) cleanTrieNodes(ctx context.Context, node *TrieNode) {
+	if node == nil {
+		return
+	}
+	if node.isLeaf {
+		r.logger.Infof(ctx, "Route deleted: target=%v", node.target)
+		node.isLeaf = false
+		node.target = nil
+	}
+	r.cleanTrieNodes(ctx, node.zero)
+	r.cleanTrieNodes(ctx, node.one)
 }
 
 func (r *router) Delete(ctx context.Context, addr string) (err error) {

@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 
-	"go-vnet/server/transport"
+	"go-vnet/server/connection"
 )
 
 type (
@@ -43,7 +43,9 @@ func (s *Server) processFuncCallLoop(ctx context.Context) {
 				continue
 			}
 			respBytes, _ := json.Marshal(resp)
-			_, _ = ev.Info.RWC.Write(respBytes)
+			if conn := ev.Info.GetRWC(); conn != nil {
+				_, _ = conn.Write(respBytes)
+			}
 		case <-s.sig:
 			s.logger.Infof(ctx, "server closed")
 			for _, server := range s.transportServers {
@@ -56,7 +58,7 @@ func (s *Server) processFuncCallLoop(ctx context.Context) {
 	}
 }
 
-func (s *Server) handleFuncCall(ctx context.Context, ci transport.ConnectionInfo, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
+func (s *Server) handleFuncCall(ctx context.Context, ci *connection.Info, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
 	switch req.FuncName {
 	case FuncNamePing:
 		return &FuncCallResponse{Code: 0, Data: ci.Network.Router().Hash()}, nil
