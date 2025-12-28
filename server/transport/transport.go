@@ -92,7 +92,10 @@ func (s *transportServer) handleConn(ctx context.Context, conn io.ReadWriteClose
 		first     []byte
 		writeBack byte = 0
 		isManager bool
+		cancel    context.CancelFunc
 	)
+
+	ctx, cancel = context.WithCancel(ctx)
 
 	defer func() {
 		if isManager {
@@ -101,6 +104,7 @@ func (s *transportServer) handleConn(ctx context.Context, conn io.ReadWriteClose
 		if conn != nil {
 			_ = conn.Close()
 		}
+		cancel()
 	}()
 
 	go func() {
@@ -161,15 +165,17 @@ func (s *transportServer) handleConn(ctx context.Context, conn io.ReadWriteClose
 	}
 
 	// block and redirect flow to s.dst
-	if _, err = s.handleFlowProxy(fmt.Sprintf("%s -> %s", info.Src, to), dst, conn, make([]byte, s.MTU)); err != nil {
+	if _, err = s.handleFlowProxy(ctx, fmt.Sprintf("%s -> %s", info.Src, to), dst, conn, make([]byte, s.MTU)); err != nil {
 		s.logger.Errorf(ctx, "handle flow stopped. src=%v error: %s", info.Src, err.Error())
 		return
 	}
 }
 
-func (s *transportServer) handleFlowProxy(name string, dst io.Writer, src io.Reader, buf []byte) (written int64, err error) {
+func (s *transportServer) handleFlowProxy(ctx context.Context, name string, dst io.Writer, src io.Reader, buf []byte) (written int64, err error) {
 	for {
 		select {
+		case <-ctx.Done():
+			return written, ctx.Err()
 		case <-s.sig:
 			s.logger.Infof(s.ctx, "proxy tunnel closed: %s", name)
 			return
