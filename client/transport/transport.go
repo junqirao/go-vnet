@@ -13,6 +13,8 @@ type (
 	Transport interface {
 		Connect(dst string) (io.ReadWriteCloser, error)
 		JoinedNetwork() JoinNetworkResponse
+		// Accept only for quic or quic-like transport
+		Accept(ctx context.Context) (wc io.ReadWriteCloser, err error)
 	}
 	JoinNetworkResponse struct {
 		Device device.Config `json:"device"`

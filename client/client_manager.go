@@ -8,6 +8,7 @@ import (
 )
 
 func (c *Client) startManager() {
+	c.logger.Infof(c.ctx, "manager started.")
 	for {
 		select {
 		case <-c.sig:

@@ -87,6 +87,7 @@ func (w *wireGuardDevice) Read(packet []byte) (n int, err error) {
 	buf[0] = packet
 
 	defer func() {
+		buf[0] = nil
 		sizes[0] = 0
 		w.bufferPool.Put(buf)
 		w.sizePool.Put(sizes)
@@ -104,7 +105,10 @@ func (w *wireGuardDevice) Read(packet []byte) (n int, err error) {
 func (w *wireGuardDevice) Write(packet []byte) (n int, err error) {
 	// Get a buffer from the pool
 	buf := w.bufferPool.Get().([][]byte)
-	defer w.bufferPool.Put(buf)
+	defer func() {
+		buf[0] = nil
+		w.bufferPool.Put(buf)
+	}()
 	buf[0] = packet
 	// Write to the device
 	n, err = w.device.Write(buf, 0)

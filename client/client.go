@@ -47,6 +47,9 @@ type Client struct {
 
 	// src
 	src string
+
+	// transport
+	transport transport.Transport
 }
 
 func NewClient(cfg Config) (c *Client, err error) {
@@ -73,19 +76,22 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	c.ctx = ctx
 	// 1. connect to server
 	c.logger.Infof(ctx, "connect to server: %s", c.cfg.Server)
-	t, err := transport.NewTransport(ctx,
-		transport.NewConfig(
-			transport.WithInsecureSkipVerify(c.cfg.InsecureSkipVerify),
-			transport.WithAddress(c.cfg.Server),
-			transport.WithAuthenticationPayload(map[string]any{
-				"network_id": c.cfg.NetworkId,
-			}),
-		),
-		c.auth,
+	transportConfig := transport.NewConfig(
+		transport.WithInsecureSkipVerify(c.cfg.InsecureSkipVerify),
+		transport.WithAddress(c.cfg.Server),
+		transport.WithAuthenticationPayload(map[string]any{
+			"network_id": c.cfg.NetworkId,
+		}),
 	)
+	t, err := transport.NewTransport(ctx, transportConfig, c.auth)
 	if err != nil {
 		err = fmt.Errorf("failed to connect to server: %w", err)
 		return
+	}
+	c.transport = t
+
+	if transportConfig.Type == transport.TypeQuic {
+		go c.handleServerSideOpenStream()
 	}
 
 	// 2. setup device
@@ -111,7 +117,14 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	}
 
 	c.cm = NewManager(ctx, func(dst string) (io.ReadWriteCloser, error) {
-		return t.Connect(dst)
+		conn, err := t.Connect(dst)
+		if err != nil {
+			return nil, err
+		}
+		if dst != "" {
+			go c.handleRX(conn)
+		}
+		return conn, nil
 	})
 	c.cm.SetLogger(c.logger)
 
@@ -198,6 +211,37 @@ func (c *Client) handleTX(buf []byte, n int) {
 	c.logger.Errorf(c.ctx, "failed to write to %s, retry count exceeded", dst)
 }
 
+func (c *Client) handleRX(rwc io.ReadWriteCloser) {
+	proxy := func() (err error) {
+		buf := c.bufPool.Get().([]byte)
+		defer func() {
+			c.bufPool.Put(buf[:0])
+		}()
+		n, err := rwc.Read(buf)
+		if err != nil {
+			c.logger.Errorf(c.ctx, "failed to read rx flow: %v", err)
+			return
+		}
+		if n == 0 {
+			return
+		}
+		if _, err = c.dev.Write(buf[:n]); err != nil {
+			c.logger.Errorf(c.ctx, "failed to write to device: %v", err)
+		}
+		return
+	}
+	for {
+		select {
+		case <-c.sig:
+			return
+		default:
+		}
+		if err := proxy(); err != nil {
+			return
+		}
+	}
+}
+
 func (c *Client) Close() error {
 	close(c.sig)
 	return nil
@@ -216,4 +260,21 @@ func (c *Client) getConnAndRegisterRouter(dst string) (rwc io.ReadWriteCloser, e
 	}
 	c.logger.Infof(c.ctx, "register router: %v", dst)
 	return
+}
+
+func (c *Client) handleServerSideOpenStream() {
+	c.logger.Infof(c.ctx, "handle server side open stream")
+	for {
+		select {
+		case <-c.sig:
+			return
+		default:
+		}
+		conn, err := c.transport.Accept(context.Background())
+		if err != nil {
+			c.logger.Errorf(c.ctx, "failed to accept connection: %v", err)
+			return
+		}
+		go c.handleRX(conn)
+	}
 }

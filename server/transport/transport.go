@@ -178,6 +178,7 @@ func (s *transportServer) handleFlowProxy(name string, dst io.Writer, src io.Rea
 		nr, er := src.Read(buf)
 		if nr > 0 {
 			nw, ew := dst.Write(buf[0:nr])
+			fmt.Printf("nw=%v,ew=%v,data=%v\n", nw, ew, buf[0:nr])
 			if nw < 0 || nr < nw {
 				nw = 0
 				if ew == nil {

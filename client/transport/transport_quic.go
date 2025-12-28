@@ -117,6 +117,10 @@ func (c *quicTransport) JoinedNetwork() JoinNetworkResponse {
 	return c.joined
 }
 
+func (c *quicTransport) Accept(ctx context.Context) (wc io.ReadWriteCloser, err error) {
+	return c.conn.AcceptStream(ctx)
+}
+
 func (s *streamWrapper) Close() error {
 	return s.closeCb()
 }
