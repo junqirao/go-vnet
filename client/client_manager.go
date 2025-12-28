@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/base64"
+	"strings"
 	"time"
 
 	"go-vnet/server"
@@ -65,5 +66,52 @@ func (c *Client) SyncRouter() (err error) {
 		c.logger.Infof(c.ctx, "router synced from server, data: %d bytes, length: %d",
 			len(data), c.router.Len())
 	}
+
+	// compare router and cm make all connection established
+	curr := toStructMap(c.router.List(), func(v string) string {
+		part := strings.Split(v, "/")
+		if len(part) > 0 {
+			return part[0]
+		}
+		return v
+	})
+	old := toStructMap(c.cm.Keys(), func(v string) string {
+		part := strings.Split(v, "/")
+		if len(part) > 0 {
+			return part[0]
+		}
+		return v
+	})
+
+	for k := range curr {
+		if k == c.src || k == "" {
+			continue
+		}
+		if _, ok := old[k]; !ok {
+			if _, err = c.cm.Get(k); err != nil {
+				c.logger.Errorf(c.ctx, "failed to establish connection for %s: %s", k, err.Error())
+				continue
+			}
+			c.logger.Infof(c.ctx, "connection for %s is established.", k)
+		}
+	}
+	for k := range old {
+		if k == c.src || k == "" {
+			continue
+		}
+		if _, ok := curr[k]; !ok {
+			c.logger.Infof(c.ctx, "connection for %s is closed.", k)
+			c.cm.Del(k)
+		}
+	}
+
 	return
+}
+
+func toStructMap(s []string, parse func(v string) string) map[string]struct{} {
+	m := make(map[string]struct{})
+	for _, v := range s {
+		m[parse(v)] = struct{}{}
+	}
+	return m
 }

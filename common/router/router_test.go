@@ -751,3 +751,281 @@ func TestRouteTable_Len(t *testing.T) {
 		t.Errorf("Expected route table length to be 3, got %d", table.Len())
 	}
 }
+
+// 测试List方法 - 空路由表
+func TestRouter_List_Empty(t *testing.T) {
+	r := NewRouter()
+	result := r.List()
+	if result == nil {
+		t.Error("Expected non-nil slice for empty router")
+	}
+	if len(result) != 0 {
+		t.Errorf("Expected empty list length to be 0, got %d", len(result))
+	}
+}
+
+// 测试List方法 - 单条路由
+func TestRouter_List_Single(t *testing.T) {
+	r := NewRouter()
+	_ = r.Register(nil, "192.168.1.0/24", "target-1")
+
+	result := r.List()
+	if len(result) != 1 {
+		t.Errorf("Expected list length to be 1, got %d", len(result))
+	}
+	if result[0] != "192.168.1.0/24" {
+		t.Errorf("Expected route '192.168.1.0/24', got '%s'", result[0])
+	}
+}
+
+// 测试List方法 - 多条路由
+func TestRouter_List_Multiple(t *testing.T) {
+	r := NewRouter()
+	expectedRoutes := []string{
+		"192.168.1.0/24",
+		"192.168.2.0/24",
+		"192.168.3.0/24",
+		"10.0.1.0/24",
+		"10.0.2.0/24",
+	}
+
+	for _, route := range expectedRoutes {
+		_ = r.Register(nil, route, "target")
+	}
+
+	result := r.List()
+	if len(result) != len(expectedRoutes) {
+		t.Errorf("Expected list length to be %d, got %d", len(expectedRoutes), len(result))
+	}
+
+	// 验证所有路由都在结果中
+	resultMap := make(map[string]bool)
+	for _, route := range result {
+		resultMap[route] = true
+	}
+	for _, expected := range expectedRoutes {
+		if !resultMap[expected] {
+			t.Errorf("Expected route '%s' not found in result", expected)
+		}
+	}
+}
+
+// 测试List方法 - 不同路由数量
+func TestRouter_List_Scales(t *testing.T) {
+	testCases := []struct {
+		name       string
+		routeCount int
+	}{
+		{"10 routes", 10},
+		{"50 routes", 50},
+		{"100 routes", 100},
+		{"254 routes", 254},
+		{"512 routes", 512},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := NewRouter()
+			for i := 0; i < tc.routeCount; i++ {
+				octet1 := 10 + i/256
+				octet2 := i % 256
+				cidr := fmt.Sprintf("%d.%d.0.0/16", octet1, octet2)
+				_ = r.Register(nil, cidr, fmt.Sprintf("conn-%d", i))
+			}
+
+			result := r.List()
+			if len(result) != tc.routeCount {
+				t.Errorf("Expected list length to be %d, got %d", tc.routeCount, len(result))
+			}
+		})
+	}
+}
+
+// 测试List方法 - 不同前缀长度
+func TestRouter_List_DifferentPrefixLengths(t *testing.T) {
+	r := NewRouter()
+	routes := []string{
+		"0.0.0.0/0",
+		"10.0.0.0/8",
+		"192.168.0.0/16",
+		"192.168.1.0/24",
+		"192.168.1.1/32",
+	}
+
+	for _, route := range routes {
+		_ = r.Register(nil, route, "target")
+	}
+
+	result := r.List()
+	if len(result) != len(routes) {
+		t.Errorf("Expected list length to be %d, got %d", len(routes), len(result))
+	}
+
+	// 验证所有路由都在结果中
+	resultMap := make(map[string]bool)
+	for _, route := range result {
+		resultMap[route] = true
+	}
+	for _, expected := range routes {
+		if !resultMap[expected] {
+			t.Errorf("Expected route '%s' not found in result", expected)
+		}
+	}
+}
+
+// 测试List方法 - AddRoute后更新
+func TestRouter_List_AddRoute(t *testing.T) {
+	r := NewRouter()
+	_ = r.Register(nil, "192.168.1.0/24", "target-1")
+
+	result1 := r.List()
+	if len(result1) != 1 {
+		t.Errorf("Expected list length to be 1, got %d", len(result1))
+	}
+
+	_ = r.Register(nil, "192.168.2.0/24", "target-2")
+	result2 := r.List()
+	if len(result2) != 2 {
+		t.Errorf("Expected list length to be 2, got %d", len(result2))
+	}
+}
+
+// 测试List方法 - DeleteRoute后更新
+func TestRouter_List_DeleteRoute(t *testing.T) {
+	r := NewRouter()
+	routes := []string{
+		"192.168.1.0/24",
+		"192.168.2.0/24",
+		"192.168.3.0/24",
+	}
+
+	for _, route := range routes {
+		_ = r.Register(nil, route, "target")
+	}
+
+	result1 := r.List()
+	if len(result1) != 3 {
+		t.Errorf("Expected list length to be 3, got %d", len(result1))
+	}
+
+	_ = r.Delete(nil, "192.168.2.0/24")
+	result2 := r.List()
+	if len(result2) != 2 {
+		t.Errorf("Expected list length to be 2 after delete, got %d", len(result2))
+	}
+
+	// 验证删除的路由不在结果中
+	resultMap := make(map[string]bool)
+	for _, route := range result2 {
+		resultMap[route] = true
+	}
+	if resultMap["192.168.2.0/24"] {
+		t.Error("Deleted route '192.168.2.0/24' should not be in result")
+	}
+}
+
+// 测试List方法 - Restore后合并路由
+func TestRouter_List_Restore(t *testing.T) {
+	r := NewRouter()
+	_ = r.Register(nil, "192.168.1.0/24", "target-1")
+	_ = r.Register(nil, "192.168.2.0/24", "target-2")
+
+	data := r.Dump()
+	initialLen := r.Len()
+
+	// Restore到同一个路由器（合并模式，不覆盖已有路由）
+	_ = r.Restore(nil, data)
+	result := r.List()
+	if len(result) != initialLen {
+		t.Errorf("Expected list length to remain %d after restore, got %d", initialLen, len(result))
+	}
+}
+
+// 测试List方法 - Restore到新路由器
+func TestRouter_List_RestoreToNewRouter(t *testing.T) {
+	r1 := NewRouter()
+	for i := 0; i < 100; i++ {
+		cidr := fmt.Sprintf("192.168.%d.0/24", i)
+		conn := fmt.Sprintf("conn-%d", i)
+		_ = r1.Register(nil, cidr, conn)
+	}
+
+	data := r1.Dump()
+	originalList := r1.List()
+
+	// 从数据恢复到新路由器（target不序列化，只恢复结构）
+	r2 := NewRouter(data)
+	result := r2.List()
+
+	// 路由条数应该相同
+	if len(result) != len(originalList) {
+		t.Errorf("Expected new router list length to be %d, got %d", len(originalList), len(result))
+	}
+
+	// 验证所有CIDR都在结果中
+	resultMap := make(map[string]bool)
+	for _, route := range result {
+		resultMap[route] = true
+	}
+	for _, expected := range originalList {
+		if !resultMap[expected] {
+			t.Errorf("Expected route '%s' not found in result", expected)
+		}
+	}
+}
+
+// 测试List方法的性能
+func BenchmarkRouter_List(b *testing.B) {
+	testCases := []struct {
+		name       string
+		routeCount int
+	}{
+		{"10 routes", 10},
+		{"50 routes", 50},
+		{"100 routes", 100},
+		{"254 routes", 254},
+		{"1000 routes", 1000},
+		{"5000 routes", 5000},
+	}
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			r := NewRouter()
+			for i := 0; i < tc.routeCount; i++ {
+				cidr := fmt.Sprintf("192.168.%d.0/24", i%256)
+				conn := fmt.Sprintf("conn-%d", i)
+				_ = r.Register(nil, cidr, conn)
+			}
+
+			b.ResetTimer()
+			b.ReportAllocs()
+
+			for i := 0; i < b.N; i++ {
+				_ = r.List()
+			}
+		})
+	}
+}
+
+// 测试RouteTable的List方法
+func TestRouteTable_List(t *testing.T) {
+	table := NewRouteTable()
+	if len(table.List()) != 0 {
+		t.Errorf("Expected empty route table list length to be 0, got %d", len(table.List()))
+	}
+
+	_ = table.AddRoute(nil, "192.168.1.0/24", "target-1")
+	result := table.List()
+	if len(result) != 1 {
+		t.Errorf("Expected route table list length to be 1, got %d", len(result))
+	}
+	if result[0] != "192.168.1.0/24" {
+		t.Errorf("Expected route '192.168.1.0/24', got '%s'", result[0])
+	}
+
+	_ = table.AddRoute(nil, "192.168.2.0/24", "target-2")
+	_ = table.AddRoute(nil, "192.168.3.0/24", "target-3")
+	if len(table.List()) != 3 {
+		t.Errorf("Expected route table list length to be 3, got %d", len(table.List()))
+	}
+}

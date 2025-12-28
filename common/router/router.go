@@ -2,7 +2,6 @@ package router
 
 import (
 	"context"
-	"io"
 
 	"go-vnet/common/logger"
 )
@@ -10,7 +9,6 @@ import (
 type (
 	Router interface {
 		Register(ctx context.Context, addr string, conn any) (err error)
-		Route(ctx context.Context, r io.ReadWriteCloser) (dst io.Writer, err error)
 		RouteString(dst string) (v any, ok bool)
 		Dump() []byte
 		Restore(ctx context.Context, data []byte) (err error)
@@ -19,6 +17,7 @@ type (
 		SetLogger(logger logger.Logger)
 		Len() int
 		Print() string
+		List() []string
 	}
 	router struct {
 		table  *RouteTable
@@ -45,26 +44,6 @@ func NewRouter(data ...[]byte) Router {
 func (r *router) Register(ctx context.Context, addr string, conn any) (err error) {
 	r.logger.Infof(ctx, "register route: addr=%s", addr)
 	return r.table.AddRoute(ctx, addr, conn)
-}
-
-func (r *router) Route(_ context.Context, src io.ReadWriteCloser) (dst io.Writer, err error) {
-	buf := make([]byte, 15)
-	n, err := src.Read(buf)
-	if err != nil {
-		return
-	}
-	res, ok := r.table.Lookup(string(buf[:n]))
-	if ok {
-		if d, ok := res.(io.Writer); ok {
-			dst = d
-		}
-	}
-	var writeBack byte = 0
-	if ok {
-		writeBack = 1
-	}
-	_, err = src.Write([]byte{writeBack})
-	return
 }
 
 func (r *router) RouteString(dst string) (v any, ok bool) {
@@ -172,4 +151,8 @@ func (r *router) Len() int {
 
 func (r *router) Print() string {
 	return r.table.Print()
+}
+
+func (r *router) List() []string {
+	return r.table.List()
 }

@@ -39,6 +39,9 @@ func (p *ConnectionManager) SetLogger(l logger.Logger) {
 func (p *ConnectionManager) Del(dst string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if w, ok := p.p[dst]; ok {
+		_ = w.Close()
+	}
 	delete(p.p, dst)
 }
 
@@ -151,4 +154,14 @@ func (p *ConnectionManager) ExecFunc(name string, args ...map[string]any) (resp 
 		return
 	}
 	return
+}
+
+func (p *ConnectionManager) Keys() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	keys := make([]string, 0, len(p.p))
+	for k := range p.p {
+		keys = append(keys, k)
+	}
+	return keys
 }

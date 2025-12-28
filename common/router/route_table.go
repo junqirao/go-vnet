@@ -490,3 +490,15 @@ func formatRoutes(routes []routeEntry) string {
 	}
 	return sb.String()
 }
+
+// List 返回路由表中所有路由条目的 CIDR 字符串列表
+func (rt *RouteTable) List() []string {
+	var routes []routeEntry
+	collectRoutes(rt.root, "", 0, &routes)
+
+	result := make([]string, len(routes))
+	for i, route := range routes {
+		result[i] = route.cidr
+	}
+	return result
+}

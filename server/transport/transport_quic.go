@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"io"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -87,15 +86,6 @@ func (s *quicServer) handleConnection(ctx context.Context, conn *quic.Conn) {
 		s.logger.Infof(conn.Context(), "connection closed")
 	}()
 
-	getConn := func() io.ReadWriteCloser {
-		stream, err := conn.OpenStream()
-		if err != nil {
-			s.logger.Errorf(ctx, "open stream error: %s", err.Error())
-			return nil
-		}
-		return stream
-	}
-
 	for {
 		select {
 		case <-s.sig:
@@ -110,7 +100,6 @@ func (s *quicServer) handleConnection(ctx context.Context, conn *quic.Conn) {
 			return
 		}
 
-		info.GetRWCFunc = getConn
 		// clone
 		info := info.Clone()
 		info.SetRWC(stream)

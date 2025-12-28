@@ -9,22 +9,14 @@ import (
 
 type (
 	Info struct {
-		Network    *network.Network
-		Device     *device.Device
-		Src        string
-		rwc        io.ReadWriteCloser
-		GetRWCFunc func() io.ReadWriteCloser
+		Network *network.Network
+		Device  *device.Device
+		Src     string
+		rwc     io.ReadWriteCloser
 	}
 )
 
 func (c *Info) GetRWC() io.ReadWriteCloser {
-	if c.rwc != nil {
-		return c.rwc
-	}
-	if c.GetRWCFunc == nil {
-		return nil
-	}
-	c.rwc = c.GetRWCFunc()
 	return c.rwc
 }
 
@@ -41,9 +33,8 @@ func (c *Info) SetRWC(rwc io.ReadWriteCloser) {
 
 func (c *Info) Clone() *Info {
 	return &Info{
-		Network:    c.Network,
-		Device:     c.Device,
-		Src:        c.Src,
-		GetRWCFunc: c.GetRWCFunc,
+		Network: c.Network,
+		Device:  c.Device,
+		Src:     c.Src,
 	}
 }
