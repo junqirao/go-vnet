@@ -11,7 +11,6 @@ import (
 type (
 	Network struct {
 		Config
-		// todo 分布式支持
 		router          router.Router
 		pool            *addresses.IPAllocator
 		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *device2.Device, err error)
