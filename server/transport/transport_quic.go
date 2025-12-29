@@ -99,6 +99,12 @@ func (s *quicServer) handleConnection(ctx context.Context, conn *quic.Conn) {
 			s.logger.Errorf(ctx, "accept stream error: %s", err.Error())
 			return
 		}
+		// use first stream as default transport connection
+		if info.GetRWC() == nil {
+			info.SetRWC(stream)
+			s.logger.Infof(ctx, "default transport connection set: %v", stream.StreamID())
+			continue
+		}
 
 		// clone
 		info := info.Clone()

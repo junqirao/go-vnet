@@ -45,7 +45,7 @@ func (p *ConnectionManager) Del(dst string) {
 	delete(p.p, dst)
 }
 
-func (p *ConnectionManager) Get(dst string) (rwc io.ReadWriteCloser, err error) {
+func (p *ConnectionManager) Get(dst string, noHandshake ...bool) (rwc io.ReadWriteCloser, err error) {
 	defer func() {
 		if err != nil {
 			p.mu.Lock()
@@ -73,6 +73,15 @@ func (p *ConnectionManager) Get(dst string) (rwc io.ReadWriteCloser, err error) 
 		err = fmt.Errorf("connect to server failed: %w", err)
 		return
 	}
+	defer func() {
+		if err == nil {
+			p.p[dst] = conn
+			rwc = conn
+		}
+	}()
+	if len(noHandshake) > 0 && noHandshake[0] {
+		return
+	}
 
 	first := []byte(dst)
 	if dst == "" {
@@ -98,8 +107,6 @@ func (p *ConnectionManager) Get(dst string) (rwc io.ReadWriteCloser, err error) 
 		}
 		return
 	}
-	p.p[dst] = conn
-	rwc = conn
 	return
 }
 

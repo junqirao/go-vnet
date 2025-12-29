@@ -128,6 +128,13 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	})
 	c.cm.SetLogger(c.logger)
 
+	// create default connection
+	defConn, err := c.cm.Get(c.src, true)
+	if err != nil {
+		return
+	}
+	go c.handleRX(defConn)
+
 	// 3. start connection manager
 	go c.startManager()
 
