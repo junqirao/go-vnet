@@ -1,10 +1,12 @@
 package client
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -116,6 +118,7 @@ func (c *QuicClient) Dial(ctx context.Context) (session *Session, err error) {
 
 	c.manager = NewManager(session)
 	go c.cleanupIdleStreams()
+	go c.acceptStreamLoop()
 	return
 }
 
@@ -182,4 +185,32 @@ func (c *QuicClient) SendToServer(dst string, buf []byte, n int) (err error) {
 	wrapper.bytesSent += uint64(n)
 	_, err = wrapper.stream.Write(buf[:n])
 	return err
+}
+
+func (c *QuicClient) acceptStreamLoop() {
+	for {
+		select {
+		case <-c.sig:
+			return
+		case <-c.ctx.Done():
+			return
+		default:
+		}
+		stream, err := c.session.conn.AcceptStream(context.Background())
+		if err != nil {
+			return
+		}
+		go c.handleStream(stream)
+	}
+}
+
+func (c *QuicClient) handleStream(stream *quic.Stream) {
+	defer func() {
+		_ = stream.Close()
+	}()
+
+	src := bufio.NewReader(stream)
+	dst := bufio.NewWriter(c.dev)
+	written, err := io.Copy(dst, src)
+	c.logger.Infof(c.ctx, "handle stream stopped: %d bytes written, err=%v", written, err)
 }
