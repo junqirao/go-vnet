@@ -133,7 +133,7 @@ func (s *transportServer) handleConn(ctx context.Context, conn io.ReadWriteClose
 		writeBack = 1
 		isManager = true
 	} else {
-		res, ok := info.Network.Router().RouteString(from)
+		res, ok := info.Network.Router().Route(from)
 		if ok {
 			if ci, ok := res.(*connection.Info); ok {
 				to = ci.Src

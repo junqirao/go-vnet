@@ -174,7 +174,7 @@ func (c *Client) handleTX(buf []byte, n int) {
 		return
 	}
 
-	v, ok := c.router.RouteString(dst)
+	v, ok := c.router.Route(dst)
 	if !ok {
 		// drop
 		return

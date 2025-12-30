@@ -93,10 +93,10 @@ func TestRouter_RestoreFromDump(t *testing.T) {
 				cidr := fmt.Sprintf("%d.168.%d.0/24", octet1, octet2)
 				// 提取 IP 进行测试 (去掉掩码)
 				ip := cidr[:strings.Index(cidr, "/")]
-				v, ok := restored.RouteString(ip)
+				v, ok := restored.Route(ip)
 				// 由于target不序列化，target应该为nil，但isLeaf应该为true
 				if !ok {
-					t.Errorf("RouteString failed for %s", ip)
+					t.Errorf("Route failed for %s", ip)
 					continue
 				}
 				// target应该是nil，因为只同步结构
@@ -191,9 +191,9 @@ func TestRouter_Restore(t *testing.T) {
 			for cidr, expectedConn := range routes {
 				// 提取 IP 进行测试 (去掉掩码)
 				ip := cidr[:strings.Index(cidr, "/")]
-				v, ok := r.RouteString(ip)
+				v, ok := r.Route(ip)
 				if !ok {
-					t.Errorf("RouteString failed for %s", ip)
+					t.Errorf("Route failed for %s", ip)
 					continue
 				}
 				// 在合并模式下，原有的target应该保持不变
@@ -242,26 +242,26 @@ func TestRouter_Restore_Merge(t *testing.T) {
 	}
 
 	// 验证路由1: 应该保持原有target
-	v, ok := router1.RouteString("10.0.1.1")
+	v, ok := router1.Route("10.0.1.1")
 	if !ok {
-		t.Errorf("RouteString failed for 10.0.1.1")
+		t.Errorf("Route failed for 10.0.1.1")
 	} else if v != "target-1" {
 		t.Errorf("Expected target-1, got %v for 10.0.1.1", v)
 	}
 
 	// 验证路由2: 应该保持原有target（不被覆盖）
-	v, ok = router1.RouteString("10.0.2.1")
+	v, ok = router1.Route("10.0.2.1")
 	if !ok {
-		t.Errorf("RouteString failed for 10.0.2.1")
+		t.Errorf("Route failed for 10.0.2.1")
 	} else if v != "target-2" {
 		t.Errorf("Expected target-2 (not overridden), got %v for 10.0.2.1", v)
 	}
 
 	// 验证路由3: 应该新增（从router2获取）
 	// 注意：由于只同步结构不同步target，target应该是nil
-	v, ok = router1.RouteString("10.0.3.1")
+	v, ok = router1.Route("10.0.3.1")
 	if !ok {
-		t.Errorf("RouteString failed for 10.0.3.1")
+		t.Errorf("Route failed for 10.0.3.1")
 	}
 	// target应该为nil，因为只同步结构
 	if v != nil {
@@ -283,7 +283,7 @@ func TestRouter_Restore_Empty(t *testing.T) {
 		t.Fatalf("Restore with nil data failed: %v", err)
 	}
 	// 验证原有路由仍然存在
-	v, ok := r.RouteString("10.0.1.1")
+	v, ok := r.Route("10.0.1.1")
 	if !ok || v != "target-1" {
 		t.Error("Existing route lost after Restore with nil")
 	}
@@ -293,7 +293,7 @@ func TestRouter_Restore_Empty(t *testing.T) {
 		t.Fatalf("Restore with empty data failed: %v", err)
 	}
 	// 验证原有路由仍然存在
-	v, ok = r.RouteString("10.0.1.1")
+	v, ok = r.Route("10.0.1.1")
 	if !ok || v != "target-1" {
 		t.Error("Existing route lost after Restore with empty data")
 	}

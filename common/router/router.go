@@ -9,7 +9,7 @@ import (
 type (
 	Router interface {
 		Register(ctx context.Context, addr string, conn any) (err error)
-		RouteString(dst string) (v any, ok bool)
+		Route(dst string) (v any, ok bool)
 		Dump() []byte
 		Restore(ctx context.Context, data []byte) (err error)
 		Delete(ctx context.Context, addr string) (err error)
@@ -46,7 +46,7 @@ func (r *router) Register(ctx context.Context, addr string, conn any) (err error
 	return r.table.AddRoute(ctx, addr, conn)
 }
 
-func (r *router) RouteString(dst string) (v any, ok bool) {
+func (r *router) Route(dst string) (v any, ok bool) {
 	return r.table.Lookup(dst)
 }
 

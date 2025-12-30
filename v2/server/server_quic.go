@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -172,6 +173,7 @@ func (s *QuicServer) registerConn(ctx context.Context, conn *quic.Conn) (session
 	session = &QuicSession{
 		Session: &Session{
 			SendReceiver:     &quicSendReceiver{conn},
+			Type:             TypeQuic,
 			Id:               "todo-session-id",
 			Network:          nwk,
 			DispatchedDevice: dev,
@@ -229,7 +231,66 @@ func (s *QuicServer) acceptStreamLoop(ctx context.Context, session *QuicSession)
 }
 
 func (s *QuicServer) handleStreamProxy(ctx context.Context, session *QuicSession, stream *quic.Stream) {
+	// get dst ip by first packet, 10s timeout
+	var (
+		buf   = make([]byte, 15)
+		ch    = make(chan []byte)
+		first []byte
+	)
 
+	go func() {
+		n, err := stream.Read(buf)
+		if err != nil {
+			return
+		}
+		ch <- buf[:n]
+	}()
+
+	timer := time.NewTimer(time.Second * 10)
+	select {
+	case <-timer.C:
+		s.logger.Errorf(ctx, "read first pkg timeout. src=%v", session.IP)
+		return
+	case first = <-ch:
+	}
+
+	var (
+		dst = string(first)
+		src = session.IP
+	)
+
+	v, ok := session.Network.Router().Route(dst)
+	if !ok {
+		s.logger.Errorf(ctx, "route not found: dst=%v", dst)
+		return
+	}
+	dstSession, ok := v.(*QuicSession)
+	if !ok {
+		s.logger.Errorf(ctx, "error session type: dst=%v", dst)
+		return
+	}
+	dstStream, err := dstSession.conn.OpenStreamSync(ctx)
+	if err != nil {
+		s.logger.Errorf(ctx, "open stream error: dst=%v", dst)
+		return
+	}
+
+	var (
+		written int64
+		name    = fmt.Sprintf("%s->%s", src, dst)
+	)
+
+	defer func() {
+		_ = dstStream.Close()
+		_ = stream.Close()
+		s.logger.Infof(ctx, "proxy stopped: %s,written=%v", name, written)
+	}()
+
+	written, err = s.proxy(ctx, name, dstStream, stream)
+	if err != nil {
+		s.logger.Errorf(ctx, "proxy error: %s ,err=%v", name, err.Error())
+		return
+	}
 }
 
 func (s *QuicServer) handleDatagramLoop(ctx context.Context, session *QuicSession) {
@@ -256,4 +317,49 @@ func (s *QuicServer) closeWithError(ctx context.Context, conn *quic.Conn, err er
 	}
 	s.logger.Errorf(ctx, "connection closed with error: %s", err.Error())
 	_ = conn.CloseWithError(quic.ApplicationErrorCode(code), err.Error())
+}
+
+func (s *QuicServer) proxy(ctx context.Context, name string, dst io.Writer, src io.Reader) (written int64, err error) {
+	var (
+		buf    = make([]byte, s.cfg.MTU)
+		nr, nw int
+		er, ew error
+	)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return written, ctx.Err()
+		case <-s.sig:
+			s.logger.Infof(ctx, "proxy tunnel closed: %s", name)
+			return
+		default:
+		}
+		nr, er = src.Read(buf)
+		if nr > 0 {
+			nw, ew = dst.Write(buf[0:nr])
+			if nw < 0 || nr < nw {
+				nw = 0
+				if ew == nil {
+					ew = errors.New("invalid write")
+				}
+			}
+			written += int64(nw)
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+		if er != nil {
+			if er != io.EOF {
+				err = er
+			}
+			break
+		}
+	}
+	return written, err
 }
