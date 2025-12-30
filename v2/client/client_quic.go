@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -23,7 +24,14 @@ type (
 	}
 	QuicSession struct {
 		*Session
-		conn *quic.Conn
+		conn    *quic.Conn
+		streams sync.Map // dst : *streamWrapper
+	}
+	streamWrapper struct {
+		stream      *quic.Stream
+		bytesSent   uint64
+		lastChecked time.Time
+		mu          sync.Mutex
 	}
 	quicSendReceiver struct {
 		*quic.Conn
@@ -107,9 +115,71 @@ func (c *QuicClient) Dial(ctx context.Context) (session *Session, err error) {
 	session = c.session.Session
 
 	c.manager = NewManager(session)
+	go c.cleanupIdleStreams()
 	return
 }
 
+func (c *QuicClient) cleanupIdleStreams() {
+	ticker := time.NewTicker(time.Second * 10)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.sig:
+			return
+		case <-c.ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now()
+			c.session.streams.Range(func(key, value any) bool {
+				wrapper := value.(*streamWrapper)
+				wrapper.mu.Lock()
+				if wrapper.stream == nil {
+					wrapper.mu.Unlock()
+					return true
+				}
+				if wrapper.bytesSent == 0 && time.Since(wrapper.lastChecked) > time.Second*30 {
+					_ = wrapper.stream.Close()
+					wrapper.stream = nil
+					c.session.streams.Delete(key)
+				}
+				wrapper.bytesSent = 0
+				wrapper.lastChecked = now
+				wrapper.mu.Unlock()
+				return true
+			})
+		}
+	}
+}
+
 func (c *QuicClient) SendToServer(dst string, buf []byte, n int) (err error) {
-	return
+	// reuse stream
+	// close stream if error or no transport for 30s
+	var wrapper *streamWrapper
+	v, ok := c.session.streams.Load(dst)
+	if !ok {
+		stream, err := c.session.conn.OpenStream()
+		if err != nil {
+			return err
+		}
+		wrapper = &streamWrapper{
+			stream:      stream,
+			lastChecked: time.Now(),
+		}
+		c.session.streams.Store(dst, wrapper)
+	} else {
+		wrapper = v.(*streamWrapper)
+	}
+
+	wrapper.mu.Lock()
+	defer wrapper.mu.Unlock()
+	if wrapper.stream == nil {
+		wrapper.stream, err = c.session.conn.OpenStream()
+		if err != nil {
+			return err
+		}
+	}
+	wrapper.bytesSent += uint64(n)
+	_, err = wrapper.stream.Write(buf[:n])
+	return err
 }

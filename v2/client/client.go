@@ -26,17 +26,17 @@ type (
 		SendToServer(dst string, buf []byte, n int) (err error)
 	}
 	Client struct {
-		client  internalClient
-		ctx     context.Context
-		sig     chan struct{}
-		cfg     *Config
-		logger  logger.Logger
-		auth    *auth.Client
-		manager *Manager
-		router  router.Router
-		bufPool sync.Pool
-		dev     device.IDevice
-		src     string
+		internal internalClient
+		ctx      context.Context
+		sig      chan struct{}
+		cfg      *Config
+		logger   logger.Logger
+		auth     *auth.Client
+		manager  *Manager
+		router   router.Router
+		bufPool  sync.Pool
+		dev      device.IDevice
+		src      string
 	}
 )
 
@@ -50,7 +50,7 @@ func NewClient(cfg *Config) *Client {
 	}
 	switch cfg.Type {
 	case TypeQuic:
-		c.client = NewQuicClient(c)
+		c.internal = NewQuicClient(c)
 	default:
 		panic(fmt.Sprintf("invalid client type: %s", cfg.Type))
 	}
@@ -90,7 +90,7 @@ func (c *Client) Run(ctx context.Context) (err error) {
 }
 
 func (c *Client) Dial(ctx context.Context) (session *Session, err error) {
-	return c.client.Dial(ctx)
+	return c.internal.Dial(ctx)
 }
 
 func (c *Client) syncRouter(ctx context.Context) (err error) {
@@ -197,5 +197,5 @@ func (c *Client) SendToServer(dst string, buf []byte, n int) (err error) {
 	defer func() {
 		c.bufPool.Put(buf)
 	}()
-	return c.client.SendToServer(dst, buf, n)
+	return c.internal.SendToServer(dst, buf, n)
 }
