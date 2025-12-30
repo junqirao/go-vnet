@@ -71,8 +71,13 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	if c.dev != nil {
 		_ = c.dev.Close()
 	}
+	if c.cfg.DeviceType != "" {
+		session.DispatchedDevice.Type = device.Type(c.cfg.DeviceType)
+	}
 	c.dev = device.NewTunDevice(session.DispatchedDevice)
 	if err = c.dev.Setup(); err != nil {
+		err = fmt.Errorf("failed to setup device: %w", err)
+		_ = session.Close()
 		return
 	}
 	ip, _, _ := net.ParseCIDR(session.DispatchedDevice.CIDR)
@@ -197,5 +202,9 @@ func (c *Client) SendToServer(dst string, buf []byte, n int) (err error) {
 	defer func() {
 		c.bufPool.Put(buf)
 	}()
+	_, ok := c.router.Route(dst)
+	if !ok {
+		return
+	}
 	return c.internal.SendToServer(dst, buf, n)
 }

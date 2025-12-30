@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -39,6 +40,13 @@ type (
 		*quic.Conn
 	}
 )
+
+func (q *QuicSession) Close() error {
+	if q.err == nil {
+		q.err = errors.New("close manually")
+	}
+	return q.conn.CloseWithError(1, q.err.Error())
+}
 
 func SendReceiverFromQuicConn(conn *quic.Conn) SendReceiver {
 	return &quicSendReceiver{conn}
@@ -108,13 +116,14 @@ func (c *QuicClient) Dial(ctx context.Context) (session *Session, err error) {
 	_ = json.Unmarshal(bs, &joined)
 
 	c.session = &QuicSession{
-		Session: &Session{
-			SendReceiver:     SendReceiverFromQuicConn(conn),
-			DispatchedDevice: joined.Device,
-		},
 		conn: conn,
 	}
-	session = c.session.Session
+	session = &Session{
+		SendReceiver:     SendReceiverFromQuicConn(conn),
+		DispatchedDevice: joined.Device,
+		Closer:           c.session,
+	}
+	c.session.Session = session
 
 	c.manager = NewManager(session)
 	go c.cleanupIdleStreams()
@@ -163,6 +172,10 @@ func (c *QuicClient) SendToServer(dst string, buf []byte, n int) (err error) {
 	if !ok {
 		stream, err := c.session.conn.OpenStream()
 		if err != nil {
+			return err
+		}
+		// write first pkg
+		if _, err = stream.Write([]byte(dst)); err != nil {
 			return err
 		}
 		wrapper = &streamWrapper{
