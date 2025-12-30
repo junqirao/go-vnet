@@ -32,7 +32,7 @@ func (manager *Manager) CallFunc(ctx context.Context, name string, args ...map[s
 	start := time.Now()
 	defer func() {
 		if resp != nil {
-			resp.Cost = time.Since(start).Milliseconds()
+			resp.Cost = float64(time.Since(start).Microseconds()) / 1000
 		}
 	}()
 

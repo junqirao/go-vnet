@@ -100,7 +100,7 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 		c.logger.Errorf(c.ctx, "failed to execute ping to server: %s", err.Error())
 		return
 	}
-	c.logger.Infof(ctx, "ping response: %+v", resp)
+	// c.logger.Infof(ctx, "ping latency: %.2fms", resp.Cost)
 
 	// update router if hash changed
 	current := c.router.Hash()

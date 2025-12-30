@@ -94,6 +94,9 @@ func (s *QuicServer) Serve(ctx context.Context) (err error) {
 				continue
 			}
 
+			// accept datagram for manager
+			go s.handleDatagramLoop(ctx, session)
+
 			// accept stream
 			go s.acceptStreamLoop(ctx, session)
 		}
@@ -185,8 +188,6 @@ func (s *QuicServer) registerConn(ctx context.Context, conn *quic.Conn) (session
 	}
 	// register session
 	s.sessions.Store(session.IP, session)
-	// register manager connection
-	s.manager.Register(session.IP, session.Session)
 	// all these registration will be unregistered in acceptStreamLoop
 	// when the connection is closed (can not accept new stream)
 	s.logger.Infof(ctx, "handle connection: remote_addr=%s,route=%s", remote, session.IP)
@@ -206,8 +207,6 @@ func (s *QuicServer) acceptStreamLoop(ctx context.Context, session *QuicSession)
 		if err := session.Network.Router().Delete(ctx, session.IP); err != nil {
 			s.logger.Errorf(ctx, "unregister router error: %s", err.Error())
 		}
-		// delete manager connection
-		s.manager.DeleteSession(session.IP)
 		// close connection
 		_ = session.conn.CloseWithError(0, "connection closed")
 	}()
@@ -231,6 +230,24 @@ func (s *QuicServer) acceptStreamLoop(ctx context.Context, session *QuicSession)
 
 func (s *QuicServer) handleStreamProxy(ctx context.Context, session *QuicSession, stream *quic.Stream) {
 
+}
+
+func (s *QuicServer) handleDatagramLoop(ctx context.Context, session *QuicSession) {
+	for {
+		select {
+		case <-s.sig:
+			return
+		case <-ctx.Done():
+			return
+		default:
+			datagram, err := session.conn.ReceiveDatagram(ctx)
+			if err != nil {
+				s.logger.Errorf(ctx, "receive datagram error: %s", err.Error())
+				return
+			}
+			s.manager.PushEvent(session.Session, datagram)
+		}
+	}
 }
 
 func (s *QuicServer) closeWithError(ctx context.Context, conn *quic.Conn, err error, code uint64) {
