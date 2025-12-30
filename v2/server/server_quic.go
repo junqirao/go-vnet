@@ -264,6 +264,10 @@ func (s *QuicServer) handleStreamProxy(ctx context.Context, session *QuicSession
 		s.logger.Errorf(ctx, "route not found: dst=%v", dst)
 		return
 	}
+
+	// send ack (byte 1) to client
+	_, _ = stream.Write([]byte{1})
+
 	dstSession, ok := v.(*QuicSession)
 	if !ok {
 		s.logger.Errorf(ctx, "error session type: dst=%v", dst)

@@ -174,8 +174,17 @@ func (c *QuicClient) SendToServer(dst string, buf []byte, n int) (err error) {
 		if err != nil {
 			return err
 		}
-		// write first pkg
+		// write dst and wait for ack
 		if _, err = stream.Write([]byte(dst)); err != nil {
+			return err
+		}
+		// wait for server ack (byte 1)
+		ack := make([]byte, 1)
+		_, err = stream.Read(ack)
+		if err != nil || ack[0] != 1 {
+			if err == nil {
+				err = fmt.Errorf("invalid ack: %d", ack[0])
+			}
 			return err
 		}
 		wrapper = &streamWrapper{
