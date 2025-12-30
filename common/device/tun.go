@@ -21,6 +21,7 @@ type (
 		Down() error                            // set device down
 		Read(packet []byte) (n int, err error)  // read
 		Write(packet []byte) (n int, err error) // write
+		GetConfig() Config
 	}
 	// tunDevice ...
 	tunDevice interface {

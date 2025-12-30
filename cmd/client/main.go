@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"go-vnet/client"
+	"go-vnet/v2/client"
 )
 
 func main() {
@@ -28,11 +28,7 @@ func main() {
 	printConfig(config)
 
 	// 创建客户端
-	c, err := client.NewClient(*config)
-	if err != nil {
-		panic(err)
-		return
-	}
+	c := client.NewClient(config)
 
 	// 运行客户端
 	err = c.Run(context.Background())
@@ -65,14 +61,15 @@ func loadConfigFromFile(filename string) (*client.Config, error) {
 		return nil, fmt.Errorf("解析YAML配置失败: %w", err)
 	}
 
-	return &config, nil
+	return config, nil
 }
 
 // printConfig 打印配置信息，隐藏敏感信息
 func printConfig(config *client.Config) {
 	fmt.Println("Client Config:")
 	fmt.Printf("Network ID: %s\n", config.NetworkId)
-	fmt.Printf("Server: %s\n", config.Server)
+	fmt.Printf("Address: %s\n", config.Address)
+	fmt.Printf("Port: %d\n", config.Port)
 	fmt.Printf("Insecure Skip Verify: %t\n", config.InsecureSkipVerify)
 
 	fmt.Println("\nAuthentication:")

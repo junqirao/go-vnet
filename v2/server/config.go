@@ -44,7 +44,7 @@ type (
 	ConfigOption func(cfg *Config)
 )
 
-func NewTransportServerConfig(opts ...ConfigOption) *Config {
+func NewConfig(opts ...ConfigOption) *Config {
 	cfg := defaultServerConfig()
 	for _, opt := range opts {
 		opt(cfg)
@@ -55,8 +55,9 @@ func NewTransportServerConfig(opts ...ConfigOption) *Config {
 // -------------------- OPTIONS --------------------
 
 const (
-	ConfigKeyTLS    = "tls"
-	ConfigKeyLogger = "logger"
+	ConfigKeyTLS           = "tls"
+	ConfigKeyLogger        = "logger"
+	ConfigKeyAuthChainFunc = "auth_chain_func"
 )
 
 func WithName(s string) ConfigOption {
@@ -102,6 +103,12 @@ func WithTLSConfig(t *tls.Config) ConfigOption {
 func WithLogger(l logger.Logger) ConfigOption {
 	return func(cfg *Config) {
 		cfg.Set(ConfigKeyLogger, l)
+	}
+}
+
+func WithAuthenticationChainFunc(f ...auth.ServerAuthChainFunc) ConfigOption {
+	return func(cfg *Config) {
+		cfg.Set(ConfigKeyAuthChainFunc, f)
 	}
 }
 

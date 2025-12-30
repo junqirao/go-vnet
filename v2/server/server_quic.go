@@ -21,21 +21,32 @@ import (
 type (
 	QuicServer struct {
 		// generic
-		cfg    *Config
-		logger logger.Logger
-		sig    chan struct{}
-		auth   *auth.Server
+		cfg     *Config
+		logger  logger.Logger
+		sig     chan struct{}
+		auth    *auth.Server
+		manager *Manager
 
 		sessions sync.Map // src : *QuicSession
 	}
 	QuicSession struct {
-		Session
+		*Session
 		conn *quic.Conn
 	}
-	quicSendReceiver struct {
-		*quic.Conn
-	}
 )
+
+func NewQuicServer(cfg *Config) *QuicServer {
+	s := &QuicServer{
+		cfg:     cfg,
+		logger:  config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
+		sig:     make(chan struct{}),
+		manager: NewManager(),
+	}
+
+	chainFunc := config.GetMappedConfig[[]auth.ServerAuthChainFunc](cfg, ConfigKeyAuthChainFunc, []auth.ServerAuthChainFunc{})
+	s.auth = auth.NewServer(cfg.Auth, chainFunc)
+	return s
+}
 
 func (s *QuicServer) Serve(ctx context.Context) (err error) {
 	// extra configs
@@ -57,6 +68,10 @@ func (s *QuicServer) Serve(ctx context.Context) (err error) {
 
 	defer func() {
 		_ = listener.Close()
+	}()
+
+	go func() {
+		_ = s.manager.ProcessFuncCallLoop(ctx)
 	}()
 
 	for {
@@ -105,6 +120,7 @@ func (s *QuicServer) registerConn(ctx context.Context, conn *quic.Conn) (session
 
 	request, resp, err := s.auth.Auth(ctx, datagram)
 	if err != nil {
+		s.closeWithError(ctx, conn, err, 401)
 		return
 	}
 
@@ -126,21 +142,21 @@ func (s *QuicServer) registerConn(ctx context.Context, conn *quic.Conn) (session
 	networkId, ok := request["network_id"].(string)
 	if !ok {
 		err = fmt.Errorf("network_id field from request not found")
-		s.logger.Error(ctx, err.Error())
+		s.closeWithError(ctx, conn, err, 400)
 		return
 	}
 
 	nwk, ok := network.GetManager().GetNetwork(networkId)
 	if !ok {
 		err = fmt.Errorf("network not found: id=%s", networkId)
-		s.logger.Error(ctx, err.Error())
+		s.closeWithError(ctx, conn, err, 404)
 		return
 	}
 
 	dev, err := nwk.AcquireDevice(ctx, request)
 	if err != nil {
 		err = fmt.Errorf("acquire device error: %s", err.Error())
-		s.logger.Errorf(ctx, err.Error())
+		s.closeWithError(ctx, conn, err, 400)
 		return
 	}
 	s.logger.Infof(ctx, "dispatch device: id=%v cidr=%v", dev.Id, dev.CIDR)
@@ -151,7 +167,7 @@ func (s *QuicServer) registerConn(ctx context.Context, conn *quic.Conn) (session
 	ip, _, _ := net.ParseCIDR(dev.CIDR)
 
 	session = &QuicSession{
-		Session: Session{
+		Session: &Session{
 			SendReceiver:     &quicSendReceiver{conn},
 			Id:               "todo-session-id",
 			Network:          nwk,
@@ -161,12 +177,18 @@ func (s *QuicServer) registerConn(ctx context.Context, conn *quic.Conn) (session
 		conn: conn,
 	}
 
+	// register router
 	if err = nwk.Router().Register(ctx, session.IP, session); err != nil {
 		s.logger.Errorf(ctx, "register router error: %s", err.Error())
+		s.closeWithError(ctx, conn, err, 400)
 		return
 	}
-
+	// register session
 	s.sessions.Store(session.IP, session)
+	// register manager connection
+	s.manager.Register(session.IP, session.Session)
+	// all these registration will be unregistered in acceptStreamLoop
+	// when the connection is closed (can not accept new stream)
 	s.logger.Infof(ctx, "handle connection: remote_addr=%s,route=%s", remote, session.IP)
 	return
 }
@@ -184,6 +206,8 @@ func (s *QuicServer) acceptStreamLoop(ctx context.Context, session *QuicSession)
 		if err := session.Network.Router().Delete(ctx, session.IP); err != nil {
 			s.logger.Errorf(ctx, "unregister router error: %s", err.Error())
 		}
+		// delete manager connection
+		s.manager.DeleteSession(session.IP)
 		// close connection
 		_ = session.conn.CloseWithError(0, "connection closed")
 	}()
@@ -198,7 +222,7 @@ func (s *QuicServer) acceptStreamLoop(ctx context.Context, session *QuicSession)
 			stream, err := session.conn.AcceptStream(ctx)
 			if err != nil {
 				s.logger.Errorf(ctx, "accept stream error: %s", err.Error())
-				continue
+				return
 			}
 			go s.handleStreamProxy(ctx, session, stream)
 		}
@@ -209,10 +233,10 @@ func (s *QuicServer) handleStreamProxy(ctx context.Context, session *QuicSession
 
 }
 
-func (q quicSendReceiver) Send(data []byte) (err error) {
-	return q.SendDatagram(data)
-}
-
-func (q quicSendReceiver) Receive(ctx context.Context) (data []byte, err error) {
-	return q.ReceiveDatagram(ctx)
+func (s *QuicServer) closeWithError(ctx context.Context, conn *quic.Conn, err error, code uint64) {
+	if err == nil {
+		return
+	}
+	s.logger.Errorf(ctx, "connection closed with error: %s", err.Error())
+	_ = conn.CloseWithError(quic.ApplicationErrorCode(code), err.Error())
 }

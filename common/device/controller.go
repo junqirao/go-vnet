@@ -59,3 +59,7 @@ func (c *controller) Setup() (err error) {
 	err = c.setup()
 	return
 }
+
+func (c *controller) GetConfig() Config {
+	return c.config
+}
