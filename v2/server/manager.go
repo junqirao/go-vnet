@@ -16,7 +16,8 @@ type (
 	}
 	Manager struct {
 		sig      chan struct{}
-		sessions sync.Map // src : Session
+		sessions sync.Map   // src : Session
+		notEmpty *sync.Cond // 用于在 map 为空时等待
 	}
 	quicSendReceiver struct {
 		*quic.Conn
@@ -32,17 +33,21 @@ type (
 		Code    int    `json:"code"`
 		Data    any    `json:"data"`
 		Message string `json:"message"`
+		Cost    int64  `json:"cost"`
 	}
 )
 
 func NewManager() *Manager {
-	return &Manager{
+	m := &Manager{
 		sig: make(chan struct{}),
 	}
+	m.notEmpty = sync.NewCond(&sync.Mutex{})
+	return m
 }
 
 // RangeReceiveLimited 并发遍历所有 Session 的 Receive 方法（限制并发数）
 // maxConcurrency: 最大并发数，避免资源耗尽
+// 每次只接收一个消息，避免阻塞 ProcessFuncCallLoop
 func (manager *Manager) RangeReceiveLimited(ctx context.Context, maxConcurrency int, handler func(session *Session, data []byte, err error)) {
 	workerPool := make(chan struct{}, maxConcurrency)
 	for i := 0; i < maxConcurrency; i++ {
@@ -57,13 +62,9 @@ func (manager *Manager) RangeReceiveLimited(ctx context.Context, maxConcurrency 
 			<-workerPool
 			defer func() { workerPool <- struct{}{} }()
 
-			for {
-				data, err := sess.Receive(ctx)
-				handler(sess, data, err)
-				if ctx.Err() != nil || err != nil {
-					return
-				}
-			}
+			// 只接收一次消息，不阻塞
+			data, err := sess.Receive(ctx)
+			handler(sess, data, err)
 		}(value.(*Session))
 		return true
 	})
@@ -80,6 +81,13 @@ func (manager *Manager) ProcessFuncCallLoop(ctx context.Context) (err error) {
 		default:
 		}
 
+		// 如果 sessions 为空，等待直到有新 session 注册
+		if !manager.hasSession() {
+			manager.waitForSessionOrCtx(ctx)
+			continue
+		}
+
+		// 处理当前所有 session 的请求
 		manager.RangeReceiveLimited(ctx, 10, func(session *Session, data []byte, err error) {
 			if err != nil {
 				return
@@ -122,6 +130,7 @@ func (manager *Manager) DeleteSession(src string) {
 
 func (manager *Manager) Register(src string, session *Session) {
 	manager.sessions.Store(src, session)
+	manager.notEmpty.Broadcast() // 通知等待的 goroutine 有新 session
 }
 
 func (q quicSendReceiver) Send(data []byte) (err error) {
@@ -130,4 +139,38 @@ func (q quicSendReceiver) Send(data []byte) (err error) {
 
 func (q quicSendReceiver) Receive(ctx context.Context) (data []byte, err error) {
 	return q.ReceiveDatagram(ctx)
+}
+
+func (manager *Manager) hasSession() bool {
+	has := false
+	manager.sessions.Range(func(key, value any) bool {
+		has = true
+		return false // 只需要找到一个就停止
+	})
+	return has
+}
+
+func (manager *Manager) waitForSessionOrCtx(ctx context.Context) {
+	manager.notEmpty.L.Lock()
+	defer manager.notEmpty.L.Unlock()
+
+	// 在等待前再次检查，避免 race condition
+	if manager.hasSession() {
+		return
+	}
+
+	// 使用 goroutine 来支持 context 取消
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		manager.notEmpty.Wait()
+	}()
+
+	select {
+	case <-done:
+		// 被 Broadcast 唤醒
+	case <-ctx.Done():
+		// context 被取消，手动唤醒等待的 goroutine
+		manager.notEmpty.Broadcast()
+	}
 }

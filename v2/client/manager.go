@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"time"
 
 	"go-vnet/v2/server"
 )
@@ -28,6 +29,12 @@ func NewManager(session *Session) *Manager {
 func (manager *Manager) CallFunc(ctx context.Context, name string, args ...map[string]any) (resp *server.FuncCallResponse, err error) {
 	manager.callMu.Lock()
 	defer manager.callMu.Unlock()
+	start := time.Now()
+	defer func() {
+		if resp != nil {
+			resp.Cost = time.Since(start).Milliseconds()
+		}
+	}()
 
 	request := server.FuncCallRequest{
 		FuncName: name,
