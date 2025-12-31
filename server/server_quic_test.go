@@ -4,9 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
-
-	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/auth"
 	"go-vnet/common/logger"
@@ -30,13 +27,8 @@ func TestServe(t *testing.T) {
 	network.GetManager().RegisterNetwork(n)
 
 	l := logger.NewStdLogger(nil, "transport_server")
-	quicConfig := &quic.Config{
-		EnableDatagrams: true,
-		KeepAlivePeriod: time.Second * 3,
-	}
 	cfg := NewConfig(
 		WithLogger(l),
-		WithQuicConfig(quicConfig),
 		WithAddress("0.0.0.0:9800"),
 		WithAuthConfig(auth.Config{
 			Type:     auth.TypeSimplePassword,

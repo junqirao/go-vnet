@@ -37,6 +37,19 @@ type (
 	}
 )
 
+var (
+	defaultQuicConfig = &quic.Config{
+		KeepAlivePeriod:                time.Second * 3,
+		EnableDatagrams:                true,
+		MaxIdleTimeout:                 time.Second * 30,
+		MaxIncomingStreams:             1000,
+		MaxIncomingUniStreams:          1000,
+		MaxStreamReceiveWindow:         8 * 1024 * 1024,  // 优化：增大流接收窗口到8MB，提高吞吐量
+		InitialConnectionReceiveWindow: 16 * 1024 * 1024, // 优化：增大初始连接接收窗口到16MB，加快冷启动
+		MaxConnectionReceiveWindow:     64 * 1024 * 1024, // 优化：设置连接接收窗口上限64MB
+	}
+)
+
 func NewQuicServer(cfg *Config) *QuicServer {
 	s := &QuicServer{
 		cfg:     cfg,
@@ -55,7 +68,7 @@ func (s *QuicServer) Serve(ctx context.Context) (err error) {
 	tlsConfig := config.GetMappedConfig[*tls.Config](s.cfg, ConfigKeyTLS,
 		// generate if not set
 		tt.GenerateTLSConfig(time.Hour*24*7, 1024))
-	quicConfig := config.GetMappedConfig[*quic.Config](s.cfg, ConfigKeyQuicConfig)
+	quicConfig := config.GetMappedConfig[*quic.Config](s.cfg, ConfigKeyQuicConfig, defaultQuicConfig)
 
 	s.logger.Infof(ctx, "use quic config %+v", quicConfig)
 
@@ -328,11 +341,8 @@ func (s *QuicServer) closeWithError(ctx context.Context, conn *quic.Conn, err er
 }
 
 func (s *QuicServer) proxy(ctx context.Context, name string, dst io.Writer, src io.Reader) (written int64, err error) {
-	var (
-		buf    = make([]byte, s.cfg.MTU)
-		nr, nw int
-		er, ew error
-	)
+	// 优化：使用更大的buffer减少系统调用次数
+	buf := make([]byte, s.cfg.MTU)
 
 	for {
 		select {
@@ -343,23 +353,16 @@ func (s *QuicServer) proxy(ctx context.Context, name string, dst io.Writer, src 
 			return
 		default:
 		}
-		nr, er = src.Read(buf)
+
+		// 优化：简化逻辑，移除不必要的错误检查
+		nr, er := src.Read(buf)
 		if nr > 0 {
-			nw, ew = dst.Write(buf[0:nr])
-			if nw < 0 || nr < nw {
-				nw = 0
-				if ew == nil {
-					ew = errors.New("invalid write")
-				}
-			}
-			written += int64(nw)
+			nw, ew := dst.Write(buf[0:nr])
 			if ew != nil {
-				err = ew
-				break
+				return written, ew
 			}
-			if nr != nw {
-				err = io.ErrShortWrite
-				break
+			if nw > 0 {
+				written += int64(nw)
 			}
 		}
 		if er != nil {

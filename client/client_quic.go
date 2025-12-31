@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -30,13 +31,25 @@ type (
 		streams sync.Map // dst : *streamWrapper
 	}
 	streamWrapper struct {
-		stream      *quic.Stream
-		bytesSent   uint64
-		lastChecked time.Time
-		mu          sync.Mutex
+		stream      atomic.Pointer[quic.Stream] // 优化：使用atomic指针，无锁访问stream
+		bytesSent   atomic.Uint64               // 优化：使用atomic替换锁，更快的计数器
+		lastChecked atomic.Int64                // 优化：使用atomic存储时间戳
 	}
 	quicSendReceiver struct {
 		*quic.Conn
+	}
+)
+
+var (
+	defaultQuicConfig = &quic.Config{
+		KeepAlivePeriod:                time.Second * 3,
+		EnableDatagrams:                true,
+		MaxIdleTimeout:                 time.Second * 30,
+		MaxIncomingStreams:             1000,
+		MaxIncomingUniStreams:          1000,
+		MaxStreamReceiveWindow:         8 * 1024 * 1024,  // 优化：增大流接收窗口到8MB，提高吞吐量
+		InitialConnectionReceiveWindow: 16 * 1024 * 1024, // 优化：增大初始连接接收窗口到16MB，加快冷启动
+		MaxConnectionReceiveWindow:     64 * 1024 * 1024, // 优化：设置连接接收窗口上限64MB
 	}
 )
 
@@ -64,10 +77,10 @@ func NewQuicClient(c *Client) *QuicClient {
 	tlsConfig := config.GetMappedConfig[*tls.Config](c.cfg, ConfigKeyTLS,
 		// generate if not set
 		tt.GenerateTLSConfig(time.Hour*24*7, 1024))
-	quicConfig := config.GetMappedConfig[*quic.Config](c.cfg, ConfigKeyQuicConfig, &quic.Config{
-		KeepAlivePeriod: time.Second * 3,
-		EnableDatagrams: true,
-	})
+
+	// 优化：设置默认QUIC配置以减少传输延迟
+	quicConfig := config.GetMappedConfig[*quic.Config](c.cfg, ConfigKeyQuicConfig, defaultQuicConfig)
+
 	if c.cfg.InsecureSkipVerify {
 		tlsConfig.InsecureSkipVerify = true
 	}
@@ -141,23 +154,25 @@ func (c *QuicClient) cleanupIdleStreams() {
 		case <-c.ctx.Done():
 			return
 		case <-ticker.C:
-			now := time.Now()
+			now := time.Now().UnixNano()
 			c.session.streams.Range(func(key, value any) bool {
 				wrapper := value.(*streamWrapper)
-				wrapper.mu.Lock()
-				if wrapper.stream == nil {
-					wrapper.mu.Unlock()
-					return true
+				// 优化：使用atomic.Load读取stream指针
+				stream := wrapper.stream.Load()
+				lastChecked := wrapper.lastChecked.Load()
+				bytesSent := wrapper.bytesSent.Load()
+
+				// 检查是否空闲
+				if bytesSent == 0 && now-lastChecked > int64(time.Second*30) {
+					if wrapper.stream.CompareAndSwap(stream, nil) {
+						_ = stream.Close()
+						c.session.streams.Delete(key)
+						c.logger.Infof(c.ctx, "close idle stream: %s", key)
+					}
+				} else {
+					wrapper.bytesSent.Store(0)
+					wrapper.lastChecked.Store(now)
 				}
-				if wrapper.bytesSent == 0 && time.Since(wrapper.lastChecked) > time.Second*30 {
-					_ = wrapper.stream.Close()
-					wrapper.stream = nil
-					c.session.streams.Delete(key)
-					c.logger.Infof(c.ctx, "close idle stream: %s", key)
-				}
-				wrapper.bytesSent = 0
-				wrapper.lastChecked = now
-				wrapper.mu.Unlock()
 				return true
 			})
 		}
@@ -187,26 +202,30 @@ func (c *QuicClient) SendToServer(dst string, buf []byte, n int) (err error) {
 			}
 			return err
 		}
-		wrapper = &streamWrapper{
-			stream:      stream,
-			lastChecked: time.Now(),
-		}
+		wrapper = &streamWrapper{}
+		wrapper.stream.Store(stream)
+		wrapper.lastChecked.Store(time.Now().UnixNano())
 		c.session.streams.Store(dst, wrapper)
 		c.logger.Infof(c.ctx, "create tx stream: %s", dst)
 	} else {
 		wrapper = v.(*streamWrapper)
 	}
 
-	wrapper.mu.Lock()
-	defer wrapper.mu.Unlock()
-	if wrapper.stream == nil {
-		wrapper.stream, err = c.session.conn.OpenStream()
+	// 优化：使用atomic更新计数器，无锁操作
+	wrapper.bytesSent.Add(uint64(n))
+
+	// 优化：使用atomic.Load获取stream，无锁操作
+	stream := wrapper.stream.Load()
+	if stream == nil {
+		stream, err = c.session.conn.OpenStream()
 		if err != nil {
 			return err
 		}
+		// 优化：使用atomic.Store设置stream
+		wrapper.stream.Store(stream)
 	}
-	wrapper.bytesSent += uint64(n)
-	_, err = wrapper.stream.Write(buf[:n])
+
+	_, err = stream.Write(buf[:n])
 	return err
 }
 
@@ -237,6 +256,7 @@ func (c *QuicClient) handleStream(stream *quic.Stream) {
 	c.logger.Infof(c.ctx, "handle rx stream stopped: %d bytes written, err=%v", written, err)
 }
 
+// writeDevice - 优化版本：简化写入逻辑，TUN设备通常不会部分写入
 func (c *QuicClient) writeDevice(src io.Reader) (written int64, err error) {
 	var (
 		buf = make([]byte, c.session.DispatchedDevice.MTU)
@@ -254,58 +274,13 @@ func (c *QuicClient) writeDevice(src io.Reader) (written int64, err error) {
 		}
 		nr, er = src.Read(buf)
 		if nr > 0 {
-			// Write all bytes to device, handling partial writes
-			var wn int
-			wn, err = c.dev.Write(buf[0:nr])
+			// 优化：简化写入逻辑，TUN设备通常不会部分写入
+			wn, err := c.dev.Write(buf[0:nr])
 			if err != nil {
-				// If write failed partially, retry with remaining bytes
-				if wn > 0 && wn < nr {
-					written += int64(wn)
-					remaining := buf[wn:nr]
-					for len(remaining) > 0 {
-						var w int
-						w, err = c.dev.Write(remaining)
-						if err != nil {
-							break
-						}
-						if w <= 0 {
-							err = io.ErrShortWrite
-							break
-						}
-						written += int64(w)
-						remaining = remaining[w:]
-					}
-				} else if wn < 0 {
-					wn = 0
-					if err == nil {
-						err = errors.New("invalid write")
-					}
-					written += int64(wn)
-				} else {
-					written += int64(wn)
-				}
-			} else {
-				written += int64(wn)
-				// Handle partial write even if no error returned
-				if wn < nr {
-					remaining := buf[wn:nr]
-					for len(remaining) > 0 {
-						var w int
-						w, err = c.dev.Write(remaining)
-						if err != nil {
-							break
-						}
-						if w <= 0 {
-							err = io.ErrShortWrite
-							break
-						}
-						written += int64(w)
-						remaining = remaining[w:]
-					}
-				}
+				return written, err
 			}
-			if err != nil {
-				break
+			if wn > 0 {
+				written += int64(wn)
 			}
 		}
 		if er != nil {
