@@ -53,7 +53,7 @@ func NewClient(cfg *Config) *Client {
 	}
 	switch cfg.Type {
 	case TypeQuic:
-		c.internal = NewQuicClient(c)
+		c.internal = newQuicClient(c)
 	default:
 		panic(fmt.Sprintf("invalid client type: %s", cfg.Type))
 	}
@@ -65,7 +65,7 @@ func (c *Client) Run(ctx context.Context) (err error) {
 
 	// 1. connect to server
 	c.logger.Infof(ctx, "connect to server %s:%d", c.cfg.Address, c.cfg.Port)
-	session, err := c.Dial(ctx)
+	session, err := c.dial(ctx)
 	if err != nil {
 		return
 	}
@@ -92,13 +92,13 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	go c.syncRouterLoop()
 
 	// 4. handle rx flow
-	go c.HandleRX()
+	go c.handleRX()
 
 	// 5. block and handle tx flow
-	return c.HandleTX()
+	return c.handleTX()
 }
 
-func (c *Client) Dial(ctx context.Context) (session *Session, err error) {
+func (c *Client) dial(ctx context.Context) (session *Session, err error) {
 	return c.internal.Dial(ctx)
 }
 
@@ -167,7 +167,7 @@ func (c *Client) syncRouterLoop() {
 	}
 }
 
-func (c *Client) HandleTX() error {
+func (c *Client) handleTX() error {
 	cfg := c.dev.GetConfig()
 	c.bufPool = sync.Pool{New: func() any {
 		return make([]byte, cfg.MTU)
@@ -196,13 +196,13 @@ func (c *Client) HandleTX() error {
 			continue
 		}
 
-		if err = c.SendToServer(dst, buf, n); err != nil {
+		if err = c.sendToServer(dst, buf, n); err != nil {
 			return err
 		}
 	}
 }
 
-func (c *Client) SendToServer(dst string, buf []byte, n int) (err error) {
+func (c *Client) sendToServer(dst string, buf []byte, n int) (err error) {
 	defer func() {
 		c.bufPool.Put(buf)
 	}()
@@ -213,7 +213,7 @@ func (c *Client) SendToServer(dst string, buf []byte, n int) (err error) {
 	return c.internal.SendToServer(dst, buf, n)
 }
 
-func (c *Client) HandleRX() {
+func (c *Client) handleRX() {
 	c.internal.ReadFromServerAndWriteToDevice()
 }
 

@@ -21,7 +21,7 @@ import (
 )
 
 type (
-	QuicServer struct {
+	quicServer struct {
 		// generic
 		cfg     *Config
 		logger  logger.Logger
@@ -29,30 +29,27 @@ type (
 		auth    *auth.Server
 		manager *Manager
 
-		sessions sync.Map // src : *QuicSession
+		sessions sync.Map // src : *quicSession
 	}
-	QuicSession struct {
+	quicSession struct {
 		*Session
 		conn *quic.Conn
 	}
-)
-
-var (
-	defaultQuicConfig = &quic.Config{
-		KeepAlivePeriod:                time.Second * 3,
-		EnableDatagrams:                true,
-		MaxIdleTimeout:                 time.Second * 30,
-		MaxIncomingStreams:             1000,
-		MaxIncomingUniStreams:          1000,
-		MaxStreamReceiveWindow:         8 * 1024 * 1024,  // 优化：增大流接收窗口到8MB，提高吞吐量
-		InitialConnectionReceiveWindow: 16 * 1024 * 1024, // 优化：增大初始连接接收窗口到16MB，加快冷启动
-		MaxConnectionReceiveWindow:     64 * 1024 * 1024, // 优化：设置连接接收窗口上限64MB
-		Allow0RTT:                      true,
+	quicSendReceiver struct {
+		*quic.Conn
 	}
 )
 
-func NewQuicServer(cfg *Config) *QuicServer {
-	s := &QuicServer{
+func (q quicSendReceiver) Send(data []byte) (err error) {
+	return q.SendDatagram(data)
+}
+
+func (q quicSendReceiver) Receive(ctx context.Context) (data []byte, err error) {
+	return q.ReceiveDatagram(ctx)
+}
+
+func newQuicServer(cfg *Config) *quicServer {
+	s := &quicServer{
 		cfg:     cfg,
 		logger:  config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
 		sig:     make(chan struct{}),
@@ -64,12 +61,12 @@ func NewQuicServer(cfg *Config) *QuicServer {
 	return s
 }
 
-func (s *QuicServer) Serve(ctx context.Context) (err error) {
+func (s *quicServer) Serve(ctx context.Context) (err error) {
 	// extra configs
 	tlsConfig := config.GetMappedConfig[*tls.Config](s.cfg, ConfigKeyTLS,
 		// generate if not set
 		tt.GenerateTLSConfig(time.Hour*24*7, 1024))
-	quicConfig := config.GetMappedConfig[*quic.Config](s.cfg, ConfigKeyQuicConfig, defaultQuicConfig)
+	quicConfig := config.GetMappedConfig[*quic.Config](s.cfg, ConfigKeyQuicConfig, config.DefaultQuicConfig)
 
 	s.logger.Infof(ctx, "use quic config %+v", quicConfig)
 
@@ -119,7 +116,7 @@ func (s *QuicServer) Serve(ctx context.Context) (err error) {
 	}
 }
 
-func (s *QuicServer) registerConn(ctx context.Context, conn *quic.Conn) (session *QuicSession, err error) {
+func (s *quicServer) registerConn(ctx context.Context, conn *quic.Conn) (session *quicSession, err error) {
 	// Set a context with a 10-second timeout
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer func() {
@@ -185,7 +182,7 @@ func (s *QuicServer) registerConn(ctx context.Context, conn *quic.Conn) (session
 	// register router
 	ip, _, _ := net.ParseCIDR(dev.CIDR)
 
-	session = &QuicSession{
+	session = &quicSession{
 		Session: &Session{
 			SendReceiver:     &quicSendReceiver{conn},
 			Type:             TypeQuic,
@@ -211,7 +208,7 @@ func (s *QuicServer) registerConn(ctx context.Context, conn *quic.Conn) (session
 	return
 }
 
-func (s *QuicServer) acceptStreamLoop(ctx context.Context, session *QuicSession) {
+func (s *quicServer) acceptStreamLoop(ctx context.Context, session *quicSession) {
 	defer func() {
 		// release device
 		err := session.Network.ReleaseDevice(session.DispatchedDevice)
@@ -245,7 +242,7 @@ func (s *QuicServer) acceptStreamLoop(ctx context.Context, session *QuicSession)
 	}
 }
 
-func (s *QuicServer) handleStreamProxy(ctx context.Context, session *QuicSession, stream *quic.Stream) {
+func (s *quicServer) handleStreamProxy(ctx context.Context, session *quicSession, stream *quic.Stream) {
 	// get dst ip by first packet, 10s timeout
 	var (
 		buf   = make([]byte, 15)
@@ -286,7 +283,7 @@ func (s *QuicServer) handleStreamProxy(ctx context.Context, session *QuicSession
 
 	s.logger.Infof(ctx, "handle stream proxy: %v->%v", src, dst)
 
-	dstSession, ok := v.(*QuicSession)
+	dstSession, ok := v.(*quicSession)
 	if !ok {
 		s.logger.Errorf(ctx, "error session type: dst=%v", dst)
 		return
@@ -315,7 +312,7 @@ func (s *QuicServer) handleStreamProxy(ctx context.Context, session *QuicSession
 	}
 }
 
-func (s *QuicServer) handleDatagramLoop(ctx context.Context, session *QuicSession) {
+func (s *quicServer) handleDatagramLoop(ctx context.Context, session *quicSession) {
 	for {
 		select {
 		case <-s.sig:
@@ -333,7 +330,7 @@ func (s *QuicServer) handleDatagramLoop(ctx context.Context, session *QuicSessio
 	}
 }
 
-func (s *QuicServer) closeWithError(ctx context.Context, conn *quic.Conn, err error, code uint64) {
+func (s *quicServer) closeWithError(ctx context.Context, conn *quic.Conn, err error, code uint64) {
 	if err == nil {
 		return
 	}
@@ -341,7 +338,7 @@ func (s *QuicServer) closeWithError(ctx context.Context, conn *quic.Conn, err er
 	_ = conn.CloseWithError(quic.ApplicationErrorCode(code), err.Error())
 }
 
-func (s *QuicServer) proxy(ctx context.Context, name string, dst io.Writer, src io.Reader) (written int64, err error) {
+func (s *quicServer) proxy(ctx context.Context, name string, dst io.Writer, src io.Reader) (written int64, err error) {
 	buf := make([]byte, s.cfg.MTU*100)
 
 	for {

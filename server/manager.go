@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-
-	"github.com/quic-go/quic-go"
 )
 
 type (
@@ -20,9 +18,6 @@ type (
 	FuncCallEvent struct {
 		Session *Session
 		Data    []byte
-	}
-	quicSendReceiver struct {
-		*quic.Conn
 	}
 )
 
@@ -101,12 +96,4 @@ func (manager *Manager) PushEvent(session *Session, data []byte) {
 		Session: session,
 		Data:    data,
 	}
-}
-
-func (q quicSendReceiver) Send(data []byte) (err error) {
-	return q.SendDatagram(data)
-}
-
-func (q quicSendReceiver) Receive(ctx context.Context) (data []byte, err error) {
-	return q.ReceiveDatagram(ctx)
 }

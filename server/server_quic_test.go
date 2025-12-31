@@ -42,7 +42,7 @@ func TestServe(t *testing.T) {
 			return nil
 		}),
 	)
-	server := NewQuicServer(cfg)
+	server := newQuicServer(cfg)
 	err = server.Serve(context.Background())
 	if err != nil {
 		t.Fatal(err)
