@@ -1,8 +1,9 @@
 package server
 
 import (
-	"go-vnet/common/device"
 	"go-vnet/server/network"
+
+	"go-vnet/common/device"
 )
 
 type (

@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"go-vnet/v2/client"
+	client2 "go-vnet/client"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
 	printConfig(config)
 
 	// 创建客户端
-	c := client.NewClient(config)
+	c := client2.NewClient(config)
 
 	// 运行客户端
 	err = c.Run(context.Background())
@@ -39,7 +39,7 @@ func main() {
 }
 
 // loadConfigFromFile 从文件中加载配置
-func loadConfigFromFile(filename string) (*client.Config, error) {
+func loadConfigFromFile(filename string) (*client2.Config, error) {
 	// 打开配置文件
 	file, err := os.Open(filename)
 	if err != nil {
@@ -56,7 +56,7 @@ func loadConfigFromFile(filename string) (*client.Config, error) {
 	}
 
 	// 解析 YAML 配置
-	var config = client.NewConfig()
+	var config = client2.NewConfig()
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("解析YAML配置失败: %w", err)
 	}
@@ -65,7 +65,7 @@ func loadConfigFromFile(filename string) (*client.Config, error) {
 }
 
 // printConfig 打印配置信息，隐藏敏感信息
-func printConfig(config *client.Config) {
+func printConfig(config *client2.Config) {
 	fmt.Println("Client Config:")
 	fmt.Printf("Network ID: %s\n", config.NetworkId)
 	fmt.Printf("Address: %s\n", config.Address)

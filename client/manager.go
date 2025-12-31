@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"go-vnet/v2/server"
+	"go-vnet/server"
 )
 
 type (

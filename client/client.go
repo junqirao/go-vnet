@@ -2,148 +2,177 @@ package client
 
 import (
 	"context"
-	"errors"
+	"encoding/base64"
 	"fmt"
-	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/songgao/water/waterutil"
 
-	"go-vnet/client/transport"
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/device"
 	"go-vnet/common/logger"
 	"go-vnet/common/router"
+	"go-vnet/server"
 )
 
-const (
-	maxRetryCount   = 5
-	configKeyLogger = "logger"
+type (
+	internalClient interface {
+		// Dial to server and create manager with established connection
+		Dial(ctx context.Context) (session *Session, err error)
+		// SendToServer send flow to server by dst ip address
+		SendToServer(dst string, buf []byte, n int) (err error)
+	}
+	Client struct {
+		internal internalClient
+		ctx      context.Context
+		sig      chan struct{}
+		cfg      *Config
+		logger   logger.Logger
+		auth     *auth.Client
+		manager  *Manager
+		router   router.Router
+		bufPool  sync.Pool
+		dev      device.IDevice
+		src      string
+	}
 )
 
-type Client struct {
-	ctx     context.Context
-	dev     device.IDevice
-	bufPool sync.Pool
-	sig     chan struct{}
-	logger  logger.Logger
-
-	// router
-	router router.Router
-
-	// connection manager
-	cm *ConnectionManager
-
-	// auth
-	auth *auth.Client
-
-	// config
-	cfg *Config
-
-	// joined
-	joined transport.JoinNetworkResponse
-
-	// src
-	src string
-
-	// transport
-	transport transport.Transport
-}
-
-func NewClient(cfg Config) (c *Client, err error) {
-	c = &Client{
+func NewClient(cfg *Config) *Client {
+	c := &Client{
+		cfg:    cfg,
 		sig:    make(chan struct{}),
-		cfg:    &cfg,
-		logger: config.GetMappedConfig[logger.Logger](cfg, configKeyLogger, logger.DefaultLogger),
+		logger: config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
+		auth:   auth.NewClient(cfg.Auth),
 		router: router.NewRouter(),
 	}
-
-	c.auth = auth.NewClient(cfg.Auth)
-	return
-}
-
-func (c *Client) SetLogger(l logger.Logger) {
-	c.logger = l
-}
-
-func (c *Client) SetRouter(r router.Router) {
-	c.router = r
+	switch cfg.Type {
+	case TypeQuic:
+		c.internal = NewQuicClient(c)
+	default:
+		panic(fmt.Sprintf("invalid client type: %s", cfg.Type))
+	}
+	return c
 }
 
 func (c *Client) Run(ctx context.Context) (err error) {
 	c.ctx = ctx
-	// 1. connect to server
-	c.logger.Infof(ctx, "connect to server: %s", c.cfg.Server)
-	transportConfig := transport.NewConfig(
-		transport.WithInsecureSkipVerify(c.cfg.InsecureSkipVerify),
-		transport.WithAddress(c.cfg.Server),
-		transport.WithAuthenticationPayload(map[string]any{
-			"network_id": c.cfg.NetworkId,
-		}),
-	)
-	t, err := transport.NewTransport(ctx, transportConfig, c.auth)
-	if err != nil {
-		err = fmt.Errorf("failed to connect to server: %w", err)
-		return
-	}
-	c.transport = t
 
-	if transportConfig.Type == transport.TypeQuic {
-		go c.handleServerSideOpenStream()
+	// 1. connect to server
+	c.logger.Infof(ctx, "connect to server %s:%d", c.cfg.Address, c.cfg.Port)
+	session, err := c.Dial(ctx)
+	if err != nil {
+		return
 	}
 
 	// 2. setup device
 	if c.dev != nil {
 		_ = c.dev.Close()
 	}
-	c.joined = t.JoinedNetwork()
-	c.logger.Infof(ctx, "joined network: %+v", c.joined)
 	if c.cfg.DeviceType != "" {
-		c.joined.Device.Type = device.Type(c.cfg.DeviceType)
+		session.DispatchedDevice.Type = device.Type(c.cfg.DeviceType)
 	}
-	c.dev = device.NewTunDevice(c.joined.Device)
+	c.dev = device.NewTunDevice(session.DispatchedDevice)
 	if err = c.dev.Setup(); err != nil {
+		err = fmt.Errorf("failed to setup device: %w", err)
+		_ = session.Close()
 		return
 	}
-
-	ip, _, _ := net.ParseCIDR(c.joined.Device.CIDR)
+	ip, _, _ := net.ParseCIDR(session.DispatchedDevice.CIDR)
 	c.src = ip.To4().String()
-	c.logger.Infof(ctx, "client ip: %s", c.src)
+	c.logger.Infof(ctx, "dispatched device ip=%s,mtu=%d", c.src,
+		session.DispatchedDevice.MTU)
 
-	c.bufPool.New = func() any {
-		return make([]byte, c.joined.Device.MTU)
-	}
+	// 3. sync router loop
+	go c.syncRouterLoop()
 
-	c.cm = NewManager(ctx, func(dst string) (io.ReadWriteCloser, error) {
-		conn, err := t.Connect(dst)
-		if err != nil {
-			return nil, err
-		}
-		if dst != "" {
-			go c.handleRX(conn)
-		}
-		return conn, nil
-	})
-	c.cm.SetLogger(c.logger)
+	// 4. handle rx flow
 
-	// create default connection
-	defConn, err := c.cm.Get(c.src, true)
+	// 5. block and handle tx flow
+	return c.HandleTX()
+}
+
+func (c *Client) Dial(ctx context.Context) (session *Session, err error) {
+	return c.internal.Dial(ctx)
+}
+
+func (c *Client) syncRouter(ctx context.Context) (err error) {
+	// ping
+	resp, err := c.manager.CallFunc(ctx, server.FuncNamePing)
 	if err != nil {
+		c.logger.Errorf(c.ctx, "failed to execute ping to server: %s", err.Error())
 		return
 	}
-	go c.handleRX(defConn)
+	// c.logger.Infof(ctx, "ping latency: %.2fms", resp.Cost)
 
-	// 3. start connection manager
-	go c.startManager()
+	// update router if hash changed
+	current := c.router.Hash()
+	if resp.Data == current {
+		return
+	}
 
-	// 4. block and read device
-txLoop:
+	// get router data from server
+	c.logger.Infof(c.ctx, "router hash changed, current: %s, server: %s", current, resp.Data)
+	resp, err = c.manager.CallFunc(ctx, server.FuncNameGetRouterData)
+	if err != nil {
+		c.logger.Errorf(c.ctx, "failed to execute get router data from server: %s", err.Error())
+		return
+	}
+
+	// decode and restore
+	if data, ok := resp.Data.(string); ok && len(data) > 0 {
+		var bs []byte
+		bs, err = base64.StdEncoding.DecodeString(data)
+		if err != nil {
+			c.logger.Errorf(c.ctx, "failed to decode router data from server: %s", err.Error())
+			return
+		}
+		if err = c.router.Restore(c.ctx, bs); err != nil {
+			c.logger.Errorf(c.ctx, "failed to restore router from server: %s", err.Error())
+			return
+		}
+
+		c.logger.Infof(c.ctx, "router synced from server, data: %d bytes, length: %d",
+			len(data), c.router.Len())
+	}
+	return
+}
+
+func (c *Client) syncRouterLoop() {
+	c.logger.Infof(c.ctx, "sync router loop started.")
 	for {
 		select {
 		case <-c.sig:
-			break txLoop
+			c.logger.Infof(c.ctx, "manager connection closed.")
+			return
+		case <-c.ctx.Done():
+			c.logger.Infof(c.ctx, "manager connection closed.")
+			return
+		default:
+		}
+
+		// sync router
+		if err := c.syncRouter(context.Background()); err != nil {
+			c.logger.Errorf(c.ctx, "failed to sync router: %s", err.Error())
+		}
+
+		// sleep interval
+		time.Sleep(time.Second * 5)
+	}
+}
+
+func (c *Client) HandleTX() error {
+	cfg := c.dev.GetConfig()
+	c.bufPool = sync.Pool{New: func() any {
+		return make([]byte, cfg.MTU)
+	}}
+
+	for {
+		select {
+		case <-c.sig:
+			return nil
 		default:
 		}
 		buf := c.bufPool.Get().([]byte)
@@ -152,136 +181,30 @@ txLoop:
 			err = fmt.Errorf("failed to read device: %w", err)
 			return err
 		}
-		c.handleTX(buf, n)
-	}
+		if n == 0 {
+			continue
+		}
 
-	return errors.New("client close")
+		dst := waterutil.IPv4Destination(buf[:n]).String()
+
+		// drop current loopback packet
+		if dst == "127.0.0.1" || dst == c.src {
+			continue
+		}
+
+		if err = c.SendToServer(dst, buf, n); err != nil {
+			return err
+		}
+	}
 }
 
-func (c *Client) handleTX(buf []byte, n int) {
+func (c *Client) SendToServer(dst string, buf []byte, n int) (err error) {
 	defer func() {
 		c.bufPool.Put(buf)
 	}()
-	if n == 0 {
-		return
-	}
-
-	dst := waterutil.IPv4Destination(buf[:n]).String()
-
-	// drop current loopback packet
-	if dst == "127.0.0.1" || dst == c.src {
-		c.logger.Infof(c.ctx, "drop loopback packet: %s", dst)
-		return
-	}
-
-	v, ok := c.router.Route(dst)
+	_, ok := c.router.Route(dst)
 	if !ok {
-		// drop
 		return
 	}
-
-	var rwc io.ReadWriteCloser
-
-	if v != nil {
-		rwc, ok = v.(io.ReadWriteCloser)
-	}
-	if !ok || rwc == nil {
-		var err error
-		rwc, err = c.getConnAndRegisterRouter(dst)
-		if err != nil {
-			c.logger.Errorf(c.ctx, "failed to create connection %s: %s", dst, err.Error())
-			return
-		}
-	}
-
-	retryCount := 0
-	for retryCount < maxRetryCount {
-		var err error
-		if rwc != nil {
-			// var nw int
-			// nw, err = rwc.Write(buf[:n])
-			_, err = rwc.Write(buf[:n])
-			if err == nil {
-				return
-			}
-			c.cm.Del(dst)
-		}
-
-		c.logger.Errorf(c.ctx, "failed to write to %s: %v", dst, err)
-		// 尝试创建新的 stream
-		c.logger.Infof(c.ctx, "try create stream...")
-		if rwc, err = c.getConnAndRegisterRouter(dst); err == nil {
-			continue
-		}
-		retryCount++
-	}
-	c.logger.Errorf(c.ctx, "failed to write to %s, retry count exceeded", dst)
-}
-
-func (c *Client) handleRX(rwc io.ReadWriteCloser) {
-	proxy := func() (err error) {
-		buf := c.bufPool.Get().([]byte)
-		defer func() {
-			c.bufPool.Put(buf[:0])
-		}()
-		n, err := rwc.Read(buf)
-		if err != nil {
-			c.logger.Errorf(c.ctx, "failed to read rx flow: %v", err)
-			return
-		}
-		if n == 0 {
-			return
-		}
-		if _, err = c.dev.Write(buf[:n]); err != nil {
-			c.logger.Errorf(c.ctx, "failed to write to device: %v", err)
-		}
-		return
-	}
-	for {
-		select {
-		case <-c.sig:
-			return
-		default:
-		}
-		if err := proxy(); err != nil {
-			return
-		}
-	}
-}
-
-func (c *Client) Close() error {
-	close(c.sig)
-	return nil
-}
-
-func (c *Client) getConnAndRegisterRouter(dst string) (rwc io.ReadWriteCloser, err error) {
-	rwc, err = c.cm.Get(dst)
-	if err != nil {
-		c.logger.Errorf(c.ctx, "failed to get connection %s: %s", dst, err.Error())
-		return
-	}
-	c.logger.Infof(c.ctx, "success to get connection %s: %v", dst, rwc)
-	if err = c.router.Register(c.ctx, fmt.Sprintf("%s/32", dst), rwc); err != nil {
-		c.logger.Errorf(c.ctx, "failed to register router: %v", err)
-		return
-	}
-	c.logger.Infof(c.ctx, "register router: %v", dst)
-	return
-}
-
-func (c *Client) handleServerSideOpenStream() {
-	c.logger.Infof(c.ctx, "handle server side open stream")
-	for {
-		select {
-		case <-c.sig:
-			return
-		default:
-		}
-		conn, err := c.transport.Accept(context.Background())
-		if err != nil {
-			c.logger.Errorf(c.ctx, "failed to accept connection: %v", err)
-			return
-		}
-		go c.handleRX(conn)
-	}
+	return c.internal.SendToServer(dst, buf, n)
 }

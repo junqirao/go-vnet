@@ -12,11 +12,12 @@ import (
 
 	"github.com/quic-go/quic-go"
 
+	"go-vnet/server/network"
+
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
 	tt "go-vnet/common/tls"
-	"go-vnet/server/network"
 )
 
 type (
