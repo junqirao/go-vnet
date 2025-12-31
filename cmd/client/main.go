@@ -13,24 +13,22 @@ import (
 )
 
 func main() {
-	// 定义命令行参数
-	configFile := flag.String("c", "config.yaml", "配置文件路径")
+	configFile := flag.String("c", "config.yaml", "config file path")
 	flag.Parse()
 
-	// 读取配置文件
 	config, err := loadConfigFromFile(*configFile)
 	if err != nil {
-		fmt.Printf("读取配置文件失败: %v\n", err)
+		fmt.Printf("failed to read config file: %v\n", err)
 		os.Exit(1)
 	}
 
-	// 打印配置信息
+	// print config
 	printConfig(config)
 
-	// 创建客户端
+	// create client
 	c := client.NewClient(config)
 
-	// 运行客户端
+	// run
 	err = c.Run(context.Background())
 	if err != nil {
 		panic(err)
@@ -38,64 +36,54 @@ func main() {
 	}
 }
 
-// loadConfigFromFile 从文件中加载配置
+// loadConfigFromFile load config from file
 func loadConfigFromFile(filename string) (*client.Config, error) {
-	// 打开配置文件
 	file, err := os.Open(filename)
 	if err != nil {
-		return nil, fmt.Errorf("打开配置文件失败: %w", err)
+		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer func() {
 		_ = file.Close()
 	}()
 
-	// 读取文件内容
 	data, err := io.ReadAll(file)
 	if err != nil {
-		return nil, fmt.Errorf("读取配置文件内容失败: %w", err)
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// 解析 YAML 配置
 	var config = client.NewConfig()
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("解析YAML配置失败: %w", err)
+		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
 	return config, nil
 }
 
-// printConfig 打印配置信息，隐藏敏感信息
+// printConfig print config
 func printConfig(config *client.Config) {
-	fmt.Println("Client Config:")
-	fmt.Printf("Network ID: %s\n", config.NetworkId)
-	fmt.Printf("Address: %s\n", config.Address)
-	fmt.Printf("Port: %d\n", config.Port)
-	fmt.Printf("Insecure Skip Verify: %t\n", config.InsecureSkipVerify)
+	fmt.Printf("network_id=%q\n", config.NetworkId)
+	fmt.Printf("address=%q\n", config.Address)
+	fmt.Printf("port=%d\n", config.Port)
+	fmt.Printf("insecure_skip_verify=%t\n", config.InsecureSkipVerify)
+	fmt.Printf("auth.type=%q\n", config.Auth.Type)
 
-	fmt.Println("\nAuthentication:")
-	fmt.Printf("Auth Type: %s\n", config.Auth.Type)
-
-	// 隐藏密码信息
 	if config.Auth.Password != "" {
 		maskedPassword := maskSensitiveInfo(config.Auth.Password)
-		fmt.Printf("Password: %s\n", maskedPassword)
+		fmt.Printf("auth.password=%q\n", maskedPassword)
 	}
 
 	if config.Auth.PrivateKey != "" {
 		maskedPrivateKey := maskSensitiveInfo(config.Auth.PrivateKey)
-		fmt.Printf("Private Key: %s\n", maskedPrivateKey)
+		fmt.Printf("auth.private_key=%q\n", maskedPrivateKey)
 	}
 
 	if config.Auth.PublicKey != "" {
-		// 公钥通常不敏感，但为了统一性也进行部分隐藏
 		maskedPublicKey := maskSensitiveInfo(config.Auth.PublicKey)
-		fmt.Printf("Public Key: %s\n", maskedPublicKey)
+		fmt.Printf("auth.public_key=%q\n", maskedPublicKey)
 	}
-
-	fmt.Println()
 }
 
-// maskSensitiveInfo 隐藏敏感信息，只显示前3位和后3位
+// maskSensitiveInfo desensitize sensitive info
 func maskSensitiveInfo(info string) string {
 	if len(info) <= 6 {
 		return "***"
