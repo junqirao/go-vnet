@@ -50,6 +50,7 @@ var (
 		MaxStreamReceiveWindow:         8 * 1024 * 1024,  // 优化：增大流接收窗口到8MB，提高吞吐量
 		InitialConnectionReceiveWindow: 16 * 1024 * 1024, // 优化：增大初始连接接收窗口到16MB，加快冷启动
 		MaxConnectionReceiveWindow:     64 * 1024 * 1024, // 优化：设置连接接收窗口上限64MB
+		Allow0RTT:                      true,
 	}
 )
 
@@ -259,7 +260,7 @@ func (c *QuicClient) handleStream(stream *quic.Stream) {
 // writeDevice - 优化版本：简化写入逻辑，TUN设备通常不会部分写入
 func (c *QuicClient) writeDevice(src io.Reader) (written int64, err error) {
 	var (
-		buf = make([]byte, c.session.DispatchedDevice.MTU)
+		buf = make([]byte, c.session.DispatchedDevice.MTU*100)
 		nr  int
 		er  error
 	)
@@ -274,7 +275,6 @@ func (c *QuicClient) writeDevice(src io.Reader) (written int64, err error) {
 		}
 		nr, er = src.Read(buf)
 		if nr > 0 {
-			// 优化：简化写入逻辑，TUN设备通常不会部分写入
 			wn, err := c.dev.Write(buf[0:nr])
 			if err != nil {
 				return written, err

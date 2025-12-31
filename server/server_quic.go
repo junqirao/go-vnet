@@ -47,6 +47,7 @@ var (
 		MaxStreamReceiveWindow:         8 * 1024 * 1024,  // 优化：增大流接收窗口到8MB，提高吞吐量
 		InitialConnectionReceiveWindow: 16 * 1024 * 1024, // 优化：增大初始连接接收窗口到16MB，加快冷启动
 		MaxConnectionReceiveWindow:     64 * 1024 * 1024, // 优化：设置连接接收窗口上限64MB
+		Allow0RTT:                      true,
 	}
 )
 
@@ -341,8 +342,7 @@ func (s *QuicServer) closeWithError(ctx context.Context, conn *quic.Conn, err er
 }
 
 func (s *QuicServer) proxy(ctx context.Context, name string, dst io.Writer, src io.Reader) (written int64, err error) {
-	// 优化：使用更大的buffer减少系统调用次数
-	buf := make([]byte, s.cfg.MTU)
+	buf := make([]byte, s.cfg.MTU*100)
 
 	for {
 		select {
