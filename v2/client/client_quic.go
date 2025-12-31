@@ -239,9 +239,9 @@ func (c *QuicClient) handleStream(stream *quic.Stream) {
 
 func (c *QuicClient) writeDevice(src io.Reader) (written int64, err error) {
 	var (
-		buf    = make([]byte, c.session.DispatchedDevice.MTU)
-		nr, nw int
-		er, ew error
+		buf = make([]byte, c.session.DispatchedDevice.MTU)
+		nr  int
+		er  error
 	)
 
 	for {
@@ -254,20 +254,57 @@ func (c *QuicClient) writeDevice(src io.Reader) (written int64, err error) {
 		}
 		nr, er = src.Read(buf)
 		if nr > 0 {
-			nw, ew = c.dev.Write(buf[0:nr])
-			if nw < 0 || nr < nw {
-				nw = 0
-				if ew == nil {
-					ew = errors.New("invalid write")
+			// Write all bytes to device, handling partial writes
+			var wn int
+			wn, err = c.dev.Write(buf[0:nr])
+			if err != nil {
+				// If write failed partially, retry with remaining bytes
+				if wn > 0 && wn < nr {
+					written += int64(wn)
+					remaining := buf[wn:nr]
+					for len(remaining) > 0 {
+						var w int
+						w, err = c.dev.Write(remaining)
+						if err != nil {
+							break
+						}
+						if w <= 0 {
+							err = io.ErrShortWrite
+							break
+						}
+						written += int64(w)
+						remaining = remaining[w:]
+					}
+				} else if wn < 0 {
+					wn = 0
+					if err == nil {
+						err = errors.New("invalid write")
+					}
+					written += int64(wn)
+				} else {
+					written += int64(wn)
+				}
+			} else {
+				written += int64(wn)
+				// Handle partial write even if no error returned
+				if wn < nr {
+					remaining := buf[wn:nr]
+					for len(remaining) > 0 {
+						var w int
+						w, err = c.dev.Write(remaining)
+						if err != nil {
+							break
+						}
+						if w <= 0 {
+							err = io.ErrShortWrite
+							break
+						}
+						written += int64(w)
+						remaining = remaining[w:]
+					}
 				}
 			}
-			written += int64(nw)
-			if ew != nil {
-				err = ew
-				break
-			}
-			if nr != nw {
-				err = io.ErrShortWrite
+			if err != nil {
 				break
 			}
 		}
