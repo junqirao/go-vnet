@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"testing"
@@ -1027,5 +1028,20 @@ func TestRouteTable_List(t *testing.T) {
 	_ = table.AddRoute(nil, "192.168.3.0/24", "target-3")
 	if len(table.List()) != 3 {
 		t.Errorf("Expected route table list length to be 3, got %d", len(table.List()))
+	}
+}
+
+func TestRouter_DeleteAndDump(t *testing.T) {
+	r := NewRouter()
+	_ = r.Register(nil, "192.168.1.0/24", "target-1")
+	_ = r.Register(nil, "192.168.2.0/24", "target-2")
+	_ = r.Register(nil, "192.168.3.0/24", "target-3")
+	before := r.Dump()
+	t.Logf("before: %v bytes", len(base64.StdEncoding.EncodeToString(before)))
+	_ = r.Delete(nil, "192.168.2.0/24")
+	after := r.Dump()
+	t.Logf("after: %v bytes", len(base64.StdEncoding.EncodeToString(after)))
+	if len(before) != len(after) {
+		t.Errorf("Expected dump length to be %d, got %d", len(before), len(after))
 	}
 }
