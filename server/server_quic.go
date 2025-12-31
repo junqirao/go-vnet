@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 	"time"
@@ -14,20 +13,13 @@ import (
 
 	"go-vnet/server/network"
 
-	"go-vnet/common/auth"
 	"go-vnet/common/config"
-	"go-vnet/common/logger"
 	tt "go-vnet/common/tls"
 )
 
 type (
 	quicServer struct {
-		// generic
-		cfg     *Config
-		logger  logger.Logger
-		sig     chan struct{}
-		auth    *auth.Server
-		manager *Manager
+		*Server
 
 		sessions sync.Map // src : *quicSession
 	}
@@ -48,17 +40,10 @@ func (q quicSendReceiver) Receive(ctx context.Context) (data []byte, err error) 
 	return q.ReceiveDatagram(ctx)
 }
 
-func newQuicServer(cfg *Config) *quicServer {
-	s := &quicServer{
-		cfg:     cfg,
-		logger:  config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
-		sig:     make(chan struct{}),
-		manager: NewManager(),
+func newQuicServer(s *Server) *quicServer {
+	return &quicServer{
+		Server: s,
 	}
-
-	chainFunc := config.GetMappedConfig[[]auth.ServerAuthChainFunc](cfg, ConfigKeyAuthChainFunc, []auth.ServerAuthChainFunc{})
-	s.auth = auth.NewServer(cfg.Auth, chainFunc)
-	return s
 }
 
 func (s *quicServer) Serve(ctx context.Context) (err error) {
@@ -346,38 +331,4 @@ func (s *quicServer) closeWithError(ctx context.Context, conn *quic.Conn, err er
 	}
 	s.logger.Errorf(ctx, "connection closed with error: %s", err.Error())
 	_ = conn.CloseWithError(quic.ApplicationErrorCode(code), err.Error())
-}
-
-func (s *quicServer) proxy(ctx context.Context, name string, dst io.Writer, src io.Reader) (written int64, err error) {
-	buf := make([]byte, s.cfg.MTU*100)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return written, ctx.Err()
-		case <-s.sig:
-			s.logger.Infof(ctx, "proxy tunnel closed: %s", name)
-			return
-		default:
-		}
-
-		// 优化：简化逻辑，移除不必要的错误检查
-		nr, er := src.Read(buf)
-		if nr > 0 {
-			nw, ew := dst.Write(buf[0:nr])
-			if ew != nil {
-				return written, ew
-			}
-			if nw > 0 {
-				written += int64(nw)
-			}
-		}
-		if er != nil {
-			if er != io.EOF {
-				err = er
-			}
-			break
-		}
-	}
-	return written, err
 }
