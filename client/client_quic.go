@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -79,7 +78,6 @@ func NewQuicClient(c *Client) *QuicClient {
 		// generate if not set
 		tt.GenerateTLSConfig(time.Hour*24*7, 1024))
 
-	// 优化：设置默认QUIC配置以减少传输延迟
 	quicConfig := config.GetMappedConfig[*quic.Config](c.cfg, ConfigKeyQuicConfig, defaultQuicConfig)
 
 	if c.cfg.InsecureSkipVerify {
@@ -140,7 +138,6 @@ func (c *QuicClient) Dial(ctx context.Context) (session *Session, err error) {
 
 	c.manager = NewManager(session)
 	go c.cleanupIdleStreams()
-	go c.acceptStreamLoop()
 	return
 }
 
@@ -212,17 +209,14 @@ func (c *QuicClient) SendToServer(dst string, buf []byte, n int) (err error) {
 		wrapper = v.(*streamWrapper)
 	}
 
-	// 优化：使用atomic更新计数器，无锁操作
+	// update counter
 	wrapper.bytesSent.Add(uint64(n))
-
-	// 优化：使用atomic.Load获取stream，无锁操作
 	stream := wrapper.stream.Load()
 	if stream == nil {
 		stream, err = c.session.conn.OpenStream()
 		if err != nil {
 			return err
 		}
-		// 优化：使用atomic.Store设置stream
 		wrapper.stream.Store(stream)
 	}
 
@@ -230,7 +224,7 @@ func (c *QuicClient) SendToServer(dst string, buf []byte, n int) (err error) {
 	return err
 }
 
-func (c *QuicClient) acceptStreamLoop() {
+func (c *QuicClient) ReadFromServerAndWriteToDevice() {
 	for {
 		select {
 		case <-c.sig:
@@ -243,52 +237,8 @@ func (c *QuicClient) acceptStreamLoop() {
 		if err != nil {
 			return
 		}
-		go c.handleStream(stream)
+		go func() {
+			_, _ = c.writeDevice(stream)
+		}()
 	}
-}
-
-func (c *QuicClient) handleStream(stream *quic.Stream) {
-	c.logger.Infof(c.ctx, "handle rx stream: %v", stream.StreamID())
-	defer func() {
-		_ = stream.Close()
-	}()
-
-	written, err := c.writeDevice(stream)
-	c.logger.Infof(c.ctx, "handle rx stream stopped: %d bytes written, err=%v", written, err)
-}
-
-// writeDevice - 优化版本：简化写入逻辑，TUN设备通常不会部分写入
-func (c *QuicClient) writeDevice(src io.Reader) (written int64, err error) {
-	var (
-		buf = make([]byte, c.session.DispatchedDevice.MTU*100)
-		nr  int
-		er  error
-	)
-
-	for {
-		select {
-		case <-c.ctx.Done():
-			return written, c.ctx.Err()
-		case <-c.sig:
-			return
-		default:
-		}
-		nr, er = src.Read(buf)
-		if nr > 0 {
-			wn, err := c.dev.Write(buf[0:nr])
-			if err != nil {
-				return written, err
-			}
-			if wn > 0 {
-				written += int64(wn)
-			}
-		}
-		if er != nil {
-			if er != io.EOF {
-				err = er
-			}
-			break
-		}
-	}
-	return written, err
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -24,6 +25,8 @@ type (
 		Dial(ctx context.Context) (session *Session, err error)
 		// SendToServer send flow to server by dst ip address
 		SendToServer(dst string, buf []byte, n int) (err error)
+		// ReadFromServerAndWriteToDevice read flow from server and write to device
+		ReadFromServerAndWriteToDevice()
 	}
 	Client struct {
 		internal internalClient
@@ -89,6 +92,7 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	go c.syncRouterLoop()
 
 	// 4. handle rx flow
+	go c.HandleRX()
 
 	// 5. block and handle tx flow
 	return c.HandleTX()
@@ -207,4 +211,49 @@ func (c *Client) SendToServer(dst string, buf []byte, n int) (err error) {
 		return
 	}
 	return c.internal.SendToServer(dst, buf, n)
+}
+
+func (c *Client) HandleRX() {
+	c.internal.ReadFromServerAndWriteToDevice()
+}
+
+// writeDevice
+func (c *Client) writeDevice(src io.ReadWriteCloser) (written int64, err error) {
+	defer func() {
+		_ = src.Close()
+		c.logger.Infof(c.ctx, "handle rx stopped: %d bytes written, err=%v", written, err)
+	}()
+
+	var (
+		buf = make([]byte, c.dev.GetConfig().MTU*100)
+		nr  int
+		er  error
+	)
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return written, c.ctx.Err()
+		case <-c.sig:
+			return
+		default:
+		}
+		nr, er = src.Read(buf)
+		if nr > 0 {
+			wn, err := c.dev.Write(buf[0:nr])
+			if err != nil {
+				return written, err
+			}
+			if wn > 0 {
+				written += int64(wn)
+			}
+		}
+		if er != nil {
+			if er != io.EOF {
+				err = er
+			}
+			break
+		}
+	}
+	return written, err
 }
