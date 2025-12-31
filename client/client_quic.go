@@ -3,8 +3,6 @@ package client
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -22,31 +20,23 @@ type (
 		// quic
 		tlsConfig  *tls.Config
 		quicConfig *quic.Config
-		session    *quicSession
-	}
-	quicSession struct {
-		*Session
-		conn    *quic.Conn
-		streams sync.Map // dst : *quicStreamWrapper
+		streams    sync.Map
 	}
 	quicStreamWrapper struct {
-		stream      atomic.Pointer[quic.Stream] // 优化：使用atomic指针，无锁访问stream
-		bytesSent   atomic.Uint64               // 优化：使用atomic替换锁，更快的计数器
-		lastChecked atomic.Int64                // 优化：使用atomic存储时间戳
+		stream      atomic.Pointer[quic.Stream]
+		bytesSent   atomic.Uint64
+		lastChecked atomic.Int64
 	}
 	quicSendReceiver struct {
 		*quic.Conn
 	}
 )
 
-func (q *quicSession) Close() error {
-	if q.err == nil {
-		q.err = errors.New("close manually")
-	}
-	return q.conn.CloseWithError(1, q.err.Error())
+func (q quicSendReceiver) Close() error {
+	return q.CloseWithError(0, "connection closed")
 }
 
-func SendReceiverFromQuicConn(conn *quic.Conn) SendReceiver {
+func SendReceiverFromQuicConn(conn *quic.Conn) SendReceiveCloser {
 	return &quicSendReceiver{conn}
 }
 
@@ -76,53 +66,19 @@ func newQuicClient(c *Client) *quicClient {
 	}
 
 	qc.Client = c
-
 	return qc
 }
 
-func (c *quicClient) Dial(ctx context.Context) (session *Session, err error) {
+func (c *quicClient) Dial(ctx context.Context) (sr SendReceiveCloser, conn any, err error) {
 	c.ctx = ctx
 	addr := fmt.Sprintf("%s:%d", c.cfg.Address, c.cfg.Port)
-	conn, err := quic.DialAddr(ctx, addr, c.tlsConfig, c.quicConfig)
+	cc, err := quic.DialAddr(ctx, addr, c.tlsConfig, c.quicConfig)
 	if err != nil {
 		return
 	}
 
-	// get payload and overwrite network id
-	payload := c.cfg.authPayload
-	if payload == nil {
-		payload = make(map[string]any)
-	}
-	payload["network_id"] = c.cfg.NetworkId
-
-	// do auth
-	resp, err := c.auth.Auth(ctx, payload,
-		func(ctx context.Context, in []byte) (out []byte, err error) {
-			if err = conn.SendDatagram(in); err != nil {
-				return
-			}
-			return conn.ReceiveDatagram(ctx)
-		},
-	)
-	if err != nil {
-		return
-	}
-
-	joined := JoinNetworkResponse{}
-	bs, _ := json.Marshal(resp)
-	_ = json.Unmarshal(bs, &joined)
-
-	c.session = &quicSession{
-		conn: conn,
-	}
-	session = &Session{
-		SendReceiver:     SendReceiverFromQuicConn(conn),
-		DispatchedDevice: joined.Device,
-		Closer:           c.session,
-	}
-	c.session.Session = session
-
-	c.manager = NewManager(session)
+	conn = cc
+	sr = SendReceiverFromQuicConn(cc)
 	go c.cleanupIdleStreams()
 	return
 }
@@ -139,18 +95,17 @@ func (c *quicClient) cleanupIdleStreams() {
 			return
 		case <-ticker.C:
 			now := time.Now().UnixNano()
-			c.session.streams.Range(func(key, value any) bool {
+			c.streams.Range(func(key, value any) bool {
 				wrapper := value.(*quicStreamWrapper)
-				// 优化：使用atomic.Load读取stream指针
 				stream := wrapper.stream.Load()
 				lastChecked := wrapper.lastChecked.Load()
 				bytesSent := wrapper.bytesSent.Load()
 
-				// 检查是否空闲
+				// check if stream is idle
 				if bytesSent == 0 && now-lastChecked > int64(time.Second*30) {
 					if wrapper.stream.CompareAndSwap(stream, nil) {
 						_ = stream.Close()
-						c.session.streams.Delete(key)
+						c.streams.Delete(key)
 						c.logger.Infof(c.ctx, "close idle stream: %s", key)
 					}
 				} else {
@@ -167,9 +122,10 @@ func (c *quicClient) SendToServer(dst string, buf []byte, n int) (err error) {
 	// reuse stream
 	// close stream if error or no transport for 30s
 	var wrapper *quicStreamWrapper
-	v, ok := c.session.streams.Load(dst)
+	v, ok := c.streams.Load(dst)
 	if !ok {
-		stream, err := c.session.conn.OpenStream()
+		conn := c.session.Conn.(*quic.Conn)
+		stream, err := conn.OpenStream()
 		if err != nil {
 			return err
 		}
@@ -189,7 +145,7 @@ func (c *quicClient) SendToServer(dst string, buf []byte, n int) (err error) {
 		wrapper = &quicStreamWrapper{}
 		wrapper.stream.Store(stream)
 		wrapper.lastChecked.Store(time.Now().UnixNano())
-		c.session.streams.Store(dst, wrapper)
+		c.streams.Store(dst, wrapper)
 		c.logger.Infof(c.ctx, "create tx stream: %s", dst)
 	} else {
 		wrapper = v.(*quicStreamWrapper)
@@ -199,7 +155,8 @@ func (c *quicClient) SendToServer(dst string, buf []byte, n int) (err error) {
 	wrapper.bytesSent.Add(uint64(n))
 	stream := wrapper.stream.Load()
 	if stream == nil {
-		stream, err = c.session.conn.OpenStream()
+		conn := c.session.Conn.(*quic.Conn)
+		stream, err = conn.OpenStream()
 		if err != nil {
 			return err
 		}
@@ -211,6 +168,7 @@ func (c *quicClient) SendToServer(dst string, buf []byte, n int) (err error) {
 }
 
 func (c *quicClient) ReadFromServerAndWriteToDevice() {
+	conn := c.session.Conn.(*quic.Conn)
 	for {
 		select {
 		case <-c.sig:
@@ -219,7 +177,7 @@ func (c *quicClient) ReadFromServerAndWriteToDevice() {
 			return
 		default:
 		}
-		stream, err := c.session.conn.AcceptStream(context.Background())
+		stream, err := conn.AcceptStream(context.Background())
 		if err != nil {
 			return
 		}

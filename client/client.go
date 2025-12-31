@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -22,7 +23,7 @@ import (
 type (
 	internalClient interface {
 		// Dial to server and create manager with established connection
-		Dial(ctx context.Context) (session *Session, err error)
+		Dial(ctx context.Context) (sr SendReceiveCloser, conn any, err error)
 		// SendToServer send flow to server by dst ip address
 		SendToServer(dst string, buf []byte, n int) (err error)
 		// ReadFromServerAndWriteToDevice read flow from server and write to device
@@ -40,6 +41,7 @@ type (
 		bufPool  sync.Pool
 		dev      device.IDevice
 		src      string
+		session  *Session
 	}
 )
 
@@ -99,7 +101,46 @@ func (c *Client) Run(ctx context.Context) (err error) {
 }
 
 func (c *Client) dial(ctx context.Context) (session *Session, err error) {
-	return c.internal.Dial(ctx)
+	sr, conn, err := c.internal.Dial(ctx)
+	if err != nil {
+		return
+	}
+
+	// get payload and overwrite network id
+	payload := c.cfg.authPayload
+	if payload == nil {
+		payload = make(map[string]any)
+	}
+	payload["network_id"] = c.cfg.NetworkId
+
+	// do auth
+	resp, err := c.auth.Auth(ctx, payload,
+		func(ctx context.Context, in []byte) (out []byte, err error) {
+			if err = sr.Send(in); err != nil {
+				return
+			}
+			return sr.Receive(ctx)
+		},
+	)
+	if err != nil {
+		return
+	}
+
+	joined := JoinNetworkResponse{}
+	bs, _ := json.Marshal(resp)
+	_ = json.Unmarshal(bs, &joined)
+
+	session = &Session{
+		Type:              c.cfg.Type,
+		NetworkId:         c.cfg.NetworkId,
+		Conn:              conn,
+		SendReceiveCloser: sr,
+		DispatchedDevice:  joined.Device,
+	}
+
+	c.session = session
+	c.manager = NewManager(session)
+	return
 }
 
 func (c *Client) syncRouter(ctx context.Context) (err error) {

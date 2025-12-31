@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"sync"
 	"time"
 
@@ -10,7 +11,8 @@ import (
 )
 
 type (
-	SendReceiver interface {
+	SendReceiveCloser interface {
+		io.Closer
 		Send(data []byte) (err error)
 		Receive(ctx context.Context) (data []byte, err error)
 	}

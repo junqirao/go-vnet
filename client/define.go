@@ -1,8 +1,6 @@
 package client
 
 import (
-	"io"
-
 	"go-vnet/common/device"
 )
 
@@ -11,11 +9,14 @@ type (
 		Device device.Config `json:"device"`
 	}
 	Session struct {
-		SendReceiver
-		io.Closer
+		SendReceiveCloser
 		err              error
+		Type             SessionType   `json:"type"`
+		NetworkId        string        `json:"network_id"`
 		DispatchedDevice device.Config `json:"dispatched_device"`
+		Conn             any           `json:"-"`
 	}
+	SessionType = Type
 )
 
 func (s *Session) Error() error {
@@ -27,8 +28,8 @@ func (s *Session) SetError(err error) {
 }
 
 func (s *Session) Close() error {
-	if s.Closer == nil {
+	if s.SendReceiveCloser == nil {
 		return nil
 	}
-	return s.Closer.Close()
+	return s.SendReceiveCloser.Close()
 }
