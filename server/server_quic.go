@@ -218,7 +218,7 @@ func (s *quicServer) acceptStreamLoop(ctx context.Context, session *quicSession)
 		// unregister session
 		s.sessions.Delete(session.IP)
 		// unregister router
-		if err := session.Network.Router().Delete(ctx, session.IP); err != nil {
+		if err := session.Network.Router().Delete(ctx, fmt.Sprintf("%s/32", session.IP)); err != nil {
 			s.logger.Errorf(ctx, "unregister router error: %s", err.Error())
 		}
 		// close connection
@@ -313,16 +313,26 @@ func (s *quicServer) handleStreamProxy(ctx context.Context, session *quicSession
 }
 
 func (s *quicServer) handleDatagramLoop(ctx context.Context, session *quicSession) {
+	var (
+		err      error
+		datagram []byte
+	)
+
+	defer func() {
+		s.logger.Infof(ctx, "handle datagram loop stopped: %s, reason=%s", session.IP, err.Error())
+	}()
+
 	for {
 		select {
 		case <-s.sig:
+			err = errors.New("server closed")
 			return
 		case <-ctx.Done():
+			err = ctx.Err()
 			return
 		default:
-			datagram, err := session.conn.ReceiveDatagram(ctx)
+			datagram, err = session.conn.ReceiveDatagram(ctx)
 			if err != nil {
-				s.logger.Errorf(ctx, "receive datagram error: %s", err.Error())
 				return
 			}
 			s.manager.PushEvent(session.Session, datagram)
