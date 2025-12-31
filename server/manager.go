@@ -7,10 +7,6 @@ import (
 )
 
 type (
-	SendReceiver interface {
-		Send(data []byte) (err error)
-		Receive(ctx context.Context) (data []byte, err error)
-	}
 	Manager struct {
 		sig    chan struct{}
 		events chan *FuncCallEvent
