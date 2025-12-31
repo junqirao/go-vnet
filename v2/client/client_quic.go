@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -154,6 +153,7 @@ func (c *QuicClient) cleanupIdleStreams() {
 					_ = wrapper.stream.Close()
 					wrapper.stream = nil
 					c.session.streams.Delete(key)
+					c.logger.Infof(c.ctx, "close idle stream: %s", key)
 				}
 				wrapper.bytesSent = 0
 				wrapper.lastChecked = now
@@ -192,6 +192,7 @@ func (c *QuicClient) SendToServer(dst string, buf []byte, n int) (err error) {
 			lastChecked: time.Now(),
 		}
 		c.session.streams.Store(dst, wrapper)
+		c.logger.Infof(c.ctx, "create tx stream: %s", dst)
 	} else {
 		wrapper = v.(*streamWrapper)
 	}
@@ -227,12 +228,55 @@ func (c *QuicClient) acceptStreamLoop() {
 }
 
 func (c *QuicClient) handleStream(stream *quic.Stream) {
+	c.logger.Infof(c.ctx, "handle rx stream: %v", stream.StreamID())
 	defer func() {
 		_ = stream.Close()
 	}()
 
-	src := bufio.NewReader(stream)
-	dst := bufio.NewWriter(c.dev)
-	written, err := io.Copy(dst, src)
-	c.logger.Infof(c.ctx, "handle stream stopped: %d bytes written, err=%v", written, err)
+	written, err := c.writeDevice(stream)
+	c.logger.Infof(c.ctx, "handle rx stream stopped: %d bytes written, err=%v", written, err)
+}
+
+func (c *QuicClient) writeDevice(src io.Reader) (written int64, err error) {
+	var (
+		buf    = make([]byte, c.session.DispatchedDevice.MTU)
+		nr, nw int
+		er, ew error
+	)
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return written, c.ctx.Err()
+		case <-c.sig:
+			return
+		default:
+		}
+		nr, er = src.Read(buf)
+		if nr > 0 {
+			nw, ew = c.dev.Write(buf[0:nr])
+			if nw < 0 || nr < nw {
+				nw = 0
+				if ew == nil {
+					ew = errors.New("invalid write")
+				}
+			}
+			written += int64(nw)
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+		if er != nil {
+			if er != io.EOF {
+				err = er
+			}
+			break
+		}
+	}
+	return written, err
 }

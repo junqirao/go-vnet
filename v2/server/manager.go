@@ -70,7 +70,6 @@ func (manager *Manager) ProcessFuncCallLoop(ctx context.Context) (err error) {
 			}
 			respBytes, _ := json.Marshal(resp)
 			_ = ev.Session.Send(respBytes)
-		default:
 		}
 	}
 }

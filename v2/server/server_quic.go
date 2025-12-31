@@ -177,13 +177,13 @@ func (s *QuicServer) registerConn(ctx context.Context, conn *quic.Conn) (session
 			Id:               "todo-session-id",
 			Network:          nwk,
 			DispatchedDevice: dev,
-			IP:               fmt.Sprintf("%s/32", ip.To4().String()),
+			IP:               ip.To4().String(),
 		},
 		conn: conn,
 	}
 
 	// register router
-	if err = nwk.Router().Register(ctx, session.IP, session); err != nil {
+	if err = nwk.Router().Register(ctx, fmt.Sprintf("%s/32", session.IP), session); err != nil {
 		s.logger.Errorf(ctx, "register router error: %s", err.Error())
 		s.closeWithError(ctx, conn, err, 400)
 		return
@@ -262,11 +262,14 @@ func (s *QuicServer) handleStreamProxy(ctx context.Context, session *QuicSession
 	v, ok := session.Network.Router().Route(dst)
 	if !ok {
 		s.logger.Errorf(ctx, "route not found: dst=%v", dst)
+		_ = stream.Close()
 		return
 	}
 
 	// send ack (byte 1) to client
 	_, _ = stream.Write([]byte{1})
+
+	s.logger.Infof(ctx, "handle stream proxy: %v->%v", src, dst)
 
 	dstSession, ok := v.(*QuicSession)
 	if !ok {
