@@ -150,7 +150,20 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 }
 
 func (s *Server) proxy(ctx context.Context, session *session.ServerSession, name string, dst io.Writer, src io.Reader) (written int64, err error) {
-	buf := make([]byte, s.cfg.MTU*100)
+	var (
+		buf         = make([]byte, s.cfg.MTU*100)
+		nr          int
+		er          error
+		flowControl = func() []byte {
+			return buf[0:nr]
+		}
+	)
+
+	if ctrl := session.Network.Control(); ctrl != nil {
+		flowControl = func() []byte {
+			return ctrl.Handle(ctx, buf[0:nr])
+		}
+	}
 
 	for {
 		select {
@@ -162,9 +175,10 @@ func (s *Server) proxy(ctx context.Context, session *session.ServerSession, name
 		default:
 		}
 
-		nr, er := src.Read(buf)
+		nr, er = src.Read(buf)
 		if nr > 0 {
-			nw, ew := dst.Write(buf[0:nr])
+			// equals dst.Write(buf[0:nr]) when control not set
+			nw, ew := dst.Write(flowControl())
 			if ew != nil {
 				return written, ew
 			}

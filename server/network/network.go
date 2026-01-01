@@ -4,7 +4,8 @@ import (
 	"context"
 
 	"go-vnet/common/addresses"
-	device2 "go-vnet/common/device"
+	"go-vnet/common/device"
+	"go-vnet/common/flow"
 	"go-vnet/common/router"
 )
 
@@ -13,15 +14,16 @@ type (
 		Config          `json:"config"`
 		router          router.Router
 		pool            *addresses.IPAllocator
-		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *device2.Device, err error)
+		control         *flow.Control
+		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *device.Device, err error)
 	}
 	Config struct {
 		ID              string `json:"id"`
 		CIDR            string `json:"cidr"`
 		MTU             int    `json:"mtu"`
 		RouterData      []byte `json:"-"`
-		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *device2.Device, err error)
-		deviceSignFunc  func(d *device2.IDevice)
+		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *device.Device, err error)
+		deviceSignFunc  func(d *device.IDevice)
 	}
 )
 
@@ -42,8 +44,8 @@ func (n *Network) Router() router.Router {
 	return n.router
 }
 
-func (n *Network) AcquireDevice(ctx context.Context, request map[string]any) (dev *device2.Device, err error) {
-	dev = &device2.Device{}
+func (n *Network) AcquireDevice(ctx context.Context, request map[string]any) (dev *device.Device, err error) {
+	dev = &device.Device{}
 	if n.allocDeviceFunc != nil {
 		if dev, err = n.allocDeviceFunc(ctx, request); err != nil {
 			return
@@ -61,6 +63,14 @@ func (n *Network) AcquireDevice(ctx context.Context, request map[string]any) (de
 	return
 }
 
-func (n *Network) ReleaseDevice(dev *device2.Device) (err error) {
+func (n *Network) ReleaseDevice(dev *device.Device) (err error) {
 	return n.pool.ReleaseIP(dev.CIDR)
+}
+
+func (n *Network) Control() *flow.Control {
+	return n.control
+}
+
+func (n *Network) SetControl(control *flow.Control) {
+	n.control = control
 }
