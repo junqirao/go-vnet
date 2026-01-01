@@ -118,7 +118,7 @@ func (s *quicServer) handleStreamProxy(ctx context.Context, sess *session.Server
 
 	s.logger.Infof(ctx, "handle stream proxy: %v->%v", src, dst)
 
-	dstSession, ok := v.(*session.Session)
+	dstSession, ok := v.(*session.ServerSession)
 	if !ok {
 		s.logger.Errorf(ctx, "error session type: dst=%v", dst)
 		return
