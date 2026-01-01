@@ -44,6 +44,10 @@ type (
 	ConfigOption func(cfg *Config)
 )
 
+func (t Type) String() string {
+	return string(t)
+}
+
 func NewConfig(opts ...ConfigOption) *Config {
 	cfg := defaultServerConfig()
 	for _, opt := range opts {

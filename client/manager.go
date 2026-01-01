@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"go-vnet/common/session"
 	"go-vnet/server"
 )
 
@@ -18,11 +19,11 @@ type (
 	}
 	Manager struct {
 		callMu  sync.Mutex
-		session *Session
+		session *session.ClientSession
 	}
 )
 
-func NewManager(session *Session) *Manager {
+func NewManager(session *session.ClientSession) *Manager {
 	return &Manager{
 		session: session,
 	}

@@ -17,31 +17,33 @@ import (
 	"go-vnet/common/device"
 	"go-vnet/common/logger"
 	"go-vnet/common/router"
+	"go-vnet/common/session"
 	"go-vnet/server"
 )
 
 type (
 	internalClient interface {
 		// Dial to server and create manager with established connection
-		Dial(ctx context.Context) (sr SendReceiveCloser, conn any, err error)
+		Dial(ctx context.Context) (sr session.SendReceiveCloser, conn any, err error)
 		// SendToServer send flow to server by dst ip address
 		SendToServer(dst string, buf []byte, n int) (err error)
 		// ReadFromServerAndWriteToDevice read flow from server and write to device
 		ReadFromServerAndWriteToDevice()
 	}
 	Client struct {
-		internal internalClient
-		ctx      context.Context
-		sig      chan struct{}
-		cfg      *Config
-		logger   logger.Logger
-		auth     *auth.Client
-		manager  *Manager
-		router   router.Router
-		bufPool  sync.Pool
-		dev      device.IDevice
-		src      string
-		session  *Session
+		internal      internalClient
+		ctx           context.Context
+		sig           chan struct{}
+		cfg           *Config
+		logger        logger.Logger
+		auth          *auth.Client
+		manager       *Manager
+		router        router.Router
+		bufPool       sync.Pool
+		dev           device.IDevice
+		src           string
+		session       *session.ClientSession
+		serverSession serverSession
 	}
 )
 
@@ -67,7 +69,7 @@ func (c *Client) Run(ctx context.Context) (err error) {
 
 	// 1. connect to server
 	c.logger.Infof(ctx, "connect to server %s:%d", c.cfg.Address, c.cfg.Port)
-	session, err := c.dial(ctx)
+	sess, err := c.dial(ctx)
 	if err != nil {
 		return
 	}
@@ -77,18 +79,18 @@ func (c *Client) Run(ctx context.Context) (err error) {
 		_ = c.dev.Close()
 	}
 	if c.cfg.DeviceType != "" {
-		session.DispatchedDevice.Type = device.Type(c.cfg.DeviceType)
+		sess.DispatchedDevice.Type = device.Type(c.cfg.DeviceType)
 	}
-	c.dev = device.NewTunDevice(session.DispatchedDevice)
+	c.dev = device.NewTunDevice(sess.DispatchedDevice.Config)
 	if err = c.dev.Setup(); err != nil {
 		err = fmt.Errorf("failed to setup device: %w", err)
-		_ = session.Close()
+		sess.CloseWithError(err)
 		return
 	}
-	ip, _, _ := net.ParseCIDR(session.DispatchedDevice.CIDR)
+	ip, _, _ := net.ParseCIDR(sess.DispatchedDevice.CIDR)
 	c.src = ip.To4().String()
 	c.logger.Infof(ctx, "dispatched device ip=%s,mtu=%d", c.src,
-		session.DispatchedDevice.MTU)
+		sess.DispatchedDevice.MTU)
 
 	// 3. sync router loop
 	go c.syncRouterLoop()
@@ -100,7 +102,7 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	return c.handleTX()
 }
 
-func (c *Client) dial(ctx context.Context) (session *Session, err error) {
+func (c *Client) dial(ctx context.Context) (sess *session.ClientSession, err error) {
 	sr, conn, err := c.internal.Dial(ctx)
 	if err != nil {
 		return
@@ -130,16 +132,15 @@ func (c *Client) dial(ctx context.Context) (session *Session, err error) {
 	bs, _ := json.Marshal(resp)
 	_ = json.Unmarshal(bs, &joined)
 
-	session = &Session{
-		Type:              c.cfg.Type,
-		NetworkId:         c.cfg.NetworkId,
-		Conn:              conn,
-		SendReceiveCloser: sr,
-		DispatchedDevice:  joined.Device,
-	}
+	sess = session.NewClientSession(
+		session.NewSession(session.Type(c.cfg.Type), conn, joined.Session.DispatchedDevice, sr),
+		joined.Session.Network.ID,
+	)
 
-	c.session = session
-	c.manager = NewManager(session)
+	c.serverSession = joined.Session
+	c.session = sess
+	c.manager = NewManager(sess)
+	c.logger.Infof(ctx, "session established: id=%s,network_id=%s", sess.Id, sess.NetworkId)
 	return
 }
 

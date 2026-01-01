@@ -11,6 +11,7 @@ import (
 	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/config"
+	"go-vnet/common/session"
 	tt "go-vnet/common/tls"
 )
 
@@ -27,26 +28,7 @@ type (
 		bytesSent   atomic.Uint64
 		lastChecked atomic.Int64
 	}
-	quicSendReceiver struct {
-		*quic.Conn
-	}
 )
-
-func (q quicSendReceiver) Close() error {
-	return q.CloseWithError(0, "connection closed")
-}
-
-func SendReceiverFromQuicConn(conn *quic.Conn) SendReceiveCloser {
-	return &quicSendReceiver{conn}
-}
-
-func (q quicSendReceiver) Send(data []byte) (err error) {
-	return q.SendDatagram(data)
-}
-
-func (q quicSendReceiver) Receive(ctx context.Context) (data []byte, err error) {
-	return q.ReceiveDatagram(ctx)
-}
 
 func newQuicClient(c *Client) *quicClient {
 	// extra configs
@@ -69,7 +51,7 @@ func newQuicClient(c *Client) *quicClient {
 	return qc
 }
 
-func (c *quicClient) Dial(ctx context.Context) (sr SendReceiveCloser, conn any, err error) {
+func (c *quicClient) Dial(ctx context.Context) (sr session.SendReceiveCloser, conn any, err error) {
 	c.ctx = ctx
 	addr := fmt.Sprintf("%s:%d", c.cfg.Address, c.cfg.Port)
 	cc, err := quic.DialAddr(ctx, addr, c.tlsConfig, c.quicConfig)
@@ -78,7 +60,7 @@ func (c *quicClient) Dial(ctx context.Context) (sr SendReceiveCloser, conn any, 
 	}
 
 	conn = cc
-	sr = SendReceiverFromQuicConn(cc)
+	sr = session.SendReceiverFromQuicConn(cc)
 	go c.cleanupIdleStreams()
 	return
 }

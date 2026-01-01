@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+
+	"go-vnet/common/session"
 )
 
 type (
@@ -12,7 +14,7 @@ type (
 		events chan *FuncCallEvent
 	}
 	FuncCallEvent struct {
-		Session *Session
+		Session *session.ServerSession
 		Data    []byte
 	}
 )
@@ -75,7 +77,7 @@ const (
 	FuncNameGetRouterData = "get_router_data"
 )
 
-func (manager *Manager) handleFuncCall(_ context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
+func (manager *Manager) handleFuncCall(_ context.Context, session *session.ServerSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
 	switch req.FuncName {
 	case FuncNamePing:
 		return &FuncCallResponse{Code: 0, Data: session.Network.Router().Hash()}, nil
@@ -87,7 +89,7 @@ func (manager *Manager) handleFuncCall(_ context.Context, session *Session, req 
 	return &FuncCallResponse{Code: -1, Message: "unknown func name"}, nil
 }
 
-func (manager *Manager) PushEvent(session *Session, data []byte) {
+func (manager *Manager) PushEvent(session *session.ServerSession, data []byte) {
 	manager.events <- &FuncCallEvent{
 		Session: session,
 		Data:    data,

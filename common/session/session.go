@@ -1,12 +1,8 @@
-package server
+package session
 
 import (
 	"context"
 	"fmt"
-
-	"go-vnet/server/network"
-
-	"go-vnet/common/device"
 )
 
 type (
@@ -18,17 +14,8 @@ type (
 	Closer interface {
 		CloseWithError(err error)
 	}
-	Session struct {
-		SendReceiveCloser
-		Conn             any              `json:"-"`
-		Type             SessionType      `json:"type"`
-		Id               string           `json:"id"`
-		Network          *network.Network `json:"network"`
-		DispatchedDevice *device.Device   `json:"dispatched_device"`
-		IP               string           `json:"ip"`
-	}
-	SessionType = Type
-	Error       struct {
+	Type  string
+	Error struct {
 		msg   string
 		code  int
 		cause error
@@ -47,6 +34,10 @@ func (e *Error) Error() string {
 		return fmt.Sprintf("[%d]%s: %s", e.code, e.msg, e.cause.Error())
 	}
 	return fmt.Sprintf("[%d]%s", e.code, e.msg)
+}
+
+func (e *Error) Code() int {
+	return e.code
 }
 
 func (e *Error) WithCause(cause error) *Error {

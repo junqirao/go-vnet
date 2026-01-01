@@ -14,14 +14,15 @@ import (
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
+	"go-vnet/common/session"
 	"go-vnet/server/network"
 )
 
 var (
-	ErrUnauthorized     = NewError("unauthorized", 401)
-	ErrInvalidParameter = NewError("invalid parameter", 400)
-	ErrResourceNotFound = NewError("resource not found", 404)
-	ErrResourceError    = NewError("resource error", 406)
+	ErrUnauthorized     = session.NewError("unauthorized", 401)
+	ErrInvalidParameter = session.NewError("invalid parameter", 400)
+	ErrResourceNotFound = session.NewError("resource not found", 404)
+	ErrResourceError    = session.NewError("resource error", 406)
 )
 
 type (
@@ -32,13 +33,13 @@ type (
 		sig      chan struct{}
 		auth     *auth.Server
 		manager  *Manager
-		sessions sync.Map // src : *Session
+		sessions sync.Map // src : *session.ServerSession
 	}
 	internalServer interface {
 		io.Closer
 		Run(ctx context.Context) (err error)
-		Accept(ctx context.Context) (sr SendReceiveCloser, conn any, err error)
-		HandleProxy(ctx context.Context, session *Session) (err error)
+		Accept(ctx context.Context) (sr session.SendReceiveCloser, conn any, err error)
+		HandleProxy(ctx context.Context, session *session.ServerSession) (err error)
 	}
 )
 
@@ -90,9 +91,9 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 		}
 
 		var (
-			sr      SendReceiveCloser
-			conn    any
-			session *Session
+			sr   session.SendReceiveCloser
+			conn any
+			sess *session.ServerSession
 		)
 
 		// accept connection
@@ -103,23 +104,23 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 		}
 
 		// handshake
-		session, err = s.handshake(ctx, sr, conn)
+		sess, err = s.handshake(ctx, sr, conn)
 		if err != nil {
 			s.logger.Errorf(ctx, "handshake error: %s", err.Error())
-			session.CloseWithError(err)
+			sess.CloseWithError(err)
 			return
 		}
 
-		routeAddress := fmt.Sprintf("%s/32", session.IP)
+		routeAddress := fmt.Sprintf("%s/32", sess.IP)
 
 		// register router
-		if err = session.Network.Router().Register(ctx, routeAddress, session); err != nil {
-			session.CloseWithError(err)
+		if err = sess.Network.Router().Register(ctx, routeAddress, sess); err != nil {
+			sess.CloseWithError(err)
 			return
 		}
 
 		// func call loop
-		go s.handleFuncCallLoop(ctx, session)
+		go s.handleFuncCallLoop(ctx, sess)
 
 		//
 		go func() {
@@ -129,26 +130,26 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 
 			defer func() {
 				// release device
-				err := session.Network.ReleaseDevice(session.DispatchedDevice)
+				err := sess.Network.ReleaseDevice(sess.DispatchedDevice)
 				if err != nil {
 					s.logger.Errorf(ctx, "release device error: %s", err.Error())
 				}
 				// unregister session
-				s.sessions.Delete(session.IP)
+				s.sessions.Delete(sess.IP)
 				// unregister router
-				if err := session.Network.Router().Delete(ctx, routeAddress); err != nil {
+				if err := sess.Network.Router().Delete(ctx, routeAddress); err != nil {
 					s.logger.Errorf(ctx, "unregister router error: %s", err.Error())
 				}
 				// close connection
-				session.CloseWithError(ep)
+				sess.CloseWithError(ep)
 			}()
 
-			ep = s.internal.HandleProxy(ctx, session)
+			ep = s.internal.HandleProxy(ctx, sess)
 		}()
 	}
 }
 
-func (s *Server) proxy(ctx context.Context, name string, dst io.Writer, src io.Reader) (written int64, err error) {
+func (s *Server) proxy(ctx context.Context, session *session.ServerSession, name string, dst io.Writer, src io.Reader) (written int64, err error) {
 	buf := make([]byte, s.cfg.MTU*100)
 
 	for {
@@ -181,7 +182,7 @@ func (s *Server) proxy(ctx context.Context, name string, dst io.Writer, src io.R
 	return written, err
 }
 
-func (s *Server) handshake(ctx context.Context, sr SendReceiveCloser, conn any) (session *Session, err error) {
+func (s *Server) handshake(ctx context.Context, sr session.SendReceiveCloser, conn any) (sess *session.ServerSession, err error) {
 	// Set a context with a 10-second timeout
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer func() {
@@ -248,29 +249,24 @@ func (s *Server) handshake(ctx context.Context, sr SendReceiveCloser, conn any) 
 	}
 	s.logger.Infof(ctx, "dispatch device: id=%v cidr=%v", dev.Id, dev.CIDR)
 
-	resp["device"] = dev
-	// register router
-	ip, _, _ := net.ParseCIDR(dev.CIDR)
+	sess = session.NewServerSession(
+		session.NewSession(session.Type(s.cfg.Type), conn, dev, sr),
+		nwk,
+	)
 
-	session = &Session{
-		SendReceiveCloser: sr,
-		Type:              s.cfg.Type,
-		Id:                uuid.NewString(),
-		Network:           nwk,
-		DispatchedDevice:  dev,
-		IP:                ip.To4().String(),
-		Conn:              conn,
-	}
+	// build response
+	resp["device"] = dev
+	resp["session"] = sess
 
 	// register session
-	s.sessions.Store(session.IP, session)
+	s.sessions.Store(sess.IP, sess)
 	// all these registration will be unregistered in acceptStreamLoop
 	// when the connection is closed (can not accept new stream)
-	s.logger.Infof(ctx, "handle connection: remote_addr=%s,route=%s", remote, session.IP)
+	s.logger.Infof(ctx, "handle connection: remote_addr=%s,route=%s", remote, sess.IP)
 	return
 }
 
-func (s *Server) handleFuncCallLoop(ctx context.Context, session *Session) {
+func (s *Server) handleFuncCallLoop(ctx context.Context, session *session.ServerSession) {
 	var (
 		err      error
 		datagram []byte

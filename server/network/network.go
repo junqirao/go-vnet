@@ -10,7 +10,7 @@ import (
 
 type (
 	Network struct {
-		Config
+		Config          `json:"config"`
 		router          router.Router
 		pool            *addresses.IPAllocator
 		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *device2.Device, err error)
@@ -19,7 +19,7 @@ type (
 		ID              string `json:"id"`
 		CIDR            string `json:"cidr"`
 		MTU             int    `json:"mtu"`
-		RouterData      []byte `json:"router_data"`
+		RouterData      []byte `json:"-"`
 		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *device2.Device, err error)
 		deviceSignFunc  func(d *device2.IDevice)
 	}

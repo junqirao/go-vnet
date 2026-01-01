@@ -3,13 +3,13 @@ package server
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/config"
+	"go-vnet/common/session"
 	tt "go-vnet/common/tls"
 )
 
@@ -18,31 +18,7 @@ type (
 		*Server
 		listener *quic.Listener
 	}
-	quicSendReceiver struct {
-		*quic.Conn
-	}
 )
-
-func (q quicSendReceiver) Send(data []byte) (err error) {
-	return q.SendDatagram(data)
-}
-
-func (q quicSendReceiver) Receive(ctx context.Context) (data []byte, err error) {
-	return q.ReceiveDatagram(ctx)
-}
-
-func (q quicSendReceiver) CloseWithError(err error) {
-	desc := "connection closed"
-	code := 0
-	if err != nil {
-		desc = err.Error()
-		var ee *Error
-		if errors.As(err, &ee) {
-			code = ee.code
-		}
-	}
-	_ = q.Conn.CloseWithError(quic.ApplicationErrorCode(code), desc)
-}
 
 func newQuicServer(s *Server) internalServer {
 	return &quicServer{
@@ -65,13 +41,13 @@ func (s *quicServer) Run(ctx context.Context) (err error) {
 	return
 }
 
-func (s *quicServer) Accept(ctx context.Context) (sr SendReceiveCloser, conn any, err error) {
+func (s *quicServer) Accept(ctx context.Context) (sr session.SendReceiveCloser, conn any, err error) {
 	c, err := s.listener.Accept(ctx)
 	if err != nil {
 		return
 	}
 	conn = c
-	sr = &quicSendReceiver{c}
+	sr = session.SendReceiverFromQuicConn(c)
 	return
 }
 
@@ -79,12 +55,11 @@ func (s *quicServer) Close() error {
 	return s.listener.Close()
 }
 
-func (s *quicServer) HandleProxy(ctx context.Context, session *Session) (err error) {
-	if session.Type != TypeQuic {
-		err = fmt.Errorf("invalid session type")
-		return
+func (s *quicServer) HandleProxy(ctx context.Context, session *session.ServerSession) (err error) {
+	conn, ok := session.Conn.(*quic.Conn)
+	if !ok {
+		return fmt.Errorf("invalid connection type: %T", session.Conn)
 	}
-	conn := session.Conn.(*quic.Conn)
 	for {
 		select {
 		case <-s.sig:
@@ -102,7 +77,7 @@ func (s *quicServer) HandleProxy(ctx context.Context, session *Session) (err err
 	}
 }
 
-func (s *quicServer) handleStreamProxy(ctx context.Context, session *Session, stream *quic.Stream) {
+func (s *quicServer) handleStreamProxy(ctx context.Context, sess *session.ServerSession, stream *quic.Stream) {
 	// get dst ip by first packet, 10s timeout
 	var (
 		buf   = make([]byte, 15)
@@ -121,17 +96,17 @@ func (s *quicServer) handleStreamProxy(ctx context.Context, session *Session, st
 	timer := time.NewTimer(time.Second * 10)
 	select {
 	case <-timer.C:
-		s.logger.Errorf(ctx, "read first pkg timeout. src=%v", session.IP)
+		s.logger.Errorf(ctx, "read first pkg timeout. src=%v", sess.IP)
 		return
 	case first = <-ch:
 	}
 
 	var (
 		dst = string(first)
-		src = session.IP
+		src = sess.IP
 	)
 
-	v, ok := session.Network.Router().Route(dst)
+	v, ok := sess.Network.Router().Route(dst)
 	if !ok {
 		s.logger.Errorf(ctx, "route not found: dst=%v", dst)
 		_ = stream.Close()
@@ -143,7 +118,7 @@ func (s *quicServer) handleStreamProxy(ctx context.Context, session *Session, st
 
 	s.logger.Infof(ctx, "handle stream proxy: %v->%v", src, dst)
 
-	dstSession, ok := v.(*Session)
+	dstSession, ok := v.(*session.Session)
 	if !ok {
 		s.logger.Errorf(ctx, "error session type: dst=%v", dst)
 		return
@@ -167,7 +142,7 @@ func (s *quicServer) handleStreamProxy(ctx context.Context, session *Session, st
 		s.logger.Infof(ctx, "proxy stopped: %s,written=%v", name, written)
 	}()
 
-	written, err = s.proxy(ctx, name, dstStream, stream)
+	written, err = s.proxy(ctx, sess, name, dstStream, stream)
 	if err != nil {
 		s.logger.Errorf(ctx, "proxy error: %s ,err=%v", name, err.Error())
 		return

@@ -2,34 +2,19 @@ package client
 
 import (
 	"go-vnet/common/device"
+	"go-vnet/common/session"
+	"go-vnet/server/network"
 )
 
 type (
 	JoinNetworkResponse struct {
-		Device device.Config `json:"device"`
+		Device  device.Config `json:"device"`
+		Session serverSession `json:"session"`
 	}
-	Session struct {
-		SendReceiveCloser
-		err              error
-		Type             SessionType   `json:"type"`
-		NetworkId        string        `json:"network_id"`
-		DispatchedDevice device.Config `json:"dispatched_device"`
-		Conn             any           `json:"-"`
+	serverSession struct {
+		session.Session `json:"session"`
+		Network         struct {
+			network.Config `json:"config"`
+		} `json:"network"`
 	}
-	SessionType = Type
 )
-
-func (s *Session) Error() error {
-	return s.err
-}
-
-func (s *Session) SetError(err error) {
-	s.err = err
-}
-
-func (s *Session) Close() error {
-	if s.SendReceiveCloser == nil {
-		return nil
-	}
-	return s.SendReceiveCloser.Close()
-}
