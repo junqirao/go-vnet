@@ -282,6 +282,13 @@ func (c *Client) writeDevice(src io.ReadWriteCloser) (written int64, err error) 
 		}
 		nr, er = src.Read(buf)
 		if nr > 0 {
+			// // 检查第一个字节，判断是否是有效的 IP 数据包
+			// // IPv4: 0x45, IPv6: 0x60
+			// if nr > 0 && (buf[0] != 0x45 && buf[0] != 0x60) {
+			// 	// 不写入无效的数据包
+			// 	continue
+			// }
+
 			wn, err := c.dev.Write(buf[0:nr])
 			if err != nil {
 				return written, err

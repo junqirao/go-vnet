@@ -1,6 +1,8 @@
 package device
 
-import "errors"
+import (
+	"errors"
+)
 
 const (
 	TypeWG    = "WireGuard"
@@ -25,6 +27,9 @@ func (c *Config) check() (err error) {
 	}
 	if c.CIDR == "" {
 		err = errors.New("cidr not set")
+	}
+	if c.Type == "" {
+		c.Type = TypeWater
 	}
 	return
 }

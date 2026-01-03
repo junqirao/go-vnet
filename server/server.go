@@ -15,6 +15,7 @@ import (
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
 	"go-vnet/common/session"
+	"go-vnet/server/consts"
 	"go-vnet/server/network"
 )
 
@@ -113,6 +114,10 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 
 		routeAddress := fmt.Sprintf("%s/32", sess.IP)
 
+		// set ctx key
+		ctx = context.WithValue(ctx, consts.CtxKeyServerSession, sess)
+		ctx = context.WithValue(ctx, consts.CtxKeyRouteAddress, routeAddress)
+
 		// register router
 		if err = sess.Network.Router().Register(ctx, routeAddress, sess); err != nil {
 			sess.CloseWithError(err)
@@ -151,7 +156,7 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 
 func (s *Server) proxy(ctx context.Context, session *session.ServerSession, name string, dst io.Writer, src io.Reader) (written int64, err error) {
 	var (
-		buf         = make([]byte, s.cfg.MTU*100)
+		buf         = make([]byte, s.cfg.MTU*1000) // 优化: 增大缓冲区到1.4MB,提高吞吐量
 		nr          int
 		er          error
 		flowControl = func() []byte {
