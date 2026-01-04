@@ -215,19 +215,27 @@ func (c *Client) handleTX() error {
 		return make([]byte, cfg.MTU)
 	}}
 
+	// 使用信号量控制并发 goroutine 数量，避免内存爆炸
+	sem := make(chan struct{}, 1000) // 允许 1000 个并发发送任务
+	errChan := make(chan error, 1)
+
 	for {
 		select {
 		case <-c.sig:
 			return nil
+		case err := <-errChan:
+			return err
 		default:
 		}
 		buf := c.bufPool.Get().([]byte)
 		n, err := c.dev.Read(buf)
 		if err != nil {
+			c.bufPool.Put(buf)
 			err = fmt.Errorf("failed to read device: %w", err)
 			return err
 		}
 		if n == 0 {
+			c.bufPool.Put(buf)
 			continue
 		}
 
@@ -235,11 +243,30 @@ func (c *Client) handleTX() error {
 
 		// drop current loopback packet
 		if dst == "127.0.0.1" || dst == c.src {
+			c.bufPool.Put(buf)
 			continue
 		}
 
-		if err = c.sendToServer(dst, buf, n); err != nil {
-			return err
+		// 异步发送，提高并发度和吞吐量
+		select {
+		case sem <- struct{}{}:
+			go func(bufCopy []byte, dstCopy string, nCopy int) {
+				defer func() {
+					c.bufPool.Put(bufCopy)
+					<-sem // 释放信号量
+				}()
+				if err := c.sendToServer(dstCopy, bufCopy, nCopy); err != nil {
+					select {
+					case errChan <- err:
+					default:
+					}
+				}
+			}(buf, dst, n)
+		default:
+			// 并发数已满，同步发送
+			if err := c.sendToServer(dst, buf, n); err != nil {
+				return err
+			}
 		}
 	}
 }
@@ -267,7 +294,7 @@ func (c *Client) writeDevice(src io.ReadWriteCloser) (written int64, err error) 
 	}()
 
 	var (
-		buf = make([]byte, c.dev.GetConfig().MTU*100)
+		buf = make([]byte, c.dev.GetConfig().MTU*1000) // 增大缓冲区到 1.4MB，提高吞吐量
 		nr  int
 		er  error
 	)
@@ -282,12 +309,12 @@ func (c *Client) writeDevice(src io.ReadWriteCloser) (written int64, err error) 
 		}
 		nr, er = src.Read(buf)
 		if nr > 0 {
-			// // 检查第一个字节，判断是否是有效的 IP 数据包
-			// // IPv4: 0x45, IPv6: 0x60
-			// if nr > 0 && (buf[0] != 0x45 && buf[0] != 0x60) {
-			// 	// 不写入无效的数据包
-			// 	continue
-			// }
+			// 检查第一个字节，判断是否是有效的 IP 数据包
+			// IPv4: 0x45, IPv6: 0x60
+			if nr > 0 && (buf[0] != 0x45 && buf[0] != 0x60) {
+				// 不写入无效的数据包
+				continue
+			}
 
 			wn, err := c.dev.Write(buf[0:nr])
 			if err != nil {
