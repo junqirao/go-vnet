@@ -2,10 +2,10 @@ package device
 
 import "go-vnet/common/logger"
 
-type option func(c *controller)
+type option func(c *Controller)
 
-type controller struct {
-	tunDevice
+type Controller struct {
+	TunDevice
 	config        Config
 	clearCIDRFunc func()
 	logger        logger.Logger
@@ -14,22 +14,27 @@ type controller struct {
 var (
 	// WithLogger set logger to current device
 	WithLogger = func(l logger.Logger) option {
-		return func(c *controller) {
+		return func(c *Controller) {
 			c.logger = l
 		}
 	}
 	// WithConfig set config to current device
 	WithConfig = func(config Config) option {
-		return func(c *controller) {
+		return func(c *Controller) {
 			c.config = config
+		}
+	}
+	WithTunDevice = func(dev TunDevice) option {
+		return func(c *Controller) {
+			c.TunDevice = dev
 		}
 	}
 
 	defaultOptions = []option{WithLogger(logger.DefaultLogger)}
 )
 
-func newController(opts ...option) *controller {
-	c := new(controller)
+func NewController(opts ...option) *Controller {
+	c := new(Controller)
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -37,29 +42,29 @@ func newController(opts ...option) *controller {
 }
 
 // Setup ...
-func (c *controller) Setup() (err error) {
+func (c *Controller) Setup() (err error) {
 	if err = c.config.check(); err != nil {
 		return
 	}
 
 	switch c.config.Type {
 	case TypeWater:
-		c.tunDevice, err = newWaterDevice(c.config)
+		c.TunDevice, err = newWaterDevice(c.config)
 		if err != nil {
 			return
 		}
 		c.config.Name = c.Name()
 	default:
-		c.tunDevice, err = newWireGuardDevice(c.config)
+		c.TunDevice, err = newWireGuardDevice(c.config)
 		if err != nil {
 			return
 		}
 	}
 
-	err = c.setup()
+	err = c.SetupProperties()
 	return
 }
 
-func (c *controller) GetConfig() Config {
+func (c *Controller) GetConfig() Config {
 	return c.config
 }

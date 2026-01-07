@@ -16,8 +16,8 @@ type (
 		Write(packet []byte) (n int, err error) // write
 		GetConfig() Config
 	}
-	// tunDevice ...
-	tunDevice interface {
+	// TunDevice ...
+	TunDevice interface {
 		Name() string                           // return device name if device exists
 		Close() error                           // close device
 		Read(packet []byte) (n int, err error)  // read
@@ -28,7 +28,7 @@ type (
 // NewTunDevice ...
 func NewTunDevice(cfg Config, opts ...option) (device IDevice) {
 	options := append(defaultOptions, WithConfig(cfg))
-	d := newController(append(options, opts...)...)
+	d := NewController(append(options, opts...)...)
 	d.config = cfg
 	return d
 }

@@ -1,31 +1,32 @@
 package device
 
 import (
+	"fmt"
 	"net"
 	"os/exec"
 	"strconv"
 )
 
-// setup ...
-func (c *controller) setup() error {
+// SetupProperties ...
+func (c *Controller) SetupProperties() error {
 	err := c.setCIDR(c.config.CIDR)
 	if err != nil {
-		return err
+		return fmt.Errorf("set cidr error: %w", err)
 	}
 	err = c.setMTU(c.config.MTU)
 	if err != nil {
-		return err
+		return fmt.Errorf("set mtu error: %w", err)
 	}
 	err = c.setDNS(c.config.DNS)
 	if err != nil {
-		return err
+		return fmt.Errorf("set dns error: %w", err)
 	}
 	// auto up in windows
 	return nil
 }
 
 // setCIDR ...
-func (c *controller) setCIDR(cidr string) error {
+func (c *Controller) setCIDR(cidr string) error {
 	ip, ipNet, err := net.ParseCIDR(cidr)
 	if err != nil {
 		return err
@@ -46,7 +47,7 @@ func (c *controller) setCIDR(cidr string) error {
 }
 
 // setDNS ...
-func (c *controller) setDNS(dns string) error {
+func (c *Controller) setDNS(dns string) error {
 	if dns == "" {
 		return nil
 	}
@@ -58,7 +59,7 @@ func (c *controller) setDNS(dns string) error {
 }
 
 // setMTU ...
-func (c *controller) setMTU(mtu int) error {
+func (c *Controller) setMTU(mtu int) error {
 	name := c.Name()
 	cmd := exec.Command("PowerShell",
 		"netsh", "interface", "ipv4", "set", "interface", "\""+name+"\"", "mtu="+strconv.Itoa(mtu))
@@ -66,7 +67,7 @@ func (c *controller) setMTU(mtu int) error {
 }
 
 // OverwriteCIDR of device
-func (c *controller) OverwriteCIDR(cidr string) error {
+func (c *Controller) OverwriteCIDR(cidr string) error {
 	if cidr == c.config.CIDR {
 		return nil
 	}
@@ -77,19 +78,19 @@ func (c *controller) OverwriteCIDR(cidr string) error {
 }
 
 // OverwriteMTU of device
-func (c *controller) OverwriteMTU(mtu int) error {
+func (c *Controller) OverwriteMTU(mtu int) error {
 	c.config.MTU = mtu
 	return c.setMTU(mtu)
 }
 
 // Up ...
-func (c *controller) Up() error {
+func (c *Controller) Up() error {
 	cmd := exec.Command("PowerShell", "netsh", "interface", "set", "interface", c.Name(), "enabled")
 	return cmd.Run()
 }
 
 // Down ...
-func (c *controller) Down() error {
+func (c *Controller) Down() error {
 	cmd := exec.Command("PowerShell", "netsh", "interface", "set", "interface", c.Name(), "disabled")
 	return cmd.Run()
 }

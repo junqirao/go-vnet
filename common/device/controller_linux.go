@@ -5,8 +5,8 @@ import (
 	"strconv"
 )
 
-// setup ...
-func (c *controller) setup() error {
+// SetupProperties ...
+func (c *Controller) SetupProperties() error {
 	err := c.setCIDR(c.config.CIDR)
 	if err != nil {
 		return err
@@ -27,7 +27,7 @@ func (c *controller) setup() error {
 }
 
 // setCIDR ...
-func (c *controller) setCIDR(cidr string) error {
+func (c *Controller) setCIDR(cidr string) error {
 	name := c.Name()
 	cmd := exec.Command("/sbin/ip", "address", "add", cidr, "dev", name)
 	err := cmd.Run()
@@ -42,7 +42,7 @@ func (c *controller) setCIDR(cidr string) error {
 }
 
 // setMtu ...
-func (c *controller) setMtu() error {
+func (c *Controller) setMtu() error {
 	name := c.Name()
 	cmd := exec.Command("/sbin/ip", "link", "set", "dev", name, "mtu", strconv.Itoa(c.config.MTU))
 	_ = cmd.Run()
@@ -50,7 +50,7 @@ func (c *controller) setMtu() error {
 }
 
 // OverwriteCIDR of device
-func (c *controller) OverwriteCIDR(cidr string) error {
+func (c *Controller) OverwriteCIDR(cidr string) error {
 	if cidr == c.config.CIDR {
 		return nil
 	}
@@ -61,19 +61,19 @@ func (c *controller) OverwriteCIDR(cidr string) error {
 }
 
 // OverwriteMTU of device
-func (c *controller) OverwriteMTU(mtu int) error {
+func (c *Controller) OverwriteMTU(mtu int) error {
 	c.config.MTU = mtu
 	return c.setMtu()
 }
 
 // Up ...
-func (c *controller) Up() error {
+func (c *Controller) Up() error {
 	cmd := exec.Command("/sbin/ip", "link", "set", "dev", c.Name(), "up")
 	return cmd.Run()
 }
 
 // Down ...
-func (c *controller) Down() error {
+func (c *Controller) Down() error {
 	cmd := exec.Command("/sbin/ip", "link", "set", "dev", c.Name(), "down")
 	return cmd.Run()
 }
