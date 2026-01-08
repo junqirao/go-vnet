@@ -2,6 +2,7 @@ package device
 
 import (
 	"errors"
+	"runtime"
 )
 
 const (
@@ -29,7 +30,11 @@ func (c *Config) check() (err error) {
 		err = errors.New("cidr not set")
 	}
 	if c.Type == "" {
-		c.Type = TypeWater
+		if runtime.GOOS == "linux" {
+			c.Type = TypeWater
+		} else {
+			c.Type = TypeWG
+		}
 	}
 	return
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -15,11 +16,20 @@ import (
 	tt "go-vnet/common/tls"
 )
 
+var (
+	offset = device2.MessageTransportHeaderSize
+)
+
+func init() {
+	if runtime.GOOS == "windows" {
+		offset = 0
+	}
+}
+
 type Client struct {
 	ip, server, dst string
 	device          struct {
-		dev        tun.Device
-		controller *device.Controller
+		dev device.IDevice
 	}
 	transport struct {
 		conn *quic.Conn
@@ -66,17 +76,10 @@ func (c *Client) Run() {
 		}
 	)
 
-	c.device.dev, err = tun.CreateTUN(dc.Name, dc.MTU)
-	if err != nil {
+	c.device.dev = device.NewTunDevice(dc)
+	if err = c.device.dev.Setup(); err != nil {
 		panic(err)
 	}
-
-	c.device.controller = device.NewController(device.WithConfig(dc), device.WithTunDevice(&td{c.device.dev}))
-	err = c.device.controller.SetupProperties()
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("device setup: %+v\n", c.device.controller.GetConfig())
 
 	tls := tt.GenerateTLSConfig(time.Hour*24*7, 1024)
 	tls.InsecureSkipVerify = true
@@ -93,34 +96,23 @@ func (c *Client) Run() {
 	// read loop
 	go func() {
 		fmt.Println("start tx")
-
-		batchSize := c.device.dev.BatchSize()
-		buffers := make([][]byte, batchSize)
-		sizes := make([]int, batchSize)
-		offset := device2.MessageTransportHeaderSize
-
-		for i := 0; i < batchSize; i++ {
-			buffers[i] = make([]byte, 65535)
-		}
-
+		buf := make([]byte, 65535)
 		for {
-			n, err := c.device.dev.Read(buffers, sizes, offset)
+			n, err := c.device.dev.Read(buf)
 			if err != nil {
 				panic(err)
 				return
 			}
 
-			for i := 0; i < n; i++ {
-				data := buffers[i][:+sizes[i]]
-				dst := waterutil.IPv4Destination(data[offset:]).String()
-				if dst != c.dst {
-					continue
-				}
-				_, err := tx.Write(data)
-				if err != nil {
-					panic(err)
-					return
-				}
+			data := buf[:n]
+			dst := waterutil.IPv4Destination(data).String()
+			if dst != c.dst {
+				continue
+			}
+			_, err = tx.Write(data)
+			if err != nil {
+				panic(err)
+				return
 			}
 		}
 	}()
@@ -142,8 +134,8 @@ func (c *Client) Run() {
 						panic(err)
 						return
 					}
-					fmt.Println("receive: ", buf[:n])
-					_, err = c.device.dev.Write([][]byte{buf[:n]}, device2.MessageTransportHeaderSize)
+					// fmt.Println("receive: ", buf[:n])
+					_, err = c.device.dev.Write(buf[:n])
 					if err != nil {
 						panic(err)
 						return

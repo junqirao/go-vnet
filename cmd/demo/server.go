@@ -131,7 +131,7 @@ func proxy(name string, dst io.Writer, src io.Reader) (written int64, err error)
 	for {
 		nr, er = src.Read(buf)
 		if nr > 0 {
-			fmt.Printf("%s : %v\n", name, buf[:nr])
+			// fmt.Printf("%s : %v\n", name, buf[:nr])
 			nw, ew := dst.Write(buf[0:nr])
 			if ew != nil {
 				return written, ew

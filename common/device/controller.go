@@ -49,12 +49,14 @@ func (c *Controller) Setup() (err error) {
 
 	switch c.config.Type {
 	case TypeWater:
+		c.logger.Infof(nil, "create water device %s", c.config.Name)
 		c.TunDevice, err = newWaterDevice(c.config)
 		if err != nil {
 			return
 		}
 		c.config.Name = c.Name()
 	default:
+		c.logger.Infof(nil, "create wireguard device %s", c.config.Name)
 		c.TunDevice, err = newWireGuardDevice(c.config)
 		if err != nil {
 			return
