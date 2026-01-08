@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	TypeWG    = "WireGuard"
-	TypeWater = "Water"
+	TypeWG     = "WireGuard"
+	TypeWater  = "Water"
+	TypeGVisor = "GVisor"
 )
 
 type (

@@ -55,6 +55,9 @@ func (c *Controller) Setup() (err error) {
 			return
 		}
 		c.config.Name = c.Name()
+	case TypeGVisor:
+		c.logger.Infof(nil, "create gvisor device %s", c.config.Name)
+		c.TunDevice = newGVisorDevice()
 	default:
 		c.logger.Infof(nil, "create wireguard device %s", c.config.Name)
 		c.TunDevice, err = newWireGuardDevice(c.config)
