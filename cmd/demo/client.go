@@ -118,6 +118,7 @@ func (c *Client) Run() {
 					// fmt.Println("receive: ", buf[:n])
 					_, err = c.device.dev.Write(buf[:n])
 					if err != nil {
+						fmt.Println("receive: ", buf[:n])
 						panic(err)
 						return
 					}
