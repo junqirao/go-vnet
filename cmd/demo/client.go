@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"net/netip"
 	"time"
 
@@ -11,6 +14,7 @@ import (
 	"github.com/songgao/water/waterutil"
 
 	"go-vnet/common/config"
+	"go-vnet/common/protocol"
 	tt "go-vnet/common/tls"
 )
 
@@ -34,6 +38,10 @@ func NewClient(ip string, server string, dst string) *Client {
 }
 
 func (c *Client) Run() {
+	go func() {
+		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
+	}()
+
 	var (
 		ctx = context.Background()
 		err error
@@ -51,6 +59,7 @@ func (c *Client) Run() {
 		Inet4Address: []netip.Prefix{pfx},
 		Inet6Address: nil,
 		MTU:          1400,
+		GSO:          true,
 	})
 	if err != nil {
 		panic(err)
@@ -78,6 +87,7 @@ func (c *Client) Run() {
 	go func() {
 		fmt.Println("start tx")
 		buf := make([]byte, 1400)
+		rw := protocol.NewTransport(tx)
 		for {
 			n, err := c.device.dev.Read(buf)
 			if err != nil {
@@ -90,7 +100,7 @@ func (c *Client) Run() {
 			if dst != c.dst {
 				continue
 			}
-			_, err = tx.Write(data)
+			_, err = rw.Write(data)
 			if err != nil {
 				panic(err)
 				return
@@ -108,21 +118,32 @@ func (c *Client) Run() {
 			}
 			fmt.Println("accept stream")
 			go func(rx *quic.Stream) {
-				buf := make([]byte, 1400)
-				for {
-					n, err := rx.Read(buf)
+				rw := protocol.NewTransport(rx)
+				p := protocol.NewPacketEventProcessor(rw)
+				// buf := make([]byte, 1400)
+				for event := range p.Ch() {
+					_, err = c.device.dev.Write(event.Bytes())
 					if err != nil {
+						fmt.Println("receive: ", event.Bytes())
 						panic(err)
 						return
 					}
-					// fmt.Println("receive: ", buf[:n])
-					_, err = c.device.dev.Write(buf[:n])
-					if err != nil {
-						fmt.Println("receive: ", buf[:n])
-						panic(err)
-						return
-					}
+					event.PutBack()
 				}
+				// for {
+				// n, err := rw.Read(buf)
+				// if err != nil {
+				// 	panic(err)
+				// 	return
+				// }
+				// fmt.Println("receive: ", buf[:n])
+				// _, err = c.device.dev.Write(buf[:n])
+				// if err != nil {
+				// 	fmt.Println("receive: ", buf[:n])
+				// 	panic(err)
+				// 	return
+				// }
+				// }
 			}(rx)
 		}
 	}()

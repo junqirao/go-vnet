@@ -80,7 +80,7 @@ func TestTransport_Read(t *testing.T) {
 			mock.readBuf.Write(msg)
 
 			transport := NewTransport(mock)
-			out := make([]byte, len(tt.data)+3)
+			out := make([]byte, len(tt.data))
 			n, err := transport.Read(out)
 
 			if (err != nil) != tt.wantErr {
@@ -89,17 +89,13 @@ func TestTransport_Read(t *testing.T) {
 			}
 
 			if !tt.wantErr {
-				expectedLen := len(tt.data) + 3
+				expectedLen := len(tt.data)
 				if n != expectedLen {
 					t.Errorf("Read() n = %v, want %v", n, expectedLen)
 				}
-				// Output should be: type + length + data (skip magic bytes)
-				expected := make([]byte, 3+len(tt.data))
-				expected[0] = 0 // type
-				binary.BigEndian.PutUint16(expected[1:3], uint16(len(tt.data)))
-				copy(expected[3:], tt.data)
-				if !bytes.Equal(out[:n], expected) {
-					t.Errorf("Read() output = %v, want %v", out[:n], expected)
+				// Output should be: data only (skip magic, type and length bytes)
+				if !bytes.Equal(out[:n], tt.data) {
+					t.Errorf("Read() output = %v, want %v", out[:n], tt.data)
 				}
 			}
 		})
@@ -224,15 +220,18 @@ func TestTransport_RoundTrip(t *testing.T) {
 			mock.readBuf = mock.writeBuf
 
 			// Read message back (will be unwrapped)
-			out := make([]byte, len(tt.data)+3)
+			out := make([]byte, len(tt.data))
 			n, err := transport.Read(out)
 			if err != nil {
 				t.Fatalf("Read() error = %v", err)
 			}
 
-			// Verify we get back the same data (with type and length prefix)
-			if n != len(tt.data)+3 {
-				t.Errorf("RoundTrip length failed: got %v, want %v", n, len(tt.data)+3)
+			// Verify we get back the same data (without header)
+			if n != len(tt.data) {
+				t.Errorf("RoundTrip length failed: got %v, want %v", n, len(tt.data))
+			}
+			if !bytes.Equal(out[:n], tt.data) {
+				t.Errorf("RoundTrip data failed: got %v, want %v", out[:n], tt.data)
 			}
 		})
 	}
@@ -316,7 +315,8 @@ func TestTransport_ReadMessage(t *testing.T) {
 			mock.readBuf.Write(msg)
 
 			transport := NewTransport(mock).(*Transport)
-			magic, typ, data, err := transport.ReadMessage()
+			dataBuf := make([]byte, len(tt.data))
+			typ, n, err := transport.ReadMessage(dataBuf)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ReadMessage() error = %v, wantErr %v", err, tt.wantErr)
@@ -324,14 +324,14 @@ func TestTransport_ReadMessage(t *testing.T) {
 			}
 
 			if !tt.wantErr {
-				if magic != tt.magic {
-					t.Errorf("ReadMessage() magic = %v, want %v", magic, tt.magic)
-				}
 				if typ != tt.typ {
 					t.Errorf("ReadMessage() typ = %v, want %v", typ, tt.typ)
 				}
-				if !bytes.Equal(data, tt.data) {
-					t.Errorf("ReadMessage() data = %v, want %v", data, tt.data)
+				if n != len(tt.data) {
+					t.Errorf("ReadMessage() n = %v, want %v", n, len(tt.data))
+				}
+				if !bytes.Equal(dataBuf[:n], tt.data) {
+					t.Errorf("ReadMessage() data = %v, want %v", dataBuf[:n], tt.data)
 				}
 			}
 		})
@@ -341,22 +341,19 @@ func TestTransport_ReadMessage(t *testing.T) {
 func TestTransport_WriteMessage(t *testing.T) {
 	tests := []struct {
 		name    string
-		magic   [4]byte
 		typ     byte
 		data    []byte
 		wantErr bool
 	}{
 		{
-			name:  "simple message",
-			magic: [4]byte{0x56, 0x4E, 0x45, 0x54},
-			typ:   0x02,
-			data:  []byte("hello"),
+			name: "simple message",
+			typ:  0x02,
+			data: []byte("hello"),
 		},
 		{
-			name:  "large message",
-			magic: [4]byte{0x56, 0x4E, 0x45, 0x54},
-			typ:   0xAA,
-			data:  bytes.Repeat([]byte("test"), 500),
+			name: "large message",
+			typ:  0xAA,
+			data: bytes.Repeat([]byte("test"), 500),
 		},
 	}
 
@@ -365,7 +362,7 @@ func TestTransport_WriteMessage(t *testing.T) {
 			mock := newMockReadWriter()
 			transport := NewTransport(mock).(*Transport)
 
-			n, err := transport.WriteMessage(tt.magic, tt.typ, tt.data)
+			n, err := transport.WriteMessage(tt.typ, tt.data)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("WriteMessage() error = %v, wantErr %v", err, tt.wantErr)
@@ -388,11 +385,10 @@ func TestTransport_WriteMessage(t *testing.T) {
 func TestTransport_WriteMessage_TooLarge(t *testing.T) {
 	mock := newMockReadWriter()
 	transport := NewTransport(mock).(*Transport)
-	magic := [4]byte{0x56, 0x4E, 0x45, 0x54}
 
 	// Data too large (> 65531 bytes)
 	data := bytes.Repeat([]byte("a"), 65532)
-	_, err := transport.WriteMessage(magic, 0x02, data)
+	_, err := transport.WriteMessage(0x02, data)
 
 	if err == nil {
 		t.Error("WriteMessage() should return error for too large message")
@@ -421,10 +417,9 @@ func TestTransport_ReadMessage_RoundTrip(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := newMockReadWriter()
 			transport := NewTransport(mock).(*Transport)
-			magic := [4]byte{0x56, 0x4E, 0x45, 0x54}
 
 			// Write message
-			_, err := transport.WriteMessage(magic, tt.typ, tt.data)
+			_, err := transport.WriteMessage(tt.typ, tt.data)
 			if err != nil {
 				t.Fatalf("WriteMessage() error = %v", err)
 			}
@@ -433,19 +428,17 @@ func TestTransport_ReadMessage_RoundTrip(t *testing.T) {
 			mock.readBuf = mock.writeBuf
 
 			// Read message back
-			magicBack, typ, data, err := transport.ReadMessage()
+			dataBuf := make([]byte, len(tt.data))
+			typ, n, err := transport.ReadMessage(dataBuf)
 			if err != nil {
 				t.Fatalf("ReadMessage() error = %v", err)
 			}
 
-			if magicBack != magic {
-				t.Errorf("RoundTrip magic = %v, want %v", magicBack, magic)
-			}
 			if typ != tt.typ {
 				t.Errorf("RoundTrip typ = %v, want %v", typ, tt.typ)
 			}
-			if !bytes.Equal(data, tt.data) {
-				t.Errorf("RoundTrip data = %v, want %v", data, tt.data)
+			if !bytes.Equal(dataBuf[:n], tt.data) {
+				t.Errorf("RoundTrip data = %v, want %v", dataBuf[:n], tt.data)
 			}
 		})
 	}
@@ -458,7 +451,7 @@ func BenchmarkTransport_Read_Small(b *testing.B) {
 	msg := buildRawMessage(data)
 
 	transport := NewTransport(mock)
-	out := make([]byte, len(data)+3)
+	out := make([]byte, len(data))
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -479,7 +472,7 @@ func BenchmarkTransport_Read_Medium(b *testing.B) {
 	msg := buildRawMessage(data)
 
 	transport := NewTransport(mock)
-	out := make([]byte, len(data)+3)
+	out := make([]byte, len(data))
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -500,7 +493,7 @@ func BenchmarkTransport_Read_Large(b *testing.B) {
 	msg := buildRawMessage(data)
 
 	transport := NewTransport(mock)
-	out := make([]byte, len(data)+3)
+	out := make([]byte, len(data))
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -571,9 +564,11 @@ func BenchmarkTransport_Write_Large(b *testing.B) {
 
 func BenchmarkTransport_ReadMessage_Small(b *testing.B) {
 	mock := newMockReadWriter()
-	msg := buildMessage(0x02, []byte("hello world"))
+	data := []byte("hello world")
+	msg := buildMessage(0x02, data)
 
 	transport := NewTransport(mock).(*Transport)
+	dataBuf := make([]byte, len(data))
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -581,7 +576,7 @@ func BenchmarkTransport_ReadMessage_Small(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		mock.readBuf.Reset()
 		mock.readBuf.Write(msg)
-		_, _, _, err := transport.ReadMessage()
+		_, _, err := transport.ReadMessage(dataBuf)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -594,6 +589,7 @@ func BenchmarkTransport_ReadMessage_Medium(b *testing.B) {
 	msg := buildMessage(0x02, data)
 
 	transport := NewTransport(mock).(*Transport)
+	dataBuf := make([]byte, len(data))
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -601,7 +597,7 @@ func BenchmarkTransport_ReadMessage_Medium(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		mock.readBuf.Reset()
 		mock.readBuf.Write(msg)
-		_, _, _, err := transport.ReadMessage()
+		_, _, err := transport.ReadMessage(dataBuf)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -614,6 +610,7 @@ func BenchmarkTransport_ReadMessage_Large(b *testing.B) {
 	msg := buildMessage(0x02, data)
 
 	transport := NewTransport(mock).(*Transport)
+	dataBuf := make([]byte, len(data))
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -621,7 +618,7 @@ func BenchmarkTransport_ReadMessage_Large(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		mock.readBuf.Reset()
 		mock.readBuf.Write(msg)
-		_, _, _, err := transport.ReadMessage()
+		_, _, err := transport.ReadMessage(dataBuf)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -631,14 +628,13 @@ func BenchmarkTransport_ReadMessage_Large(b *testing.B) {
 func BenchmarkTransport_WriteMessage_Small(b *testing.B) {
 	mock := newMockReadWriter()
 	transport := NewTransport(mock).(*Transport)
-	magic := [4]byte{0x56, 0x4E, 0x45, 0x54}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
 		mock.writeBuf.Reset()
-		_, err := transport.WriteMessage(magic, 0x02, []byte("hello world"))
+		_, err := transport.WriteMessage(0x02, []byte("hello world"))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -649,14 +645,13 @@ func BenchmarkTransport_WriteMessage_Medium(b *testing.B) {
 	mock := newMockReadWriter()
 	data := bytes.Repeat([]byte("test"), 100)
 	transport := NewTransport(mock).(*Transport)
-	magic := [4]byte{0x56, 0x4E, 0x45, 0x54}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
 		mock.writeBuf.Reset()
-		_, err := transport.WriteMessage(magic, 0x02, data)
+		_, err := transport.WriteMessage(0x02, data)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -667,14 +662,13 @@ func BenchmarkTransport_WriteMessage_Large(b *testing.B) {
 	mock := newMockReadWriter()
 	data := bytes.Repeat([]byte("test"), 1000)
 	transport := NewTransport(mock).(*Transport)
-	magic := [4]byte{0x56, 0x4E, 0x45, 0x54}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
 		mock.writeBuf.Reset()
-		_, err := transport.WriteMessage(magic, 0x02, data)
+		_, err := transport.WriteMessage(0x02, data)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -701,7 +695,7 @@ func BenchmarkTransport_RoundTrip_Small(b *testing.B) {
 		mock.readBuf = mock.writeBuf
 
 		// Read
-		out := make([]byte, len(data)+3)
+		out := make([]byte, len(data))
 		_, err = transport.Read(out)
 		if err != nil {
 			b.Fatal(err)
@@ -729,7 +723,7 @@ func BenchmarkTransport_RoundTrip_Large(b *testing.B) {
 		mock.readBuf = mock.writeBuf
 
 		// Read
-		out := make([]byte, len(data)+3)
+		out := make([]byte, len(data))
 		_, err = transport.Read(out)
 		if err != nil {
 			b.Fatal(err)
