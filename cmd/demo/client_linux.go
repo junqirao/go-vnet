@@ -95,44 +95,7 @@ func (c *Client) Run() {
 	headerSize := dev.FrontHeadroom()
 
 	// read loop
-	go func() {
-		fmt.Println("start tx")
-		rw := protocol.NewTransport(tx)
-
-		bufs := make([][]byte, batchSize)
-		readN := make([]int, batchSize)
-		for i := 0; i < batchSize; i++ {
-			bufs[i] = make([]byte, mtu+headerSize)
-		}
-
-		for {
-			n, err := dev.BatchRead(bufs, headerSize, readN)
-			if err != nil {
-				panic(err)
-				return
-			}
-			// n, err := c.device.dev.Read(buf)
-			// if err != nil {
-			// 	panic(err)
-			// 	return
-			// }
-			for i := 0; i < n; i++ {
-				data := bufs[i][headerSize : readN[i]+headerSize]
-				// [69 0 0 84 89 162 64 0 64 1 155 176 192 168 98 3 192 168 98 2 8 0 44 131 33 77 0 4 90 55 99 105 0 0 0 0 40 184 5 0 0 0 0 0 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45]
-				// fmt.Println("read: ", data)
-				dst := waterutil.IPv4Destination(data).String()
-				// fmt.Println(dst)
-				if dst != c.dst {
-					continue
-				}
-				_, err = rw.Write(data)
-				if err != nil {
-					panic(err)
-					return
-				}
-			}
-		}
-	}()
+	go handleTxBatch(tx, dev, batchSize, headerSize, c.dst)
 
 	// write loop
 	go func() {
@@ -143,63 +106,103 @@ func (c *Client) Run() {
 				panic(err)
 			}
 			fmt.Println("accept stream")
-			go func(rx *quic.Stream) {
-				rw := protocol.NewTransport(rx)
-				p := protocol.NewPacketEventProcessor(rw)
-				var (
-					evs     []*protocol.Event
-					buffers = make([][]byte, batchSize)
-					l       int
-				)
-				// 初始化 buffers，预留 headerSize 空间
-				for i := 0; i < batchSize; i++ {
-					buffers[i] = make([]byte, mtu+headerSize)
-				}
-
-				for {
-					// 重置 evs slice，重用底层数组避免分配
-					evs = evs[:0]
-
-					// 获取当前可用的 event 数量
-					if l = len(p.Ch()); l > 0 {
-						for i := 0; i < l; i++ {
-							evs = append(evs, <-p.Ch())
-						}
-					} else {
-						// wait for packet
-						evs = append(evs, <-p.Ch())
-					}
-
-					// 分批处理 evs
-					evsLen := len(evs)
-					for offset := 0; offset < evsLen; {
-						batchEnd := min(offset+batchSize, evsLen)
-						batchLen := batchEnd - offset
-
-						for i := 0; i < batchLen; i++ {
-							// 从 headerSize 位置开始复制数据
-							data := evs[offset+i].Bytes()
-							copy(buffers[i][headerSize:], data)
-							buffers[i] = buffers[i][:headerSize+len(data)]
-						}
-
-						_, err := dev.BatchWrite(buffers[:batchLen], headerSize)
-						if err != nil {
-							panic(err)
-							return
-						}
-
-						// PutBack 当前批次的事件到池中
-						for i := 0; i < batchLen; i++ {
-							evs[offset+i].PutBack()
-						}
-
-						offset += batchLen
-					}
-				}
-			}(rx)
+			go handleRx(rx, dev)
 		}
 	}()
 
 	select {}
+}
+
+func handleRx(rx *quic.Stream, dev tun.Tun) {
+	rw := protocol.NewTransport(rx)
+	p := protocol.NewPacketEventProcessor(rw)
+
+	for event := range p.Ch() {
+		_, err := dev.Write(event.Bytes())
+		if err != nil {
+			panic(err)
+			return
+		}
+		event.PutBack()
+	}
+}
+
+func handleRxBatch(rx *quic.Stream, dev tun.LinuxTUN, batchSize int, headerSize int) {
+	rw := protocol.NewTransport(rx)
+	p := protocol.NewPacketEventProcessor(rw)
+
+	var (
+		evs     []*protocol.Event
+		buffers = make([][]byte, 1024)
+		l       int
+		header  = make([]byte, headerSize)
+	)
+
+	for i := 0; i < batchSize; i++ {
+		buffers[i] = make([]byte, mtu+headerSize)
+	}
+
+	for {
+		// 重置 evs slice
+		evs = evs[:0]
+
+		// 获取当前可用的 event 数量
+		if l = len(p.Ch()); l > 0 {
+			for i := 0; i < l; i++ {
+				evs = append(evs, <-p.Ch())
+			}
+		} else {
+			// wait for packet
+			evs = append(evs, <-p.Ch())
+		}
+
+		// 不分批，直接处理所有 evs
+		for i, ev := range evs {
+			data := ev.Bytes()
+			buf := buffers[i]
+			copy(buf[:headerSize], header)
+			copy(buf[headerSize:], data)
+			buffers[i] = buf[:headerSize+len(data)]
+		}
+
+		_, err := dev.BatchWrite(buffers[:len(evs)], headerSize)
+		if err != nil {
+			panic(err)
+			return
+		}
+
+		// PutBack 事件到池中
+		for i := 0; i < len(evs); i++ {
+			evs[i].PutBack()
+		}
+	}
+}
+
+func handleTxBatch(tx *quic.Stream, dev tun.LinuxTUN, batchSize int, headerSize int, dst string) {
+	rw := protocol.NewTransport(tx)
+
+	bufs := make([][]byte, batchSize)
+	readN := make([]int, batchSize)
+	for i := 0; i < batchSize; i++ {
+		bufs[i] = make([]byte, mtu+headerSize)
+	}
+
+	for {
+		n, err := dev.BatchRead(bufs, headerSize, readN)
+		if err != nil {
+			panic(err)
+			return
+		}
+		for i := 0; i < n; i++ {
+			data := bufs[i][headerSize : readN[i]+headerSize]
+			if waterutil.IPv4Destination(data).String() != dst {
+				continue
+			}
+			_, err = rw.Write(data)
+			if err != nil {
+				panic(err)
+				return
+			}
+		}
+	}
 }
