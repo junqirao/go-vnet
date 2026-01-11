@@ -63,7 +63,6 @@ func (c *Client) Run() {
 		Inet4Address: []netip.Prefix{pfx},
 		Inet6Address: nil,
 		MTU:          uint32(mtu),
-		GSO:          true,
 	})
 	if err != nil {
 		panic(err)

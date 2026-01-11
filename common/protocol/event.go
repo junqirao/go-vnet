@@ -58,6 +58,10 @@ func (e *Event) Bytes() []byte {
 	return e.buffer[:e.n:e.n]
 }
 
+func (e *Event) N() int {
+	return int(e.n)
+}
+
 // BufferPtr returns the raw buffer pointer and length without creating a slice
 // This is useful for zero-copy operations
 func (e *Event) BufferPtr() ([]byte, int) {

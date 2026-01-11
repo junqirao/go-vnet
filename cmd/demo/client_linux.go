@@ -86,25 +86,27 @@ func (c *Client) Run() {
 		panic(err)
 	}
 
+	dev, ok := c.device.dev.(tun.LinuxTUN)
+	if !ok {
+		panic("not linux tun")
+	}
+
+	batchSize := dev.BatchSize()
+	headerSize := dev.FrontHeadroom()
+
 	// read loop
 	go func() {
 		fmt.Println("start tx")
 		rw := protocol.NewTransport(tx)
-		dev, ok := c.device.dev.(tun.LinuxTUN)
-		if !ok {
-			panic("not linux tun")
-		}
 
-		batchSize := dev.BatchSize()
 		bufs := make([][]byte, batchSize)
-		headerSize := dev.FrontHeadroom()
 		readN := make([]int, batchSize)
 		for i := 0; i < batchSize; i++ {
 			bufs[i] = make([]byte, mtu+headerSize)
 		}
 
 		for {
-			n, err := dev.BatchRead(bufs, dev.FrontHeadroom(), readN)
+			n, err := dev.BatchRead(bufs, headerSize, readN)
 			if err != nil {
 				panic(err)
 				return
@@ -144,30 +146,57 @@ func (c *Client) Run() {
 			go func(rx *quic.Stream) {
 				rw := protocol.NewTransport(rx)
 				p := protocol.NewPacketEventProcessor(rw)
-				// buf := make([]byte, 1400)
-				for event := range p.Ch() {
-					_, err = c.device.dev.Write(event.Bytes())
-					if err != nil {
-						fmt.Println("receive: ", event.Bytes())
-						panic(err)
-						return
-					}
-					event.PutBack()
+				var (
+					evs     []*protocol.Event
+					buffers = make([][]byte, batchSize)
+					l       int
+				)
+				// 初始化 buffers，预留 headerSize 空间
+				for i := 0; i < batchSize; i++ {
+					buffers[i] = make([]byte, mtu+headerSize)
 				}
-				// for {
-				// n, err := rw.Read(buf)
-				// if err != nil {
-				// 	panic(err)
-				// 	return
-				// }
-				// fmt.Println("receive: ", buf[:n])
-				// _, err = c.device.dev.Write(buf[:n])
-				// if err != nil {
-				// 	fmt.Println("receive: ", buf[:n])
-				// 	panic(err)
-				// 	return
-				// }
-				// }
+
+				for {
+					// 重置 evs slice，重用底层数组避免分配
+					evs = evs[:0]
+
+					// 获取当前可用的 event 数量
+					if l = len(p.Ch()); l > 0 {
+						for i := 0; i < l; i++ {
+							evs = append(evs, <-p.Ch())
+						}
+					} else {
+						// wait for packet
+						evs = append(evs, <-p.Ch())
+					}
+
+					// 分批处理 evs
+					evsLen := len(evs)
+					for offset := 0; offset < evsLen; {
+						batchEnd := min(offset+batchSize, evsLen)
+						batchLen := batchEnd - offset
+
+						for i := 0; i < batchLen; i++ {
+							// 从 headerSize 位置开始复制数据
+							data := evs[offset+i].Bytes()
+							copy(buffers[i][headerSize:], data)
+							buffers[i] = buffers[i][:headerSize+len(data)]
+						}
+
+						_, err := dev.BatchWrite(buffers[:batchLen], headerSize)
+						if err != nil {
+							panic(err)
+							return
+						}
+
+						// PutBack 当前批次的事件到池中
+						for i := 0; i < batchLen; i++ {
+							evs[offset+i].PutBack()
+						}
+
+						offset += batchLen
+					}
+				}
 			}(rx)
 		}
 	}()
