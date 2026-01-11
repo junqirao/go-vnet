@@ -18,6 +18,10 @@ import (
 	tt "go-vnet/common/tls"
 )
 
+var (
+	mtu = 1392
+)
+
 type Client struct {
 	ip, server, dst string
 	device          struct {
@@ -58,7 +62,7 @@ func (c *Client) Run() {
 		Name:         "tun0",
 		Inet4Address: []netip.Prefix{pfx},
 		Inet6Address: nil,
-		MTU:          1400,
+		MTU:          uint32(mtu),
 		GSO:          true,
 	})
 	if err != nil {
@@ -86,7 +90,7 @@ func (c *Client) Run() {
 	// read loop
 	go func() {
 		fmt.Println("start tx")
-		buf := make([]byte, 1400)
+		buf := make([]byte, mtu)
 		rw := protocol.NewTransport(tx)
 		for {
 			n, err := c.device.dev.Read(buf)
