@@ -93,12 +93,13 @@ func TestEvent_Type(t *testing.T) {
 // TestEvent_Bytes tests Bytes method
 func TestEvent_Bytes(t *testing.T) {
 	data := []byte("hello world")
+	buf := new([65535]byte)
+	copy(buf[:], data)
 	event := &Event{
-		buffer: &[1500]byte{},
+		buffer: buf,
 		n:      uint16(len(data)),
 		typ:    0x01,
 	}
-	copy(event.buffer[:], data)
 
 	result := event.Bytes()
 	if !bytes.Equal(result, data) {

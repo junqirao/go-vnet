@@ -6,11 +6,18 @@ import (
 	"io"
 )
 
+const (
+	TypeTransport      byte = 0x0
+	TypeBatchTransport byte = 0x1
+)
+
 type (
 	ReadWriter interface {
 		io.ReadWriter
 		ReadMessage(data []byte) (typ byte, n int, err error)
 		WriteMessage(typ byte, data []byte) (int, error)
+		BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int, err error)
+		ParseBatch(data []byte, buf [][]byte, sizes []int) (n int, err error)
 	}
 )
 
@@ -90,7 +97,7 @@ func (t *Transport) Write(p []byte) (n int, err error) {
 	*(*[4]byte)((*t.buffer)[:4]) = t.magic
 
 	// Build type and length
-	(*t.buffer)[4] = 0 // type byte
+	(*t.buffer)[4] = TypeTransport // type byte
 	binary.BigEndian.PutUint16((*t.buffer)[5:7], uint16(length))
 
 	// Copy data
@@ -99,6 +106,87 @@ func (t *Transport) Write(p []byte) (n int, err error) {
 	// Write complete message
 	_, err = t.upstream.Write((*t.buffer)[:7+length])
 	return 7 + length, err
+}
+
+// BatchWrite writes multiple messages in a single batch with optimized format
+// generic header:  | magic 4 bytes | type 1 byte | length 2 bytes | data n bytes |
+// data format: | sizes_length 2 bytes | [size_data 2 bytes]... | combined data n bytes |
+func (t *Transport) BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int, err error) {
+	// Calculate total data length:
+	// 2 bytes for sizes_length + 2*len(sizes) bytes for size_data + sum of each buf slice
+	dataLen := 2 + 2*len(sizes)
+	for i := range sizes {
+		dataLen += sizes[i]
+	}
+
+	if dataLen > 65530 {
+		return 0, errors.New("message too large")
+	}
+
+	// Build magic
+	*(*[4]byte)((*t.buffer)[:4]) = t.magic
+
+	// Build type and length in generic header
+	(*t.buffer)[4] = TypeBatchTransport
+	binary.BigEndian.PutUint16((*t.buffer)[5:7], uint16(dataLen))
+
+	// Write sizes_length (2 bytes) in data format
+	offset := 7
+	binary.BigEndian.PutUint16((*t.buffer)[offset:offset+2], uint16(len(sizes)))
+	offset += 2
+
+	// Write all size_data (2 bytes each)
+	for i := 0; i < len(sizes); i++ {
+		binary.BigEndian.PutUint16((*t.buffer)[offset:offset+2], uint16(sizes[i]))
+		offset += 2
+	}
+
+	// Write combined data from buf, skipping headerSize bytes from each
+	for i := range buf {
+		copy((*t.buffer)[offset:], buf[i][headerSize:headerSize+sizes[i]])
+		offset += sizes[i]
+	}
+
+	// Write complete message
+	totalLen := 7 + dataLen
+	_, err = t.upstream.Write((*t.buffer)[:totalLen])
+	return totalLen, err
+}
+
+// ParseBatch parses a batch message from BatchWrite encoded data into separate messages
+func (t *Transport) ParseBatch(data []byte, buf [][]byte, sizes []int) (n int, err error) {
+	offset := 0
+
+	// Read sizes_length (2 bytes)
+	sizesLen := int(binary.BigEndian.Uint16(data[offset : offset+2]))
+	offset += 2
+
+	// Read all size_data (2 bytes each) into sizes
+	for i := 0; i < sizesLen; i++ {
+		if i >= len(sizes) {
+			err = errors.New("sizes array too small")
+			return
+		}
+		sizes[i] = int(binary.BigEndian.Uint16(data[offset : offset+2]))
+		offset += 2
+	}
+
+	// Read combined data into buf
+	for i := 0; i < sizesLen; i++ {
+		if i >= len(buf) {
+			err = errors.New("buf array too small")
+			return
+		}
+		if len(buf[i]) < sizes[i] {
+			err = errors.New("buf slice too small")
+			return
+		}
+		copy(buf[i], data[offset:offset+sizes[i]])
+		offset += sizes[i]
+	}
+
+	n = sizesLen
+	return
 }
 
 // ReadMessage reads type and data separately without extra allocation

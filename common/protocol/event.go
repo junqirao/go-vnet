@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	eventMaxBufferSize = 1500
+	eventMaxBufferSize = 65535
 )
 
 type (
