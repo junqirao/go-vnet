@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -24,6 +26,9 @@ func NewServer() *Server {
 }
 
 func (s *Server) Run() {
+	go func() {
+		log.Println(http.ListenAndServe("0.0.0.0:6061", nil))
+	}()
 	ctx := context.Background()
 	tls := tt.GenerateTLSConfig(time.Hour*24*7, 1024)
 	listener, err := quic.ListenAddr(":8080", tls, config.DefaultQuicConfig)

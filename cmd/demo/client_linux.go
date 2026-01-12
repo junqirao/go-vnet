@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"net/netip"
 	"time"
 
@@ -220,7 +221,7 @@ func handleRxBatch2(rx *quic.Stream, dev tun.LinuxTUN, batchSize int, headerSize
 				return
 			}
 		case protocol.TypeBatchTransport:
-			n, err := rw.ParseBatch(event.Bytes(), buffers, sizes)
+			n, err := rw.ParseBatch(event.Bytes(), buffers, sizes, headerSize)
 			if err != nil {
 				return
 			}

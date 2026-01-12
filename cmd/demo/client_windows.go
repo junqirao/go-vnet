@@ -131,7 +131,7 @@ func handleRx(rx *quic.Stream, dev tun.Tun, headerSize int) {
 				return
 			}
 		case protocol.TypeBatchTransport:
-			n, err := rw.ParseBatch(event.Bytes(), buffers, sizes)
+			n, err := rw.ParseBatch(event.Bytes(), buffers, sizes, 0)
 			if err != nil {
 				panic(err)
 				return

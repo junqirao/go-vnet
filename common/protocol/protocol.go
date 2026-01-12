@@ -17,7 +17,7 @@ type (
 		ReadMessage(data []byte) (typ byte, n int, err error)
 		WriteMessage(typ byte, data []byte) (int, error)
 		BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int, err error)
-		ParseBatch(data []byte, buf [][]byte, sizes []int) (n int, err error)
+		ParseBatch(data []byte, buf [][]byte, sizes []int, offset int) (n int, err error)
 	}
 )
 
@@ -27,7 +27,8 @@ var (
 )
 
 var (
-	ErrInvalidMagic = errors.New("invalid magic number")
+	ErrInvalidMagic    = errors.New("invalid magic number")
+	ErrMessageTooLarge = errors.New("message too large")
 )
 
 // Transport protocol
@@ -62,7 +63,7 @@ func (t *Transport) Read(p []byte) (n int, err error) {
 
 	// Validate magic number using direct array comparison (faster)
 	if *(*[4]byte)((*t.buffer)[:4]) != t.magic {
-		return 0, errors.New("invalid magic number")
+		return 0, ErrInvalidMagic
 	}
 
 	// Read type and length (3 bytes)
@@ -72,7 +73,7 @@ func (t *Transport) Read(p []byte) (n int, err error) {
 
 	length := binary.BigEndian.Uint16((*t.buffer)[5:7])
 	if length > 65530 {
-		return 0, errors.New("message too large")
+		return 0, ErrMessageTooLarge
 	}
 
 	// Read data
@@ -90,7 +91,7 @@ func (t *Transport) Read(p []byte) (n int, err error) {
 func (t *Transport) Write(p []byte) (n int, err error) {
 	length := len(p)
 	if length > 65530 {
-		return 0, errors.New("message too large")
+		return 0, ErrMessageTooLarge
 	}
 
 	// Build magic using pre-computed bytes
@@ -120,7 +121,7 @@ func (t *Transport) BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 	}
 
 	if dataLen > 65530 {
-		return 0, errors.New("message too large")
+		return 0, ErrMessageTooLarge
 	}
 
 	// Build magic
@@ -154,12 +155,13 @@ func (t *Transport) BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 }
 
 // ParseBatch parses a batch message from BatchWrite encoded data into separate messages
-func (t *Transport) ParseBatch(data []byte, buf [][]byte, sizes []int) (n int, err error) {
-	offset := 0
+// offset specifies the start position in each buf slice to write data to
+func (t *Transport) ParseBatch(data []byte, buf [][]byte, sizes []int, offset int) (n int, err error) {
+	dataOffset := 0
 
 	// Read sizes_length (2 bytes)
-	sizesLen := int(binary.BigEndian.Uint16(data[offset : offset+2]))
-	offset += 2
+	sizesLen := int(binary.BigEndian.Uint16(data[dataOffset : dataOffset+2]))
+	dataOffset += 2
 
 	// Read all size_data (2 bytes each) into sizes
 	for i := 0; i < sizesLen; i++ {
@@ -167,8 +169,8 @@ func (t *Transport) ParseBatch(data []byte, buf [][]byte, sizes []int) (n int, e
 			err = errors.New("sizes array too small")
 			return
 		}
-		sizes[i] = int(binary.BigEndian.Uint16(data[offset : offset+2]))
-		offset += 2
+		sizes[i] = int(binary.BigEndian.Uint16(data[dataOffset : dataOffset+2]))
+		dataOffset += 2
 	}
 
 	// Read combined data into buf
@@ -177,12 +179,12 @@ func (t *Transport) ParseBatch(data []byte, buf [][]byte, sizes []int) (n int, e
 			err = errors.New("buf array too small")
 			return
 		}
-		if len(buf[i]) < sizes[i] {
+		if len(buf[i]) < offset+sizes[i] {
 			err = errors.New("buf slice too small")
 			return
 		}
-		copy(buf[i], data[offset:offset+sizes[i]])
-		offset += sizes[i]
+		copy(buf[i][offset:offset+sizes[i]], data[dataOffset:dataOffset+sizes[i]])
+		dataOffset += sizes[i]
 	}
 
 	n = sizesLen
@@ -225,7 +227,7 @@ func (t *Transport) ReadMessage(data []byte) (typ byte, n int, err error) {
 func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 	length := len(data)
 	if length > 65530 {
-		return 0, errors.New("message too large")
+		return 0, ErrMessageTooLarge
 	}
 
 	// Use buffer for magic (direct array assignment)
