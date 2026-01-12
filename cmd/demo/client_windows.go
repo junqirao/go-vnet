@@ -89,26 +89,7 @@ func (c *Client) Run() {
 	// read loop
 	go func() {
 		fmt.Println("start tx")
-		buf := make([]byte, mtu)
-		rw := protocol.NewTransport(tx)
-		for {
-			n, err := c.device.dev.Read(buf)
-			if err != nil {
-				panic(err)
-				return
-			}
-
-			data := buf[:n]
-			dst := waterutil.IPv4Destination(data).String()
-			if dst != c.dst {
-				continue
-			}
-			_, err = rw.Write(data)
-			if err != nil {
-				panic(err)
-				return
-			}
-		}
+		handleTx(tx, c.device.dev, c.dst)
 	}()
 
 	// write loop
@@ -120,36 +101,72 @@ func (c *Client) Run() {
 				panic(err)
 			}
 			fmt.Println("accept stream")
-			go func(rx *quic.Stream) {
-				rw := protocol.NewTransport(rx)
-				p := protocol.NewPacketEventProcessor(rw)
-				// buf := make([]byte, 1400)
-				for event := range p.Ch() {
-					_, err = c.device.dev.Write(event.Bytes())
-					if err != nil {
-						fmt.Println("receive: ", event.Bytes())
-						panic(err)
-						return
-					}
-					event.PutBack()
-				}
-				// for {
-				// n, err := rw.Read(buf)
-				// if err != nil {
-				// 	panic(err)
-				// 	return
-				// }
-				// fmt.Println("receive: ", buf[:n])
-				// _, err = c.device.dev.Write(buf[:n])
-				// if err != nil {
-				// 	fmt.Println("receive: ", buf[:n])
-				// 	panic(err)
-				// 	return
-				// }
-				// }
-			}(rx)
+			go handleRx(rx, c.device.dev, 0)
 		}
 	}()
 
 	select {}
+}
+
+func handleRx(rx *quic.Stream, dev tun.Tun, headerSize int) {
+	rw := protocol.NewTransport(rx)
+	p := protocol.NewPacketEventProcessor(rw)
+
+	var (
+		buffers = make([][]byte, 1024)
+		sizes   = make([]int, 1024)
+	)
+
+	for i := 0; i < 1024; i++ {
+		buffers[i] = make([]byte, mtu+headerSize)
+	}
+
+	for event := range p.Ch() {
+		switch event.Type() {
+		case protocol.TypeTransport:
+			_, err := dev.Write(event.Bytes())
+			if err != nil {
+				fmt.Println("receive: ", event.Bytes())
+				panic(err)
+				return
+			}
+		case protocol.TypeBatchTransport:
+			n, err := rw.ParseBatch(event.Bytes(), buffers, sizes)
+			if err != nil {
+				panic(err)
+				return
+			}
+			for i := 0; i < n; i++ {
+				_, err = dev.Write(buffers[i][:sizes[i]])
+				if err != nil {
+					panic(err)
+					return
+				}
+			}
+		}
+
+		event.PutBack()
+	}
+}
+
+func handleTx(tx *quic.Stream, dev tun.Tun, dst string) {
+	buf := make([]byte, mtu)
+	rw := protocol.NewTransport(tx)
+	for {
+		n, err := dev.Read(buf)
+		if err != nil {
+			panic(err)
+			return
+		}
+
+		data := buf[:n]
+		if waterutil.IPv4Destination(data).String() != dst {
+			continue
+		}
+		_, err = rw.Write(data)
+		if err != nil {
+			panic(err)
+			return
+		}
+	}
 }

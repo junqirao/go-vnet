@@ -18,7 +18,8 @@ import (
 )
 
 var (
-	mtu = 1392
+	mtu                   = 1392
+	maxBatchTransportSize = 46
 )
 
 type Client struct {
@@ -252,10 +253,17 @@ func handleTxBatch(tx *quic.Stream, dev tun.LinuxTUN, batchSize int, headerSize 
 			return
 		}
 		if n > 1 {
-			_, err = rw.BatchWrite(bufs[:n], readN[:n], headerSize)
-			if err != nil {
-				panic(err)
-				return
+			// 分批处理，最大批大小为 maxBatchTransportSize
+			for i := 0; i < n; i += maxBatchTransportSize {
+				end := i + maxBatchTransportSize
+				if end > n {
+					end = n
+				}
+				_, err = rw.BatchWrite(bufs[i:end], readN[i:end], headerSize)
+				if err != nil {
+					panic(err)
+					return
+				}
 			}
 		} else {
 			data := bufs[0][headerSize : readN[0]+headerSize]
