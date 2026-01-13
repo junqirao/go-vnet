@@ -63,13 +63,14 @@ func (c *Client) Run() {
 		panic("not linux tun")
 	}
 
-	// batchSize := dev.BatchSize()
+	batchSize := dev.BatchSize()
 	headerSize := dev.FrontHeadroom()
+	initReadPoolAndBuf(batchSize, headerSize)
 
 	// read loop
 	// go handleTxBatch(tx, dev, batchSize, headerSize, c.dst)
 	go handleTxReadDevice(dev, headerSize, c.dst)
-	go handleTxWriteNetwork(tx)
+	go handleTxWriteNetwork(tx, headerSize)
 
 	// write loop
 	go func() {
@@ -144,16 +145,10 @@ func handleTxBatch(tx *quic.Stream, dev tun.LinuxTUN, batchSize int, headerSize 
 		}
 		if n > 1 {
 			// 分批处理，最大批大小为 maxBatchTransportSize
-			for i := 0; i < n; i += maxBatchTransportSize {
-				end := i + maxBatchTransportSize
-				if end > n {
-					end = n
-				}
-				_, err = rw.BatchWrite(bufs[i:end], readN[i:end], headerSize)
-				if err != nil {
-					panic(err)
-					return
-				}
+			_, err = rw.BatchWrite(bufs[:n], readN[:n], headerSize)
+			if err != nil {
+				panic(err)
+				return
 			}
 		} else {
 			data := bufs[0][headerSize : readN[0]+headerSize]
@@ -182,7 +177,7 @@ func handleTxReadDevice(dev tun.LinuxTUN, headerSize int, dst string) {
 			return
 		}
 		for i := 0; i < event.n; i++ {
-			if waterutil.IPv4Destination((*event.buf)[i][:(*event.sizes)[i]+headerSize]).String() != dst {
+			if waterutil.IPv4Destination((*event.buf)[i][headerSize:(*event.sizes)[i]+headerSize]).String() != dst {
 				// 移除 env.buf 和 env.sizes 中的元素
 				event.deleteElements(i)
 				continue
@@ -196,7 +191,7 @@ func handleTxReadDevice(dev tun.LinuxTUN, headerSize int, dst string) {
 	}
 }
 
-func handleTxWriteNetwork(tx *quic.Stream) {
+func handleTxWriteNetwork(tx *quic.Stream, headerSize int) {
 	var (
 		rw  = protocol.NewTransport(tx)
 		err error
@@ -204,9 +199,9 @@ func handleTxWriteNetwork(tx *quic.Stream) {
 
 	for event := range readDeviceBuf {
 		if event.n > 1 {
-			_, err = rw.BatchWrite((*event.buf)[:event.n], (*event.sizes)[:event.n], 0)
+			_, err = rw.BatchWrite((*event.buf)[:event.n], (*event.sizes)[:event.n], headerSize)
 		} else {
-			_, err = rw.Write((*event.buf)[0][:(*event.sizes)[0]])
+			_, err = rw.Write((*event.buf)[0][headerSize : (*event.sizes)[0]+headerSize])
 		}
 		if err != nil {
 			panic(err)

@@ -7,27 +7,27 @@ import (
 	tun "github.com/sagernet/sing-tun"
 )
 
-const (
-	maxHeaderSize         = 16
-	maxBatchTransportSize = 46
+var (
+	devReadEventPool = sync.Pool{}
+	readDeviceBuf    = make(chan *deviceReadEvent, 1024)
 )
 
-var (
+func initReadPoolAndBuf(batchSize, headerSize int) {
 	devReadEventPool = sync.Pool{
 		New: func() interface{} {
 			e := &deviceReadEvent{}
-			buf := make([][]byte, maxBatchTransportSize)
-			for i := 0; i < maxBatchTransportSize; i++ {
-				buf[i] = make([]byte, maxHeaderSize+mtu)
+			buf := make([][]byte, batchSize)
+			for i := 0; i < batchSize; i++ {
+				buf[i] = make([]byte, headerSize+mtu)
 			}
 			e.buf = &buf
-			sizes := make([]int, maxBatchTransportSize)
+			sizes := make([]int, batchSize)
 			e.sizes = &sizes
 			return e
 		},
 	}
 	readDeviceBuf = make(chan *deviceReadEvent, 1024)
-)
+}
 
 type Client struct {
 	ip, server, dst string

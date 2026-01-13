@@ -57,6 +57,8 @@ func (c *Client) Run() {
 		panic(err)
 	}
 
+	initReadPoolAndBuf(protocol.MaxTransportBatchSize, 0)
+
 	// read loop
 	go func() {
 		fmt.Println("start tx")
@@ -166,14 +168,14 @@ func handleTxWriteNetwork(tx *quic.Stream) {
 		rw    = protocol.NewTransport(tx)
 		err   error
 		evs   = make([]*deviceReadEvent, 1024)
-		bufs  = make([][]byte, maxBatchTransportSize)
-		sizes = make([]int, maxBatchTransportSize)
+		bufs  = make([][]byte, protocol.MaxTransportBatchSize)
+		sizes = make([]int, protocol.MaxTransportBatchSize)
 	)
 
 	for {
 		length := len(readDeviceBuf)
 		if length > 1 {
-			batch := min(length, maxBatchTransportSize)
+			batch := min(length, protocol.MaxTransportBatchSize)
 			for i := 0; i < batch; i++ {
 				evs[i] = <-readDeviceBuf
 				bufs[i] = (*evs[i].buf)[0]

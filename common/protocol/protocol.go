@@ -7,6 +7,10 @@ import (
 )
 
 const (
+	MaxTransportBatchSize = 46
+)
+
+const (
 	TypeTransport      byte = 0x0
 	TypeBatchTransport byte = 0x1
 )
@@ -113,6 +117,23 @@ func (t *Transport) Write(p []byte) (n int, err error) {
 // generic header:  | magic 4 bytes | type 1 byte | length 2 bytes | data n bytes |
 // data format: | sizes_length 2 bytes | [size_data 2 bytes]... | combined data n bytes |
 func (t *Transport) BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int, err error) {
+	length := len(buf)
+	nn := 0
+	for i := 0; i < length; i += MaxTransportBatchSize {
+		end := i + MaxTransportBatchSize
+		if end > length {
+			end = length
+		}
+		nn, err = t.batchWrite(buf[i:end], sizes[i:end], headerSize)
+		if err != nil {
+			return nn, err
+		}
+		n += nn
+	}
+	return
+}
+
+func (t *Transport) batchWrite(buf [][]byte, sizes []int, headerSize int) (n int, err error) {
 	// Calculate total data length:
 	// 2 bytes for sizes_length + 2*len(sizes) bytes for size_data + sum of each buf slice
 	dataLen := 2 + 2*len(sizes)
