@@ -188,6 +188,10 @@ func handleTxReadDevice(dev tun.LinuxTUN, headerSize int, dst string) {
 				continue
 			}
 		}
+		if event.n <= 0 {
+			putDeviceReadEvent(event)
+			continue
+		}
 		readDeviceBuf <- event
 	}
 }
