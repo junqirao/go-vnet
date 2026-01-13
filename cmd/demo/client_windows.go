@@ -60,7 +60,9 @@ func (c *Client) Run() {
 	// read loop
 	go func() {
 		fmt.Println("start tx")
-		handleTx(tx, c.device.dev, c.dst)
+		go handleTxReadDevice(c.device.dev, c.dst)
+		go handleTxWriteNetwork(tx)
+		// handleTx(tx, c.device.dev, c.dst)
 	}()
 
 	// write loop
@@ -138,6 +140,63 @@ func handleTx(tx *quic.Stream, dev tun.Tun, dst string) {
 		if err != nil {
 			panic(err)
 			return
+		}
+	}
+}
+
+func handleTxReadDevice(dev tun.Tun, dst string) {
+	for {
+		event := getDeviceReadEvent()
+		n, err := dev.Read((*event.buf)[0])
+		if err != nil {
+			return
+		}
+		if waterutil.IPv4Destination((*event.buf)[0][:n]).String() != dst {
+			putDeviceReadEvent(event)
+			continue
+		}
+		(*event.sizes)[0] = n
+		event.n = 1
+		readDeviceBuf <- event
+	}
+}
+
+func handleTxWriteNetwork(tx *quic.Stream) {
+	var (
+		rw    = protocol.NewTransport(tx)
+		err   error
+		evs   = make([]*deviceReadEvent, 1024)
+		bufs  = make([][]byte, maxBatchTransportSize)
+		sizes = make([]int, maxBatchTransportSize)
+	)
+
+	for {
+		length := len(readDeviceBuf)
+		if length > 1 {
+			batch := min(length, maxBatchTransportSize)
+			for i := 0; i < batch; i++ {
+				evs[i] = <-readDeviceBuf
+				bufs[i] = (*evs[i].buf)[0]
+				sizes[i] = (*evs[i].sizes)[0]
+			}
+
+			_, err = rw.BatchWrite(bufs[:batch], sizes[:batch], 0)
+			if err != nil {
+				panic(err)
+				return
+			}
+
+			for i := 0; i < batch; i++ {
+				putDeviceReadEvent(evs[i])
+			}
+		} else {
+			event := <-readDeviceBuf
+			_, err = rw.Write((*event.buf)[0][:(*event.sizes)[0]])
+			if err != nil {
+				panic(err)
+				return
+			}
+			putDeviceReadEvent(event)
 		}
 	}
 }

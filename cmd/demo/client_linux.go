@@ -19,8 +19,7 @@ import (
 )
 
 var (
-	mtu                   = 1392
-	maxBatchTransportSize = 46
+	mtu = 1392
 )
 
 func (c *Client) Run() {
@@ -64,11 +63,13 @@ func (c *Client) Run() {
 		panic("not linux tun")
 	}
 
-	batchSize := dev.BatchSize()
+	// batchSize := dev.BatchSize()
 	headerSize := dev.FrontHeadroom()
 
 	// read loop
-	go handleTxBatch(tx, dev, batchSize, headerSize, c.dst)
+	// go handleTxBatch(tx, dev, batchSize, headerSize, c.dst)
+	go handleTxReadDevice(dev, headerSize, c.dst)
+	go handleTxWriteNetwork(tx)
 
 	// write loop
 	go func() {
@@ -165,5 +166,48 @@ func handleTxBatch(tx *quic.Stream, dev tun.LinuxTUN, batchSize int, headerSize 
 				return
 			}
 		}
+	}
+}
+
+func handleTxReadDevice(dev tun.LinuxTUN, headerSize int, dst string) {
+	var (
+		err error
+	)
+
+	for {
+		event := getDeviceReadEvent()
+		event.n, err = dev.BatchRead(*event.buf, headerSize, *event.sizes)
+		if err != nil {
+			panic(err)
+			return
+		}
+		for i := 0; i < event.n; i++ {
+			if waterutil.IPv4Destination((*event.buf)[i][:(*event.sizes)[i]+headerSize]).String() != dst {
+				// 移除 env.buf 和 env.sizes 中的元素
+				event.deleteElements(i)
+				continue
+			}
+		}
+		readDeviceBuf <- event
+	}
+}
+
+func handleTxWriteNetwork(tx *quic.Stream) {
+	var (
+		rw  = protocol.NewTransport(tx)
+		err error
+	)
+
+	for event := range readDeviceBuf {
+		if event.n > 1 {
+			_, err = rw.BatchWrite((*event.buf)[:event.n], (*event.sizes)[:event.n], 0)
+		} else {
+			_, err = rw.Write((*event.buf)[0][:(*event.sizes)[0]])
+		}
+		if err != nil {
+			panic(err)
+			return
+		}
+		putDeviceReadEvent(event)
 	}
 }
