@@ -128,7 +128,7 @@ func (s *Server) forwardStream(stream *quic.Stream, dest *quic.Conn, name string
 func proxy(name string, dst io.Writer, src io.Reader) (written int64, err error) {
 	fmt.Println("start proxy", name)
 	var (
-		buf = make([]byte, 65535) // 优化: 增大缓冲区到1.4MB,提高吞吐量
+		buf = make([]byte, 65535)
 		nr  int
 		er  error
 	)

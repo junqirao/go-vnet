@@ -22,25 +22,6 @@ var (
 	mtu = 1392
 )
 
-type Client struct {
-	ip, server, dst string
-	device          struct {
-		// dev device.IDevice
-		dev tun.Tun
-	}
-	transport struct {
-		conn *quic.Conn
-	}
-}
-
-func NewClient(ip string, server string, dst string) *Client {
-	return &Client{
-		ip:     ip,
-		server: server,
-		dst:    dst,
-	}
-}
-
 func (c *Client) Run() {
 	go func() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
@@ -49,11 +30,6 @@ func (c *Client) Run() {
 	var (
 		ctx = context.Background()
 		err error
-		// dc  = device.Config{
-		// 	Name: "tun0",
-		// 	CIDR: fmt.Sprintf("%s/24", c.ip),
-		// 	MTU:  1400,
-		// }
 	)
 
 	pfx, _ := netip.ParsePrefix(fmt.Sprintf("%s/24", c.ip))
@@ -68,11 +44,6 @@ func (c *Client) Run() {
 		panic(err)
 		return
 	}
-
-	// c.device.dev = device.NewTunDevice(dc)
-	// if err = c.device.dev.Setup(); err != nil {
-	// 	panic(err)
-	// }
 
 	tls := tt.GenerateTLSConfig(time.Hour*24*7, 1024)
 	tls.InsecureSkipVerify = true

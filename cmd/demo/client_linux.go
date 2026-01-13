@@ -23,25 +23,6 @@ var (
 	maxBatchTransportSize = 46
 )
 
-type Client struct {
-	ip, server, dst string
-	device          struct {
-		// dev device.IDevice
-		dev tun.Tun
-	}
-	transport struct {
-		conn *quic.Conn
-	}
-}
-
-func NewClient(ip string, server string, dst string) *Client {
-	return &Client{
-		ip:     ip,
-		server: server,
-		dst:    dst,
-	}
-}
-
 func (c *Client) Run() {
 	go func() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
@@ -50,11 +31,6 @@ func (c *Client) Run() {
 	var (
 		ctx = context.Background()
 		err error
-		// dc  = device.Config{
-		// 	Name: "tun0",
-		// 	CIDR: fmt.Sprintf("%s/24", c.ip),
-		// 	MTU:  1400,
-		// }
 	)
 
 	pfx, _ := netip.ParsePrefix(fmt.Sprintf("%s/24", c.ip))
@@ -70,11 +46,6 @@ func (c *Client) Run() {
 		panic(err)
 		return
 	}
-
-	// c.device.dev = device.NewTunDevice(dc)
-	// if err = c.device.dev.Setup(); err != nil {
-	// 	panic(err)
-	// }
 
 	tls := tt.GenerateTLSConfig(time.Hour*24*7, 1024)
 	tls.InsecureSkipVerify = true
@@ -109,97 +80,14 @@ func (c *Client) Run() {
 			}
 			fmt.Println("accept stream")
 			// go handleRx(rx, dev)
-			go handleRxBatch2(rx, dev, batchSize, headerSize)
+			go handleRxBatch(rx, dev, headerSize)
 		}
 	}()
 
 	select {}
 }
 
-func handleRx(rx *quic.Stream, dev tun.Tun) {
-	rw := protocol.NewTransport(rx)
-	p := protocol.NewPacketEventProcessor(rw)
-
-	for event := range p.Ch() {
-		_, err := dev.Write(event.Bytes())
-		if err != nil {
-			panic(err)
-			return
-		}
-		event.PutBack()
-	}
-}
-
-func handleRxBatch(rx *quic.Stream, dev tun.LinuxTUN, batchSize int, headerSize int) {
-	rw := protocol.NewTransport(rx)
-	p := protocol.NewPacketEventProcessor(rw)
-
-	var (
-		evs     = make([]*protocol.Event, 0, batchSize)
-		buffers = make([][]byte, batchSize)
-	)
-
-	// 预分配所有buffer
-	for i := 0; i < batchSize; i++ {
-		buffers[i] = make([]byte, mtu+headerSize)
-	}
-
-	for {
-		evs = evs[:0]
-
-		// 非阻塞收集一批数据，最多50微秒等待
-		deadline := time.Now().Add(50 * time.Microsecond)
-		for len(evs) < batchSize && time.Now().Before(deadline) {
-			select {
-			case ev := <-p.Ch():
-				evs = append(evs, ev)
-			default:
-				// 如果没有立即可用数据，继续循环等待直到超时
-				// 使用短sleep避免CPU空转
-				time.Sleep(5 * time.Microsecond)
-			}
-		}
-
-		// 如果没有收集到数据，阻塞等待第一个packet
-		if len(evs) == 0 {
-			evs = append(evs, <-p.Ch())
-			// 尝试收集更多数据
-			for len(evs) < batchSize && time.Now().Before(deadline) {
-				select {
-				case ev := <-p.Ch():
-					evs = append(evs, ev)
-				default:
-					break
-				}
-			}
-		}
-
-		// 零值初始化header并复制数据
-		for i := 0; i < len(evs); i++ {
-			data := evs[i].Bytes()
-			buf := buffers[i]
-			for j := 0; j < headerSize; j++ {
-				buf[j] = 0
-			}
-			copy(buf[headerSize:], data)
-			buffers[i] = buf[:headerSize+len(data)]
-		}
-
-		// 批量写入
-		_, err := dev.BatchWrite(buffers[:len(evs)], headerSize)
-		if err != nil {
-			panic(err)
-			return
-		}
-
-		// PutBack 事件到池中
-		for i := 0; i < len(evs); i++ {
-			evs[i].PutBack()
-		}
-	}
-}
-
-func handleRxBatch2(rx *quic.Stream, dev tun.LinuxTUN, batchSize int, headerSize int) {
+func handleRxBatch(rx *quic.Stream, dev tun.LinuxTUN, headerSize int) {
 	rw := protocol.NewTransport(rx)
 	p := protocol.NewPacketEventProcessor(rw)
 
