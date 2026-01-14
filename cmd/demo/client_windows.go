@@ -62,8 +62,9 @@ func (c *Client) Run() {
 	// read loop
 	go func() {
 		fmt.Println("start tx")
-		go handleTxReadDevice(c.device.dev, c.dst)
-		go handleTxWriteNetwork(tx)
+		// go handleTxReadDevice(c.device.dev, c.dst)
+		// go handleTxWriteNetwork(tx)
+		go handleTxReadDeviceV2(tx, c.device.dev, c.dst)
 		// handleTx(tx, c.device.dev, c.dst)
 	}()
 
@@ -177,5 +178,30 @@ func handleTxWriteNetwork(tx *quic.Stream) {
 			}
 			putDeviceReadEvent(event)
 		}
+	}
+}
+
+func handleTxReadDeviceV2(tx *quic.Stream, dev tun.Tun, dst string) {
+	var (
+		rw = protocol.NewTransport(tx)
+		p  = protocol.NewPacketEventProcessor(rw,
+			protocol.WithBatchSize(1),
+			protocol.WithHeaderSize(0),
+			protocol.WithMaxPacketSize(mtu))
+	)
+
+	for {
+		event := p.GetTXEvent()
+		n, err := dev.Read((*event.Buffer)[0])
+		if err != nil {
+			return
+		}
+		if waterutil.IPv4Destination((*event.Buffer)[0][:n]).String() != dst {
+			p.PutTXEvent(event)
+			continue
+		}
+		(*event.Sizes)[0] = n
+		event.N = 1
+		p.PushEvent(event)
 	}
 }

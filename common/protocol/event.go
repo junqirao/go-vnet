@@ -61,14 +61,20 @@ type (
 	}
 )
 
-func WithBatchSize(bs int) Opt {
+func WithBatchSize(size int) Opt {
 	return func(o *PacketEventProcessorOptions) {
-		o.batchSize = bs
+		o.batchSize = size
 	}
 }
-func WithHeaderSize(hs int) Opt {
+func WithHeaderSize(size int) Opt {
 	return func(o *PacketEventProcessorOptions) {
-		o.headerSize = hs
+		o.headerSize = size
+	}
+}
+
+func WithMaxPacketSize(size int) Opt {
+	return func(o *PacketEventProcessorOptions) {
+		o.maxPacketSize = size
 	}
 }
 
@@ -218,7 +224,7 @@ func (p *PacketEventProcessor) writeBatchLoop() {
 	}
 }
 
-func (p *PacketEventProcessor) WriteEvent(e *WriteEvent) {
+func (p *PacketEventProcessor) PushEvent(e *WriteEvent) {
 	if e.N > 1 {
 		p.wbChan <- e
 	} else {
