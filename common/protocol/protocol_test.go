@@ -896,7 +896,7 @@ func TestTransport_ParseBatch(t *testing.T) {
 			parsedSizes := make([]int, len(tt.sizes))
 
 			// Parse batch
-			n, err := transport.ParseBatch(data, buf, parsedSizes)
+			n, err := transport.ParseBatch(data, buf, parsedSizes, 0)
 
 			if err != nil {
 				t.Fatalf("ParseBatch() error = %v", err)
@@ -941,7 +941,7 @@ func TestTransport_ParseBatch_Errors(t *testing.T) {
 		}
 		sizes := make([]int, 2) // too small
 
-		_, err := transport.ParseBatch(data, buf, sizes)
+		_, err := transport.ParseBatch(data, buf, sizes, 0)
 		if err == nil || err.Error() != "sizes array too small" {
 			t.Errorf("ParseBatch() expected 'sizes array too small' error, got %v", err)
 		}
@@ -958,7 +958,7 @@ func TestTransport_ParseBatch_Errors(t *testing.T) {
 		buf[0] = make([]byte, 10)
 		sizes := make([]int, 2)
 
-		_, err := transport.ParseBatch(data, buf, sizes)
+		_, err := transport.ParseBatch(data, buf, sizes, 0)
 		if err == nil || err.Error() != "buf array too small" {
 			t.Errorf("ParseBatch() expected 'buf array too small' error, got %v", err)
 		}
@@ -974,7 +974,7 @@ func TestTransport_ParseBatch_Errors(t *testing.T) {
 		buf[0] = make([]byte, 3) // too small
 		sizes := make([]int, 1)
 
-		_, err := transport.ParseBatch(data, buf, sizes)
+		_, err := transport.ParseBatch(data, buf, sizes, 0)
 		if err == nil || err.Error() != "buf slice too small" {
 			t.Errorf("ParseBatch() expected 'buf slice too small' error, got %v", err)
 		}
@@ -1035,7 +1035,7 @@ func TestTransport_BatchWrite_ParseBatch_RoundTrip(t *testing.T) {
 				outBuf[i] = make([]byte, sizes[i])
 			}
 
-			n, err := transport.ParseBatch(data, outBuf, parsedSizes)
+			n, err := transport.ParseBatch(data, outBuf, parsedSizes, 0)
 			if err != nil {
 				t.Fatalf("ParseBatch() error = %v", err)
 			}
@@ -1211,7 +1211,7 @@ func BenchmarkTransport_ParseBatch_Small(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, err := transport.ParseBatch(data, outBuf, parsedSizes)
+		_, err := transport.ParseBatch(data, outBuf, parsedSizes, 0)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -1245,7 +1245,7 @@ func BenchmarkTransport_ParseBatch_Medium(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, err := transport.ParseBatch(data, outBuf, parsedSizes)
+		_, err := transport.ParseBatch(data, outBuf, parsedSizes, 0)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -1278,7 +1278,7 @@ func BenchmarkTransport_ParseBatch_Large(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, err := transport.ParseBatch(data, outBuf, parsedSizes)
+		_, err := transport.ParseBatch(data, outBuf, parsedSizes, 0)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -1316,7 +1316,7 @@ func BenchmarkTransport_BatchWrite_ParseBatch_RoundTrip_Small(b *testing.B) {
 			outBuf[i] = make([]byte, sizes[i])
 		}
 		parsedSizes := make([]int, 3)
-		_, err = transport.ParseBatch(data, outBuf, parsedSizes)
+		_, err = transport.ParseBatch(data, outBuf, parsedSizes, 0)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -1357,7 +1357,7 @@ func BenchmarkTransport_BatchWrite_ParseBatch_RoundTrip_Large(b *testing.B) {
 			outBuf[i] = make([]byte, sizes[i])
 		}
 		parsedSizes := make([]int, 5)
-		_, err = transport.ParseBatch(data, outBuf, parsedSizes)
+		_, err = transport.ParseBatch(data, outBuf, parsedSizes, 0)
 		if err != nil {
 			b.Fatal(err)
 		}

@@ -93,24 +93,7 @@ func (t *Transport) Read(p []byte) (n int, err error) {
 // Write writes p as a complete message with protocol header to upstream
 // | magic 4 bytes | type 1 byte | length 2 byte | data n byte |
 func (t *Transport) Write(p []byte) (n int, err error) {
-	length := len(p)
-	if length > 65530 {
-		return 0, ErrMessageTooLarge
-	}
-
-	// Build magic using pre-computed bytes
-	*(*[4]byte)((*t.buffer)[:4]) = t.magic
-
-	// Build type and length
-	(*t.buffer)[4] = TypeTransport // type byte
-	binary.BigEndian.PutUint16((*t.buffer)[5:7], uint16(length))
-
-	// Copy data
-	copy((*t.buffer)[7:7+length], p)
-
-	// Write complete message
-	_, err = t.upstream.Write((*t.buffer)[:7+length])
-	return 7 + length, err
+	return t.WriteMessage(TypeTransport, p)
 }
 
 // BatchWrite writes multiple messages in a single batch with optimized format
