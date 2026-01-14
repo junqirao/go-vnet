@@ -202,6 +202,6 @@ func handleTxReadDeviceV2(tx *quic.Stream, dev tun.Tun, dst string) {
 		}
 		(*event.Sizes)[0] = n
 		event.N = 1
-		p.PushEvent(event)
+		p.PushWriteEvent(event)
 	}
 }

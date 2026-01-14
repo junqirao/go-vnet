@@ -111,6 +111,33 @@ func newWriteEvent(batchSize, maxPacketSize int) *WriteEvent {
 	return w
 }
 
+func (w *WriteEvent) DeleteElements(i ...int) {
+	if len(i) == 0 || len(i) >= len(*w.Sizes) {
+		return
+	}
+
+	// 双指针：writeIdx 写入位置，skipIdx 跳过索引位置
+	skipIdx := 0
+	writeIdx := 0
+	totalLen := len(*w.Sizes)
+
+	for readIdx := 0; readIdx < totalLen; readIdx++ {
+		// 检查当前索引是否需要跳过
+		if skipIdx < len(i) && readIdx == i[skipIdx] {
+			skipIdx++
+			continue
+		}
+		// 如果不是当前位置才移动
+		if readIdx != writeIdx {
+			(*w.Buffer)[writeIdx] = (*w.Buffer)[readIdx]
+			(*w.Sizes)[writeIdx] = (*w.Sizes)[readIdx]
+		}
+		writeIdx++
+		// 更新有效长度
+		w.N--
+	}
+}
+
 func NewPacketEventProcessor(rw ReadWriter, opts ...Opt) *PacketEventProcessor {
 	o := defaultPacketEventProcessorOptions()
 	for _, opt := range opts {
@@ -224,7 +251,7 @@ func (p *PacketEventProcessor) writeBatchLoop() {
 	}
 }
 
-func (p *PacketEventProcessor) PushEvent(e *WriteEvent) {
+func (p *PacketEventProcessor) PushWriteEvent(e *WriteEvent) {
 	if e.N > 1 {
 		p.wbChan <- e
 	} else {

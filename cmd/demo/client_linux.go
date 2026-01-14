@@ -68,9 +68,12 @@ func (c *Client) Run() {
 	initReadPoolAndBuf(batchSize, headerSize)
 
 	// read loop
-	fmt.Println("start tx")
 	go handleTxReadDevice(dev, headerSize, c.dst)
 	go handleTxWriteNetwork(tx, headerSize)
+	// go func() {
+	// 	fmt.Println("start tx")
+	// 	go handleTxReadDeviceV2(tx, dev, c.dst)
+	// }()
 
 	// write loop
 	go func() {
@@ -171,5 +174,40 @@ func handleTxWriteNetwork(tx *quic.Stream, headerSize int) {
 			return
 		}
 		putDeviceReadEvent(event)
+	}
+}
+
+func handleTxReadDeviceV2(tx *quic.Stream, dev tun.LinuxTUN, dst string) {
+	var (
+		err        error
+		headerSize = dev.FrontHeadroom()
+		rw         = protocol.NewTransport(tx)
+		p          = protocol.NewPacketEventProcessor(rw,
+			protocol.WithMaxPacketSize(mtu+headerSize),
+			protocol.WithHeaderSize(headerSize),
+			protocol.WithBatchSize(dev.BatchSize()),
+		)
+	)
+
+	for {
+		event := p.GetTXEvent()
+		event.N, err = dev.BatchRead(*event.Buffer, headerSize, *event.Sizes)
+		if err != nil {
+			panic(err)
+			return
+		}
+		for i := 0; i < event.N; i++ {
+			if waterutil.IPv4Destination((*event.Buffer)[i][headerSize:(*event.Sizes)[i]+headerSize]).String() != dst {
+				// 移除 env.buf 和 env.sizes 中的元素
+				event.DeleteElements(i)
+				continue
+			}
+		}
+		if event.N <= 0 {
+			p.PutTXEvent(event)
+			continue
+		}
+
+		p.PushWriteEvent(event)
 	}
 }
