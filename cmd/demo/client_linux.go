@@ -102,7 +102,7 @@ func handleRxBatch(rx *quic.Stream, dev tun.LinuxTUN, headerSize int) {
 		buffers[i] = make([]byte, mtu+headerSize)
 	}
 
-	for event := range p.Ch() {
+	for event := range p.RX() {
 		switch event.Type() {
 		case protocol.TypeTransport:
 			_, err := dev.Write(event.Bytes())
@@ -122,7 +122,7 @@ func handleRxBatch(rx *quic.Stream, dev tun.LinuxTUN, headerSize int) {
 			}
 		}
 
-		event.PutBack()
+		p.PutRXEvent(event)
 	}
 }
 

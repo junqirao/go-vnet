@@ -82,7 +82,7 @@ func (m *eventMockReadWriter) WriteMessage(typ byte, data []byte) (int, error) {
 
 // TestEvent_Type tests Type method
 func TestEvent_Type(t *testing.T) {
-	event := &Event{
+	event := &ReadEvent{
 		typ: 0x42,
 	}
 	if event.Type() != 0x42 {
@@ -95,7 +95,7 @@ func TestEvent_Bytes(t *testing.T) {
 	data := []byte("hello world")
 	buf := new([65535]byte)
 	copy(buf[:], data)
-	event := &Event{
+	event := &ReadEvent{
 		buffer: buf,
 		n:      uint16(len(data)),
 		typ:    0x01,
@@ -109,7 +109,7 @@ func TestEvent_Bytes(t *testing.T) {
 
 // TestEvent_PutBack tests PutBack method
 func TestEvent_PutBack(t *testing.T) {
-	event := &Event{
+	event := &ReadEvent{
 		putBack: func() {
 			// Mock putBack function
 		},
@@ -119,21 +119,21 @@ func TestEvent_PutBack(t *testing.T) {
 	event.PutBack()
 
 	// Test with nil putBack
-	eventNil := &Event{}
+	eventNil := &ReadEvent{}
 	eventNil.PutBack()
 }
 
-// TestNewEvent tests newEvent function
+// TestNewEvent tests newReadEvent function
 func TestNewEvent(t *testing.T) {
-	event := newEvent()
+	event := newReadEvent()
 	if event == nil {
-		t.Fatal("newEvent() returned nil")
+		t.Fatal("newReadEvent() returned nil")
 	}
 	if event.buffer != nil {
-		t.Errorf("newEvent() buffer should be nil initially, got %v", event.buffer)
+		t.Errorf("newReadEvent() buffer should be nil initially, got %v", event.buffer)
 	}
 	if event.putBack != nil {
-		t.Errorf("newEvent() putBack should be nil initially")
+		t.Errorf("newReadEvent() putBack should be nil initially")
 	}
 }
 
@@ -145,8 +145,8 @@ func TestEventProcessor_New(t *testing.T) {
 	if processor == nil {
 		t.Fatal("NewPacketEventProcessor() returned nil")
 	}
-	if processor.Ch() == nil {
-		t.Fatal("Ch() returned nil")
+	if processor.RX() == nil {
+		t.Fatal("RX() returned nil")
 	}
 }
 
@@ -167,15 +167,15 @@ func TestPacketEventProcessor_SingleMessage(t *testing.T) {
 
 	// Wait for the event
 	select {
-	case event := <-processor.Ch():
+	case event := <-processor.RX():
 		if event == nil {
 			t.Fatal("Received nil event")
 		}
 		if event.Type() != 0x01 {
-			t.Errorf("Event.Type() = %v, want %v", event.Type(), 0x01)
+			t.Errorf("ReadEvent.Type() = %v, want %v", event.Type(), 0x01)
 		}
 		if !bytes.Equal(event.Bytes(), data) {
-			t.Errorf("Event.Bytes() = %v, want %v", event.Bytes(), data)
+			t.Errorf("ReadEvent.Bytes() = %v, want %v", event.Bytes(), data)
 		}
 		event.PutBack()
 	case <-time.After(100 * time.Millisecond):
@@ -211,7 +211,7 @@ func TestPacketEventProcessor_MultipleMessages(t *testing.T) {
 	// Read all messages
 	for i, expected := range messages {
 		select {
-		case event := <-processor.Ch():
+		case event := <-processor.RX():
 			if event.Type() != expected.typ {
 				t.Errorf("Message %d: Type() = %v, want %v", i, event.Type(), expected.typ)
 			}
@@ -242,12 +242,12 @@ func TestPacketEventProcessor_LargeMessage(t *testing.T) {
 
 	// Wait for the event
 	select {
-	case event := <-processor.Ch():
+	case event := <-processor.RX():
 		if event.Type() != 0x02 {
-			t.Errorf("Event.Type() = %v, want %v", event.Type(), 0x02)
+			t.Errorf("ReadEvent.Type() = %v, want %v", event.Type(), 0x02)
 		}
 		if !bytes.Equal(event.Bytes(), data) {
-			t.Errorf("Event.Bytes() length = %v, want %v", len(event.Bytes()), len(data))
+			t.Errorf("ReadEvent.Bytes() length = %v, want %v", len(event.Bytes()), len(data))
 		}
 		event.PutBack()
 	case <-time.After(100 * time.Millisecond):
@@ -271,12 +271,12 @@ func TestPacketEventProcessor_EmptyMessage(t *testing.T) {
 
 	// Wait for the event
 	select {
-	case event := <-processor.Ch():
+	case event := <-processor.RX():
 		if event.Type() != 0x01 {
-			t.Errorf("Event.Type() = %v, want %v", event.Type(), 0x01)
+			t.Errorf("ReadEvent.Type() = %v, want %v", event.Type(), 0x01)
 		}
 		if len(event.Bytes()) != 0 {
-			t.Errorf("Event.Bytes() length = %v, want 0", len(event.Bytes()))
+			t.Errorf("ReadEvent.Bytes() length = %v, want 0", len(event.Bytes()))
 		}
 		event.PutBack()
 	case <-time.After(100 * time.Millisecond):
@@ -307,9 +307,9 @@ func TestPacketEventProcessor_InvalidMagic(t *testing.T) {
 
 	// Should receive only the valid message
 	select {
-	case event := <-processor.Ch():
+	case event := <-processor.RX():
 		if !bytes.Equal(event.Bytes(), data) {
-			t.Errorf("Event.Bytes() = %v, want %v", event.Bytes(), data)
+			t.Errorf("ReadEvent.Bytes() = %v, want %v", event.Bytes(), data)
 		}
 		event.PutBack()
 	case <-time.After(100 * time.Millisecond):
@@ -343,7 +343,7 @@ func TestPacketEventProcessor_BufferPool(t *testing.T) {
 	// Receive all messages
 	for i := 0; i < 100; i++ {
 		select {
-		case event := <-processor.Ch():
+		case event := <-processor.RX():
 			expected := []byte{byte(i % 256)}
 			if !bytes.Equal(event.Bytes(), expected) {
 				t.Errorf("Message %d: Bytes() = %v, want %v", i, event.Bytes(), expected)
@@ -361,7 +361,7 @@ func TestPacketEventProcessor_BufferPool(t *testing.T) {
 func BenchmarkEvent_Creation(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		event := newEvent()
+		event := newReadEvent()
 		_ = event
 	}
 }
@@ -390,7 +390,7 @@ func BenchmarkPacketEventProcessor_SmallMessage(b *testing.B) {
 		mock.readBuf = mock.writeBuf
 
 		// Read event
-		event := <-processor.Ch()
+		event := <-processor.RX()
 		if event != nil && event.buffer != nil {
 			event.PutBack()
 		}
@@ -421,7 +421,7 @@ func BenchmarkPacketEventProcessor_MediumMessage(b *testing.B) {
 		mock.readBuf = mock.writeBuf
 
 		// Read event
-		event := <-processor.Ch()
+		event := <-processor.RX()
 		if event != nil && event.buffer != nil {
 			event.PutBack()
 		}
@@ -452,14 +452,14 @@ func BenchmarkPacketEventProcessor_LargeMessage(b *testing.B) {
 		mock.readBuf = mock.writeBuf
 
 		// Read event
-		event := <-processor.Ch()
+		event := <-processor.RX()
 		if event != nil && event.buffer != nil {
 			event.PutBack()
 		}
 	}
 }
 
-// BenchmarkPacketEventProcessor_GetEvent benchmarks getEvent performance
+// BenchmarkPacketEventProcessor_GetEvent benchmarks getRxEvent performance
 func BenchmarkPacketEventProcessor_GetEvent(b *testing.B) {
 	mock := newEventMockReadWriter()
 	processor := NewPacketEventProcessor(mock)
@@ -468,7 +468,7 @@ func BenchmarkPacketEventProcessor_GetEvent(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		event := processor.getEvent()
+		event := processor.getRxEvent()
 		if event != nil && event.buffer != nil {
 			event.PutBack()
 		}
@@ -499,7 +499,7 @@ func BenchmarkPacketEventProcessor_PoolEfficiency(b *testing.B) {
 		mock.readBuf = mock.writeBuf
 
 		// Read event
-		event := <-processor.Ch()
+		event := <-processor.RX()
 		if event != nil && event.buffer != nil {
 			event.PutBack()
 		}

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"runtime"
 	"sync"
 )
 
@@ -9,120 +10,167 @@ const (
 	eventMaxBufferSize = 65535
 )
 
+func defaultPacketEventProcessorOptions() *PacketEventProcessorOptions {
+	o := &PacketEventProcessorOptions{
+		batchSize:           128, // dev read batch size
+		offset:              10,  // gso header
+		maxPacketSize:       1399,
+		maxBufferedRxEvents: 1024, // rx channel buffer size
+		maxBufferedTxEvents: 1024, // tx channel buffer size
+	}
+	if runtime.GOOS == "windows" {
+		o.batchSize = 1
+		o.offset = 0
+	}
+	return o
+}
+
 type (
 	PacketEventProcessor struct {
-		rw        ReadWriter
-		eventPool sync.Pool
-		eventBuf  chan *Event
+		PacketEventProcessorOptions
+		rw         ReadWriter
+		rEventPool sync.Pool
+		rChan      chan *ReadEvent
+		wEventPool sync.Pool
+		wChan      chan *WriteEvent
 	}
-	Event struct {
-		putBack func()
-		buffer  *[eventMaxBufferSize]byte
-		n       uint16 // 使用 uint16 而不是 int，节省内存（与 protocol 长度字段类型一致）
-		typ     byte
+	PacketEventProcessorOptions struct {
+		batchSize           int
+		maxPacketSize       int
+		offset              int
+		maxBufferedRxEvents int
+		maxBufferedTxEvents int
+	}
+	Opt       func(o *PacketEventProcessorOptions)
+	ReadEvent struct {
+		buffer *[eventMaxBufferSize]byte
+		n      uint16 // 使用 uint16 而不是 int，节省内存（与 protocol 长度字段类型一致）
+		typ    byte
+	}
+	WriteEvent struct {
+		Buffer *[][]byte
+		Sizes  *[]int
+		N      int
 	}
 )
 
-// 使用预分配的缓冲池，避免每次都分配新数组
-var eventBufferPool = sync.Pool{
-	New: func() interface{} {
-		return new([eventMaxBufferSize]byte)
-	},
+func WithBatchSize(bs int) Opt {
+	return func(o *PacketEventProcessorOptions) {
+		o.batchSize = bs
+	}
 }
-
-func newEvent() *Event {
-	return &Event{
-		buffer: nil, // 延迟分配，减少内存占用
+func WithBatchOffset(ofs int) Opt {
+	return func(o *PacketEventProcessorOptions) {
+		o.offset = ofs
 	}
 }
 
-func (e *Event) PutBack() {
-	if e.putBack == nil {
-		return
+func newReadEvent() *ReadEvent {
+	return &ReadEvent{
+		buffer: new([eventMaxBufferSize]byte),
 	}
-	e.putBack()
 }
 
-// Release releases the event back to the pool
-// This is an alias for PutBack() for better naming
-func (e *Event) Release() {
-	e.PutBack()
-}
-
-func (e *Event) Type() byte {
+func (e *ReadEvent) Type() byte {
 	return e.typ
 }
 
-func (e *Event) Bytes() []byte {
+func (e *ReadEvent) Bytes() []byte {
 	// 使用全切片表达式避免分配新的切片头
 	return e.buffer[:e.n:e.n]
 }
 
-func (e *Event) N() int {
+func (e *ReadEvent) N() int {
 	return int(e.n)
 }
 
-// BufferPtr returns the raw buffer pointer and length without creating a slice
-// This is useful for zero-copy operations
-func (e *Event) BufferPtr() ([]byte, int) {
-	return e.buffer[:e.n:e.n], int(e.n)
+func newWriteEvent(batchSize, maxPacketSize int) *WriteEvent {
+	buf := make([][]byte, batchSize)
+	for i := 0; i < batchSize; i++ {
+		buf[i] = make([]byte, maxPacketSize)
+	}
+	sizes := make([]int, batchSize)
+	w := &WriteEvent{
+		Buffer: &buf,
+		Sizes:  &sizes,
+		N:      0,
+	}
+	return w
 }
 
-func NewPacketEventProcessor(rw ReadWriter) *PacketEventProcessor {
+func NewPacketEventProcessor(rw ReadWriter, opts ...Opt) *PacketEventProcessor {
+	o := defaultPacketEventProcessorOptions()
+	for _, opt := range opts {
+		opt(o)
+	}
 	p := &PacketEventProcessor{
-		rw: rw,
-		eventPool: sync.Pool{
+		PacketEventProcessorOptions: *o,
+		rw:                          rw,
+		rEventPool: sync.Pool{
 			New: func() interface{} {
-				return newEvent()
+				return newReadEvent()
 			},
 		},
-		eventBuf: make(chan *Event, 1024),
+		wEventPool: sync.Pool{
+			New: func() interface{} {
+				return newWriteEvent(o.batchSize, o.maxPacketSize)
+			},
+		},
+		rChan: make(chan *ReadEvent, o.maxBufferedRxEvents),
+		wChan: make(chan *WriteEvent, o.maxBufferedTxEvents),
 	}
 	go p.readLoop()
 	return p
 }
 
-func (p *PacketEventProcessor) Ch() <-chan *Event {
-	return p.eventBuf
+func (p *PacketEventProcessor) RX() <-chan *ReadEvent {
+	return p.rChan
 }
 
 func (p *PacketEventProcessor) readLoop() {
-	defer close(p.eventBuf)
+	defer close(p.rChan)
 	for {
-		event := p.getEvent()
+		event := p.getRxEvent()
 		// 直接传递数组指针，避免创建切片
 		typ, n, err := p.rw.ReadMessage((*event.buffer)[:])
 		if errors.Is(err, ErrInvalidMagic) {
-			event.PutBack()
+			p.PutRXEvent(event)
 			continue
 		}
 		if err != nil {
-			event.PutBack()
+			p.PutRXEvent(event)
 			return
 		}
 		event.n = uint16(n)
 		event.typ = typ
-		p.eventBuf <- event
+		p.rChan <- event
 	}
 }
 
-func (p *PacketEventProcessor) getEvent() *Event {
-	event := p.eventPool.Get().(*Event)
-	// 确保已分配 buffer
-	if event.buffer == nil {
-		event.buffer = eventBufferPool.Get().(*[eventMaxBufferSize]byte)
+func (p *PacketEventProcessor) getRxEvent() *ReadEvent {
+	return p.rEventPool.Get().(*ReadEvent)
+}
+
+// PutRXEvent back to sync.Pool without clean buf
+func (p *PacketEventProcessor) PutRXEvent(e *ReadEvent) {
+	if e == nil {
+		return
 	}
-	// 只在首次创建时分配闭包
-	if event.putBack == nil {
-		// 使用局部变量捕获 event，避免闭包中的循环引用
-		e := event
-		event.putBack = func() {
-			eventBufferPool.Put(e.buffer)
-			e.buffer = nil
-			p.eventPool.Put(e)
-		}
+	p.rEventPool.Put(e)
+}
+
+// PutTXEvent back to sync.Pool without clean buf
+func (p *PacketEventProcessor) PutTXEvent(e *WriteEvent) {
+	if e != nil {
+		return
 	}
-	return event
+	p.wEventPool.Put(e)
+}
+
+// GetTXEvent with buffer
+func (p *PacketEventProcessor) GetTXEvent() (e *WriteEvent) {
+	e = p.wEventPool.Get().(*WriteEvent)
+	return
 }
 
 // Stop stops the packet event processor
