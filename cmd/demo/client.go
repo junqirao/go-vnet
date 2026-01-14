@@ -87,44 +87,7 @@ func (e *deviceReadEvent) deleteElements(i ...int) {
 			(*e.sizes)[writeIdx] = (*e.sizes)[readIdx]
 		}
 		writeIdx++
+		// 更新有效长度
 		e.n--
 	}
-
-	// 更新有效长度
-	// *e.sizes = (*e.sizes)[:writeIdx]
-	// *e.buf = (*e.buf)[:writeIdx]
-}
-
-// sortInts 原地排序整数切片（内联快速排序，避免调用 runtime.sort）
-func sortInts(a []int) {
-	if len(a) < 2 {
-		return
-	}
-	quickSortInts(a, 0, len(a)-1)
-}
-
-func quickSortInts(a []int, lo, hi int) {
-	for lo < hi {
-		p := partitionInts(a, lo, hi)
-		if p-lo < hi-p {
-			quickSortInts(a, lo, p-1)
-			lo = p + 1
-		} else {
-			quickSortInts(a, p+1, hi)
-			hi = p - 1
-		}
-	}
-}
-
-func partitionInts(a []int, lo, hi int) int {
-	pivot := a[hi]
-	i := lo - 1
-	for j := lo; j < hi; j++ {
-		if a[j] <= pivot {
-			i++
-			a[i], a[j] = a[j], a[i]
-		}
-	}
-	a[i+1], a[hi] = a[hi], a[i+1]
-	return i + 1
 }
