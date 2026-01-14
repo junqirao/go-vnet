@@ -68,7 +68,7 @@ func (c *Client) Run() {
 	initReadPoolAndBuf(batchSize, headerSize)
 
 	// read loop
-	// go handleTxBatch(tx, dev, batchSize, headerSize, c.dst)
+	fmt.Println("start tx")
 	go handleTxReadDevice(dev, headerSize, c.dst)
 	go handleTxWriteNetwork(tx, headerSize)
 
@@ -92,13 +92,14 @@ func (c *Client) Run() {
 func handleRxBatch(rx *quic.Stream, dev tun.LinuxTUN, headerSize int) {
 	rw := protocol.NewTransport(rx)
 	p := protocol.NewPacketEventProcessor(rw)
+	batch := protocol.MaxTransportBatchSize
 
 	var (
-		buffers = make([][]byte, 1024)
-		sizes   = make([]int, 1024)
+		buffers = make([][]byte, batch)
+		sizes   = make([]int, batch)
 	)
 
-	for i := 0; i < 1024; i++ {
+	for i := 0; i < batch; i++ {
 		buffers[i] = make([]byte, mtu+headerSize)
 	}
 
@@ -123,44 +124,6 @@ func handleRxBatch(rx *quic.Stream, dev tun.LinuxTUN, headerSize int) {
 		}
 
 		p.PutRXEvent(event)
-	}
-}
-
-func handleTxBatch(tx *quic.Stream, dev tun.LinuxTUN, batchSize int, headerSize int, dst string) {
-	fmt.Println("start tx")
-
-	rw := protocol.NewTransport(tx)
-
-	bufs := make([][]byte, batchSize)
-	readN := make([]int, batchSize)
-	for i := 0; i < batchSize; i++ {
-		bufs[i] = make([]byte, mtu+headerSize)
-	}
-
-	for {
-		n, err := dev.BatchRead(bufs, headerSize, readN)
-		if err != nil {
-			panic(err)
-			return
-		}
-		if n > 1 {
-			// 分批处理，最大批大小为 maxBatchTransportSize
-			_, err = rw.BatchWrite(bufs[:n], readN[:n], headerSize)
-			if err != nil {
-				panic(err)
-				return
-			}
-		} else {
-			data := bufs[0][headerSize : readN[0]+headerSize]
-			if waterutil.IPv4Destination(data).String() != dst {
-				continue
-			}
-			_, err = rw.Write(data)
-			if err != nil {
-				panic(err)
-				return
-			}
-		}
 	}
 }
 

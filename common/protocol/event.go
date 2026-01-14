@@ -10,17 +10,22 @@ const (
 	eventMaxBufferSize = 65535
 )
 
+const (
+	ErrModuleTx = "tx"
+	ErrModuleRx = "rx"
+)
+
 func defaultPacketEventProcessorOptions() *PacketEventProcessorOptions {
 	o := &PacketEventProcessorOptions{
 		batchSize:           128, // dev read batch size
-		offset:              10,  // gso header
+		headerSize:          10,  // gso header
 		maxPacketSize:       1399,
 		maxBufferedRxEvents: 1024, // rx channel buffer size
 		maxBufferedTxEvents: 1024, // tx channel buffer size
 	}
 	if runtime.GOOS == "windows" {
 		o.batchSize = 1
-		o.offset = 0
+		o.headerSize = 0
 	}
 	return o
 }
@@ -29,15 +34,17 @@ type (
 	PacketEventProcessor struct {
 		PacketEventProcessorOptions
 		rw         ReadWriter
-		rEventPool sync.Pool
-		rChan      chan *ReadEvent
-		wEventPool sync.Pool
-		wChan      chan *WriteEvent
+		rEventPool sync.Pool        // read(rx) event pool
+		rChan      chan *ReadEvent  // read(rx) channel
+		wEventPool sync.Pool        // write(tx) event pool
+		wChan      chan *WriteEvent // write(tx) channel
+		wbChan     chan *WriteEvent // batch write channel
+		errHandler func(module string, err error)
 	}
 	PacketEventProcessorOptions struct {
 		batchSize           int
 		maxPacketSize       int
-		offset              int
+		headerSize          int
 		maxBufferedRxEvents int
 		maxBufferedTxEvents int
 	}
@@ -59,9 +66,9 @@ func WithBatchSize(bs int) Opt {
 		o.batchSize = bs
 	}
 }
-func WithBatchOffset(ofs int) Opt {
+func WithHeaderSize(hs int) Opt {
 	return func(o *PacketEventProcessorOptions) {
-		o.offset = ofs
+		o.headerSize = hs
 	}
 }
 
@@ -120,6 +127,8 @@ func NewPacketEventProcessor(rw ReadWriter, opts ...Opt) *PacketEventProcessor {
 		wChan: make(chan *WriteEvent, o.maxBufferedTxEvents),
 	}
 	go p.readLoop()
+	go p.writeLoop()
+	go p.writeBatchLoop()
 	return p
 }
 
@@ -138,12 +147,82 @@ func (p *PacketEventProcessor) readLoop() {
 			continue
 		}
 		if err != nil {
+			if err != nil && p.errHandler != nil {
+				p.errHandler(ErrModuleRx, err)
+			}
 			p.PutRXEvent(event)
 			return
 		}
 		event.n = uint16(n)
 		event.typ = typ
 		p.rChan <- event
+	}
+}
+
+func (p *PacketEventProcessor) writeLoop() {
+	defer close(p.wChan)
+	var (
+		err   error
+		evs   = make([]*WriteEvent, p.maxBufferedTxEvents)
+		buf   = make([][]byte, p.maxBufferedTxEvents)
+		sizes = make([]int, p.maxBufferedTxEvents)
+	)
+
+	for {
+		length := len(p.wChan)
+		if length > 1 {
+			for i := 0; i < length; i++ {
+				event := <-p.wChan
+				if event.N > 1 {
+					p.wbChan <- event
+				}
+				evs[i] = event
+				buf[i] = (*event.Buffer)[0]
+				sizes[i] = (*event.Sizes)[0]
+			}
+			_, err = p.rw.BatchWrite(buf[:length], sizes[:length], p.headerSize)
+			if err != nil && p.errHandler != nil {
+				p.errHandler(ErrModuleTx, err)
+			}
+			for i := 0; i < length; i++ {
+				p.PutTXEvent(evs[i])
+			}
+		} else {
+			event := <-p.wChan
+			if event.N > 1 {
+				p.wbChan <- event
+			} else {
+				_, err = p.rw.Write(
+					(*event.Buffer)[0][p.headerSize : (*event.Sizes)[0]+p.headerSize],
+				)
+				if err != nil && p.errHandler != nil {
+					p.errHandler(ErrModuleTx, err)
+				}
+			}
+			p.PutTXEvent(event)
+		}
+	}
+}
+
+func (p *PacketEventProcessor) writeBatchLoop() {
+	defer close(p.wbChan)
+	for event := range p.wbChan {
+		_, err := p.rw.BatchWrite(
+			(*event.Buffer)[:event.N],
+			(*event.Sizes)[:event.N],
+			p.headerSize)
+		if err != nil && p.errHandler != nil {
+			p.errHandler(ErrModuleTx, err)
+		}
+		p.PutTXEvent(event)
+	}
+}
+
+func (p *PacketEventProcessor) WriteEvent(e *WriteEvent) {
+	if e.N > 1 {
+		p.wbChan <- e
+	} else {
+		p.wChan <- e
 	}
 }
 
