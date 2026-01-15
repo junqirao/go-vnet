@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -23,7 +24,6 @@ type (
 		WriteMessage(typ byte, data []byte) (int, error)
 		BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int, err error)
 		ParseBatch(data []byte, buf [][]byte, sizes []int, offset int) (n int, err error)
-		Proxy(dst io.Writer) (written int64, err error)
 	}
 )
 
@@ -118,10 +118,9 @@ func (t *Transport) readWithHeader(p []byte) (n int, err error) {
 		return 0, err
 	}
 
-	totalLen := 7 + int(length)
-	// Copy complete message (header + data) to output buffer
-	copy(p, (*t.buffer)[:totalLen])
-	return totalLen, nil
+	// Copy only data to output buffer (skip magic, type and length)
+	copy(p, (*t.buffer)[:7+length])
+	return 7 + int(length), nil
 }
 
 // Write writes p as a complete message with protocol header to upstream
@@ -283,7 +282,8 @@ func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 	return 7 + length, err
 }
 
-func (t *Transport) Proxy(dst io.Writer) (written int64, err error) {
+func (t *Transport) Proxy(name string, dst io.Writer) (written int64, err error) {
+	fmt.Println("start proxy", name)
 	var (
 		buf = make([]byte, MaxTransportByteSize)
 		nr  int
@@ -292,7 +292,9 @@ func (t *Transport) Proxy(dst io.Writer) (written int64, err error) {
 
 	for {
 		nr, er = t.readWithHeader(buf)
+		// nr, er = src.Read(buf)
 		if nr > 0 {
+			// fmt.Printf("%s : %v\n", name, buf[:nr])
 			nw, ew := dst.Write(buf[0:nr])
 			if ew != nil {
 				return written, ew
