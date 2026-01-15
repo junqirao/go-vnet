@@ -130,9 +130,6 @@ func handleRxBatch(rx *quic.Stream, dev tun.LinuxTUN, headerSize int) {
 			}
 			_, err = dev.BatchWrite(buffers[:n], headerSize)
 			if err != nil {
-				// todo debug
-				fmt.Println("received: ", buffers[:n])
-				fmt.Println("received_raw: ", event.Bytes())
 				panic(err)
 				return
 			}

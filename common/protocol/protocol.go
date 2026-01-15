@@ -3,7 +3,6 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 )
 
@@ -92,37 +91,6 @@ func (t *Transport) Read(p []byte) (n int, err error) {
 	return int(length), nil
 }
 
-func (t *Transport) readWithHeader(p []byte) (n int, err error) {
-	// Read magic (4 bytes)
-	if _, err = io.ReadFull(t.upstream, (*t.buffer)[:4]); err != nil {
-		return 0, err
-	}
-
-	// Validate magic number using direct array comparison (faster)
-	if *(*[4]byte)((*t.buffer)[:4]) != t.magic {
-		return 0, ErrInvalidMagic
-	}
-
-	// Read type and length (3 bytes)
-	if _, err = io.ReadFull(t.upstream, (*t.buffer)[4:7]); err != nil {
-		return 0, err
-	}
-
-	length := binary.BigEndian.Uint16((*t.buffer)[5:7])
-	if length > 65530 {
-		return 0, ErrMessageTooLarge
-	}
-
-	// Read data
-	if _, err = io.ReadFull(t.upstream, (*t.buffer)[7:7+length]); err != nil {
-		return 0, err
-	}
-
-	// Copy only data to output buffer (skip magic, type and length)
-	copy(p, (*t.buffer)[:7+length])
-	return 7 + int(length), nil
-}
-
 // Write writes p as a complete message with protocol header to upstream
 // | magic 4 bytes | type 1 byte | length 2 byte | data n byte |
 func (t *Transport) Write(p []byte) (n int, err error) {
@@ -134,6 +102,9 @@ func (t *Transport) Write(p []byte) (n int, err error) {
 // data format: | sizes_length 2 bytes | [size_data 2 bytes]... | combined data n bytes |
 func (t *Transport) BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int, err error) {
 	length := len(buf)
+	if length == 1 {
+		return t.Write(buf[0][headerSize : sizes[0]+headerSize])
+	}
 	nn := 0
 	for i := 0; i < length; i += MaxTransportBatchSize {
 		end := i + MaxTransportBatchSize
@@ -280,37 +251,4 @@ func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 	// Write complete message
 	_, err := t.upstream.Write((*t.buffer)[:7+length])
 	return 7 + length, err
-}
-
-func (t *Transport) Proxy(name string, dst io.Writer) (written int64, err error) {
-	fmt.Println("start proxy", name)
-	var (
-		buf = make([]byte, MaxTransportByteSize)
-		nr  int
-		er  error
-	)
-
-	for {
-		nr, er = t.readWithHeader(buf)
-		// nr, er = src.Read(buf)
-		if nr > 0 {
-			// fmt.Printf("%s : %v\n", name, buf[:nr])
-			nw, ew := dst.Write(buf[0:nr])
-			if ew != nil {
-				return written, ew
-			}
-			if nw > 0 {
-				written += int64(nw)
-			}
-		}
-		if er != nil {
-			if er != io.EOF &&
-				!errors.Is(er, ErrInvalidMagic) &&
-				!errors.Is(er, ErrMessageTooLarge) {
-				err = er
-			}
-			break
-		}
-	}
-	return written, err
 }
