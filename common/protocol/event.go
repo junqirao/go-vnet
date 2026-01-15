@@ -38,7 +38,7 @@ type (
 		rChan      chan *ReadEvent  // read(rx) channel
 		wEventPool sync.Pool        // write(tx) event pool
 		wChan      chan *WriteEvent // write(tx) channel
-		wbChan     chan *WriteEvent // batch write channel
+		wbChan     chan *WriteEvent // write(tx) batch channel
 		errHandler func(module string, err error)
 	}
 	PacketEventProcessorOptions struct {
@@ -156,8 +156,9 @@ func NewPacketEventProcessor(rw ReadWriter, opts ...Opt) *PacketEventProcessor {
 				return newWriteEvent(o.batchSize, o.maxPacketSize)
 			},
 		},
-		rChan: make(chan *ReadEvent, o.maxBufferedRxEvents),
-		wChan: make(chan *WriteEvent, o.maxBufferedTxEvents),
+		rChan:  make(chan *ReadEvent, o.maxBufferedRxEvents),
+		wChan:  make(chan *WriteEvent, o.maxBufferedTxEvents),
+		wbChan: make(chan *WriteEvent, o.maxBufferedTxEvents),
 	}
 	go p.readLoop()
 	go p.writeLoop()

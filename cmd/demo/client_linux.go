@@ -7,6 +7,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"net/netip"
+	"os/exec"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -67,13 +68,21 @@ func (c *Client) Run() {
 	headerSize := dev.FrontHeadroom()
 	initReadPoolAndBuf(batchSize, headerSize)
 
+	// todo up dev
+	command := exec.Command("ip", "link", "set", "tun0", "up")
+	err = command.Start()
+	if err != nil {
+		panic(err)
+		return
+	}
+
 	// read loop
-	go handleTxReadDevice(dev, headerSize, c.dst)
-	go handleTxWriteNetwork(tx, headerSize)
-	// go func() {
-	// 	fmt.Println("start tx")
-	// 	go handleTxReadDeviceV2(tx, dev, c.dst)
-	// }()
+	go func() {
+		fmt.Println("start tx")
+		// go handleTxReadDeviceV2(tx, dev, c.dst)
+		go handleTxReadDevice(dev, headerSize, c.dst)
+		go handleTxWriteNetwork(tx, headerSize)
+	}()
 
 	// write loop
 	go func() {
@@ -200,7 +209,6 @@ func handleTxReadDeviceV2(tx *quic.Stream, dev tun.LinuxTUN, dst string) {
 			if waterutil.IPv4Destination((*event.Buffer)[i][headerSize:(*event.Sizes)[i]+headerSize]).String() != dst {
 				// 移除 env.buf 和 env.sizes 中的元素
 				event.DeleteElements(i)
-				continue
 			}
 		}
 		if event.N <= 0 {
