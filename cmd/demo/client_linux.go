@@ -64,10 +64,6 @@ func (c *Client) Run() {
 		panic("not linux tun")
 	}
 
-	batchSize := dev.BatchSize()
-	headerSize := dev.FrontHeadroom()
-	initReadPoolAndBuf(batchSize, headerSize)
-
 	// todo up dev
 	command := exec.Command("ip", "link", "set", "tun0", "up")
 	err = command.Start()
@@ -80,8 +76,6 @@ func (c *Client) Run() {
 	go func() {
 		fmt.Println("start tx")
 		go handleTxReadDevice(tx, dev, c.dst)
-		// go handleTxReadDevice(dev, headerSize, c.dst)
-		// go handleTxWriteNetwork(tx, headerSize)
 	}()
 
 	// write loop
@@ -94,17 +88,18 @@ func (c *Client) Run() {
 			}
 			fmt.Println("accept stream")
 			// go handleRx(rx, dev)
-			go handleRxBatch(rx, dev, headerSize)
+			go handleRxBatch(rx, dev)
 		}
 	}()
 
 	select {}
 }
 
-func handleRxBatch(rx *quic.Stream, dev tun.LinuxTUN, headerSize int) {
+func handleRxBatch(rx *quic.Stream, dev tun.LinuxTUN) {
 	rw := protocol.NewTransport(rx)
 	p := protocol.NewPacketEventProcessor(rw)
 	batch := protocol.MaxTransportBatchSize
+	headerSize := dev.FrontHeadroom()
 
 	var (
 		buffers = make([][]byte, batch)
