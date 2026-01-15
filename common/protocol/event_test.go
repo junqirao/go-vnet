@@ -3,6 +3,8 @@ package protocol
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
+	"io"
 	"testing"
 	"time"
 )
@@ -80,6 +82,56 @@ func (m *eventMockReadWriter) WriteMessage(typ byte, data []byte) (int, error) {
 	return m.writeBuf.Write(msg)
 }
 
+// BatchWrite implements BatchWrite method for ReadWriter interface
+func (m *eventMockReadWriter) BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int, err error) {
+	for i := range buf {
+		msg := buf[i][headerSize : headerSize+sizes[i]]
+		nn, err := m.Write(msg)
+		if err != nil {
+			return n, err
+		}
+		n += nn
+	}
+	return
+}
+
+// ParseBatch implements ParseBatch method for ReadWriter interface
+func (m *eventMockReadWriter) ParseBatch(data []byte, buf [][]byte, sizes []int, offset int) (n int, err error) {
+	dataOffset := 0
+
+	// Read sizes_length (2 bytes)
+	sizesLen := int(binary.BigEndian.Uint16(data[dataOffset : dataOffset+2]))
+	dataOffset += 2
+
+	// Read all size_data (2 bytes each) into sizes
+	for i := 0; i < sizesLen; i++ {
+		if i >= len(sizes) {
+			return 0, errors.New("sizes array too small")
+		}
+		sizes[i] = int(binary.BigEndian.Uint16(data[dataOffset : dataOffset+2]))
+		dataOffset += 2
+	}
+
+	// Read combined data into buf
+	for i := 0; i < sizesLen; i++ {
+		if i >= len(buf) {
+			return 0, errors.New("buf array too small")
+		}
+		if len(buf[i]) < offset+sizes[i] {
+			return 0, errors.New("buf slice too small")
+		}
+		copy(buf[i][offset:offset+sizes[i]], data[dataOffset:dataOffset+sizes[i]])
+		dataOffset += sizes[i]
+	}
+
+	n = sizesLen
+	return
+}
+
+func (m *eventMockReadWriter) Proxy(dst io.Writer) (written int64, err error) {
+	return io.Copy(dst, m.readBuf)
+}
+
 // TestEvent_Type tests Type method
 func TestEvent_Type(t *testing.T) {
 	event := &ReadEvent{
@@ -107,20 +159,32 @@ func TestEvent_Bytes(t *testing.T) {
 	}
 }
 
-// TestEvent_PutBack tests PutBack method
+// TestEvent_PutBack tests that events are put back correctly
 func TestEvent_PutBack(t *testing.T) {
-	event := &ReadEvent{
-		putBack: func() {
-			// Mock putBack function
-		},
+	mock := newEventMockReadWriter()
+	processor := NewPacketEventProcessor(mock)
+
+	// Write a message to the read buffer
+	data := []byte("test message")
+	_, err := mock.WriteMessage(0x01, data)
+	if err != nil {
+		t.Fatalf("WriteMessage() error = %v", err)
 	}
 
-	// Should not panic
-	event.PutBack()
+	// Move written data to read buffer
+	mock.readBuf = mock.writeBuf
 
-	// Test with nil putBack
-	eventNil := &ReadEvent{}
-	eventNil.PutBack()
+	// Wait for the event
+	select {
+	case event := <-processor.RX():
+		if event == nil {
+			t.Fatal("Received nil event")
+		}
+		// Put back the event using the processor's method
+		processor.PutRXEvent(event)
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Timeout waiting for event")
+	}
 }
 
 // TestNewEvent tests newReadEvent function
@@ -129,11 +193,8 @@ func TestNewEvent(t *testing.T) {
 	if event == nil {
 		t.Fatal("newReadEvent() returned nil")
 	}
-	if event.buffer != nil {
-		t.Errorf("newReadEvent() buffer should be nil initially, got %v", event.buffer)
-	}
-	if event.putBack != nil {
-		t.Errorf("newReadEvent() putBack should be nil initially")
+	if event.buffer == nil {
+		t.Errorf("newReadEvent() buffer should be initialized, got nil")
 	}
 }
 
@@ -177,7 +238,8 @@ func TestPacketEventProcessor_SingleMessage(t *testing.T) {
 		if !bytes.Equal(event.Bytes(), data) {
 			t.Errorf("ReadEvent.Bytes() = %v, want %v", event.Bytes(), data)
 		}
-		event.PutBack()
+		// Put back the event
+		processor.PutRXEvent(event)
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("Timeout waiting for event")
 	}
@@ -218,7 +280,7 @@ func TestPacketEventProcessor_MultipleMessages(t *testing.T) {
 			if !bytes.Equal(event.Bytes(), expected.data) {
 				t.Errorf("Message %d: Bytes() = %v, want %v", i, event.Bytes(), expected.data)
 			}
-			event.PutBack()
+			processor.PutRXEvent(event)
 		case <-time.After(100 * time.Millisecond):
 			t.Fatalf("Timeout waiting for message %d", i)
 		}
@@ -249,7 +311,7 @@ func TestPacketEventProcessor_LargeMessage(t *testing.T) {
 		if !bytes.Equal(event.Bytes(), data) {
 			t.Errorf("ReadEvent.Bytes() length = %v, want %v", len(event.Bytes()), len(data))
 		}
-		event.PutBack()
+		processor.PutRXEvent(event)
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("Timeout waiting for event")
 	}
@@ -278,7 +340,7 @@ func TestPacketEventProcessor_EmptyMessage(t *testing.T) {
 		if len(event.Bytes()) != 0 {
 			t.Errorf("ReadEvent.Bytes() length = %v, want 0", len(event.Bytes()))
 		}
-		event.PutBack()
+		processor.PutRXEvent(event)
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("Timeout waiting for event")
 	}
@@ -311,7 +373,7 @@ func TestPacketEventProcessor_InvalidMagic(t *testing.T) {
 		if !bytes.Equal(event.Bytes(), data) {
 			t.Errorf("ReadEvent.Bytes() = %v, want %v", event.Bytes(), data)
 		}
-		event.PutBack()
+		processor.PutRXEvent(event)
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("Timeout waiting for event")
 	}
@@ -348,10 +410,106 @@ func TestPacketEventProcessor_BufferPool(t *testing.T) {
 			if !bytes.Equal(event.Bytes(), expected) {
 				t.Errorf("Message %d: Bytes() = %v, want %v", i, event.Bytes(), expected)
 			}
-			event.PutBack()
+			processor.PutRXEvent(event)
 		case <-time.After(100 * time.Millisecond):
 			t.Fatalf("Timeout waiting for message %d", i)
 		}
+	}
+}
+
+// TestPacketEventProcessor_BatchWrite tests batch write functionality
+func TestPacketEventProcessor_BatchWrite(t *testing.T) {
+	// Create a processor with larger batch size to accommodate multiple messages
+	mock := newEventMockReadWriter()
+	processor := NewPacketEventProcessor(mock, WithBatchSize(10))
+
+	tests := []struct {
+		name       string
+		headerSize int
+		offset     int
+		messages   []string
+	}{
+		{
+			name:       "no_offset",
+			headerSize: 0,
+			offset:     0,
+			messages:   []string{"hello", "world", "test"},
+		},
+		{
+			name:       "with_offset",
+			headerSize: 10,
+			offset:     10,
+			messages:   []string{"hello", "world", "test"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset buffers
+			mock.writeBuf.Reset()
+			mock.readBuf.Reset()
+
+			// Get a write event from the processor
+			event := processor.GetTXEvent()
+			defer processor.PutTXEvent(event)
+
+			// Prepare batch data
+			numMsgs := len(tt.messages)
+			event.N = numMsgs
+
+			// Set header size in processor options (override for testing)
+			processor.headerSize = tt.headerSize
+
+			// Write messages to the event buffer with offset
+			for i, msg := range tt.messages {
+				msgBytes := []byte(msg)
+				// Write at offset position (header + offset)
+				buf := (*event.Buffer)[i]
+				copy(buf[tt.offset:], msgBytes)
+				(*event.Sizes)[i] = len(msgBytes)
+				t.Logf("buf[i] %d: n=%d, data=%v", i, (*event.Sizes)[i], buf)
+			}
+
+			// Print what we're sending
+			t.Logf("Sending %d messages with headerSize=%d, offset=%d:", numMsgs, tt.headerSize, tt.offset)
+			for i, msg := range tt.messages {
+				t.Logf("  Message %d: size=%d, data=%q", i, (*event.Sizes)[i], msg)
+			}
+
+			// Push the write event to the processor
+			processor.PushWriteEvent(event)
+
+			// Wait a bit for the write to complete
+			time.Sleep(10 * time.Millisecond)
+
+			// Check what was written to rw
+			writtenData := mock.writeBuf.Bytes()
+			t.Logf("Written data length: %d bytes", len(writtenData))
+
+			// Parse and print the written data
+			// The written data should contain the message payloads (after header)
+			expectedTotal := 0
+			for _, msg := range tt.messages {
+				expectedTotal += len(msg)
+			}
+
+			// The actual written data may be wrapped in protocol format
+			// For now, just verify some data was written
+			if len(writtenData) == 0 {
+				t.Errorf("No data was written to rw")
+			} else {
+				t.Logf("Written data (hex): %x", writtenData)
+				t.Logf("Written data (ascii): %q", writtenData)
+			}
+
+			// Verify the messages are in the written data
+			for i, msg := range tt.messages {
+				msgBytes := []byte(msg)
+				if !bytes.Contains(writtenData, msgBytes) {
+					t.Errorf("Message %d (%q) not found in written data", i, msg)
+				}
+			}
+		})
 	}
 }
 
@@ -392,7 +550,7 @@ func BenchmarkPacketEventProcessor_SmallMessage(b *testing.B) {
 		// Read event
 		event := <-processor.RX()
 		if event != nil && event.buffer != nil {
-			event.PutBack()
+			processor.PutRXEvent(event)
 		}
 	}
 }
@@ -423,7 +581,7 @@ func BenchmarkPacketEventProcessor_MediumMessage(b *testing.B) {
 		// Read event
 		event := <-processor.RX()
 		if event != nil && event.buffer != nil {
-			event.PutBack()
+			processor.PutRXEvent(event)
 		}
 	}
 }
@@ -454,7 +612,7 @@ func BenchmarkPacketEventProcessor_LargeMessage(b *testing.B) {
 		// Read event
 		event := <-processor.RX()
 		if event != nil && event.buffer != nil {
-			event.PutBack()
+			processor.PutRXEvent(event)
 		}
 	}
 }
@@ -470,7 +628,7 @@ func BenchmarkPacketEventProcessor_GetEvent(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		event := processor.getRxEvent()
 		if event != nil && event.buffer != nil {
-			event.PutBack()
+			processor.PutRXEvent(event)
 		}
 	}
 }
@@ -501,7 +659,7 @@ func BenchmarkPacketEventProcessor_PoolEfficiency(b *testing.B) {
 		// Read event
 		event := <-processor.RX()
 		if event != nil && event.buffer != nil {
-			event.PutBack()
+			processor.PutRXEvent(event)
 		}
 	}
 }

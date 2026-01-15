@@ -79,9 +79,9 @@ func (c *Client) Run() {
 	// read loop
 	go func() {
 		fmt.Println("start tx")
-		// go handleTxReadDeviceV2(tx, dev, c.dst)
-		go handleTxReadDevice(dev, headerSize, c.dst)
-		go handleTxWriteNetwork(tx, headerSize)
+		go handleTxReadDeviceV2(tx, dev, c.dst)
+		// go handleTxReadDevice(dev, headerSize, c.dst)
+		// go handleTxWriteNetwork(tx, headerSize)
 	}()
 
 	// write loop

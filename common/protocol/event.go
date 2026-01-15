@@ -17,15 +17,24 @@ const (
 
 func defaultPacketEventProcessorOptions() *PacketEventProcessorOptions {
 	o := &PacketEventProcessorOptions{
-		batchSize:           128, // dev read batch size
-		headerSize:          10,  // gso header
-		maxPacketSize:       1399,
+		batchSize:           128,  // dev read batch size
+		headerSize:          10,   // gso header
+		maxPacketSize:       1399, // mtu + gso headerSize
 		maxBufferedRxEvents: 1024, // rx channel buffer size
 		maxBufferedTxEvents: 1024, // tx channel buffer size
 	}
+
+	// windows dose not supported yet
 	if runtime.GOOS == "windows" {
 		o.batchSize = 1
 		o.headerSize = 0
+	}
+	// disable package aggregation by default when
+	// system supports batch operation
+	if runtime.GOOS == "linux" ||
+		runtime.GOOS == "unix" ||
+		runtime.GOOS == "darwin" {
+		o.disablePackageAggregation = true
 	}
 	return o
 }
@@ -42,11 +51,12 @@ type (
 		errHandler func(module string, err error)
 	}
 	PacketEventProcessorOptions struct {
-		batchSize           int
-		maxPacketSize       int
-		headerSize          int
-		maxBufferedRxEvents int
-		maxBufferedTxEvents int
+		batchSize                 int
+		maxPacketSize             int
+		headerSize                int
+		maxBufferedRxEvents       int
+		maxBufferedTxEvents       int
+		disablePackageAggregation bool
 	}
 	Opt       func(o *PacketEventProcessorOptions)
 	ReadEvent struct {
@@ -75,6 +85,12 @@ func WithHeaderSize(size int) Opt {
 func WithMaxPacketSize(size int) Opt {
 	return func(o *PacketEventProcessorOptions) {
 		o.maxPacketSize = size
+	}
+}
+
+func SetPackageAggregation(enable bool) Opt {
+	return func(o *PacketEventProcessorOptions) {
+		o.disablePackageAggregation = enable
 	}
 }
 
@@ -202,40 +218,58 @@ func (p *PacketEventProcessor) writeLoop() {
 		sizes = make([]int, p.maxBufferedTxEvents)
 	)
 
-	for {
-		length := len(p.wChan)
-		if length > 1 {
-			for i := 0; i < length; i++ {
+	loop := func() {
+		for {
+			length := len(p.wChan)
+			if length > 1 {
+				for i := 0; i < length; i++ {
+					event := <-p.wChan
+					if event.N > 1 {
+						p.wbChan <- event
+					}
+					evs[i] = event
+					buf[i] = (*event.Buffer)[0]
+					sizes[i] = (*event.Sizes)[0]
+				}
+				_, err = p.rw.BatchWrite(buf[:length], sizes[:length], p.headerSize)
+				if err != nil && p.errHandler != nil {
+					p.errHandler(ErrModuleTx, err)
+				}
+				for i := 0; i < length; i++ {
+					p.PutTXEvent(evs[i])
+				}
+			} else {
 				event := <-p.wChan
 				if event.N > 1 {
 					p.wbChan <- event
+				} else {
+					_, err = p.rw.Write(
+						(*event.Buffer)[0][p.headerSize : (*event.Sizes)[0]+p.headerSize],
+					)
+					if err != nil && p.errHandler != nil {
+						p.errHandler(ErrModuleTx, err)
+					}
 				}
-				evs[i] = event
-				buf[i] = (*event.Buffer)[0]
-				sizes[i] = (*event.Sizes)[0]
+				p.PutTXEvent(event)
 			}
-			_, err = p.rw.BatchWrite(buf[:length], sizes[:length], p.headerSize)
-			if err != nil && p.errHandler != nil {
-				p.errHandler(ErrModuleTx, err)
-			}
-			for i := 0; i < length; i++ {
-				p.PutTXEvent(evs[i])
-			}
-		} else {
-			event := <-p.wChan
-			if event.N > 1 {
-				p.wbChan <- event
-			} else {
+		}
+	}
+
+	if p.disablePackageAggregation {
+		loop = func() {
+			for event := range p.wChan {
 				_, err = p.rw.Write(
 					(*event.Buffer)[0][p.headerSize : (*event.Sizes)[0]+p.headerSize],
 				)
 				if err != nil && p.errHandler != nil {
 					p.errHandler(ErrModuleTx, err)
 				}
+				p.PutTXEvent(event)
 			}
-			p.PutTXEvent(event)
 		}
 	}
+
+	loop()
 }
 
 func (p *PacketEventProcessor) writeBatchLoop() {

@@ -8,6 +8,7 @@ import (
 
 const (
 	MaxTransportBatchSize = 46
+	MaxTransportByteSize  = 65535
 )
 
 const (
@@ -22,6 +23,7 @@ type (
 		WriteMessage(typ byte, data []byte) (int, error)
 		BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int, err error)
 		ParseBatch(data []byte, buf [][]byte, sizes []int, offset int) (n int, err error)
+		Proxy(dst io.Writer) (written int64, err error)
 	}
 )
 
@@ -40,7 +42,7 @@ var (
 // magic: "VNET" (0x56 0x4E 0x45 0x54) - unique protocol identifier
 type Transport struct {
 	upstream io.ReadWriter
-	buffer   *[65535]byte
+	buffer   *[MaxTransportByteSize]byte
 	magic    [4]byte
 }
 
@@ -52,7 +54,7 @@ func NewTransport(upstream io.ReadWriter, magic ...[4]byte) ReadWriter {
 	}
 	return &Transport{
 		upstream: upstream,
-		buffer:   &[65535]byte{},
+		buffer:   &[MaxTransportByteSize]byte{},
 		magic:    mg,
 	}
 }
@@ -88,6 +90,38 @@ func (t *Transport) Read(p []byte) (n int, err error) {
 	// Copy only data to output buffer (skip magic, type and length)
 	copy(p, (*t.buffer)[7:7+length])
 	return int(length), nil
+}
+
+func (t *Transport) readWithHeader(p []byte) (n int, err error) {
+	// Read magic (4 bytes)
+	if _, err = io.ReadFull(t.upstream, (*t.buffer)[:4]); err != nil {
+		return 0, err
+	}
+
+	// Validate magic number using direct array comparison (faster)
+	if *(*[4]byte)((*t.buffer)[:4]) != t.magic {
+		return 0, ErrInvalidMagic
+	}
+
+	// Read type and length (3 bytes)
+	if _, err = io.ReadFull(t.upstream, (*t.buffer)[4:7]); err != nil {
+		return 0, err
+	}
+
+	length := binary.BigEndian.Uint16((*t.buffer)[5:7])
+	if length > 65530 {
+		return 0, ErrMessageTooLarge
+	}
+
+	// Read data
+	if _, err = io.ReadFull(t.upstream, (*t.buffer)[7:7+length]); err != nil {
+		return 0, err
+	}
+
+	totalLen := 7 + int(length)
+	// Copy complete message (header + data) to output buffer
+	copy(p, (*t.buffer)[:totalLen])
+	return totalLen, nil
 }
 
 // Write writes p as a complete message with protocol header to upstream
@@ -247,4 +281,34 @@ func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 	// Write complete message
 	_, err := t.upstream.Write((*t.buffer)[:7+length])
 	return 7 + length, err
+}
+
+func (t *Transport) Proxy(dst io.Writer) (written int64, err error) {
+	var (
+		buf = make([]byte, MaxTransportByteSize)
+		nr  int
+		er  error
+	)
+
+	for {
+		nr, er = t.readWithHeader(buf)
+		if nr > 0 {
+			nw, ew := dst.Write(buf[0:nr])
+			if ew != nil {
+				return written, ew
+			}
+			if nw > 0 {
+				written += int64(nw)
+			}
+		}
+		if er != nil {
+			if er != io.EOF &&
+				!errors.Is(er, ErrInvalidMagic) &&
+				!errors.Is(er, ErrMessageTooLarge) {
+				err = er
+			}
+			break
+		}
+	}
+	return written, err
 }

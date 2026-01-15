@@ -12,6 +12,7 @@ import (
 	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/config"
+	"go-vnet/common/protocol"
 	tt "go-vnet/common/tls"
 )
 
@@ -125,32 +126,38 @@ func (s *Server) forwardStream(stream *quic.Stream, dest *quic.Conn, name string
 	log.Printf("%s io.Copy %d bytes", name, n)
 }
 
-func proxy(name string, dst io.Writer, src io.Reader) (written int64, err error) {
+func proxy(name string, dst io.Writer, src io.ReadWriter) (written int64, err error) {
 	fmt.Println("start proxy", name)
-	var (
-		buf = make([]byte, 65535)
-		nr  int
-		er  error
-	)
+	// var (
+	// 	buf = make([]byte, 65535)
+	// 	nr  int
+	// 	er  error
+	// )
 
-	for {
-		nr, er = src.Read(buf)
-		if nr > 0 {
-			// fmt.Printf("%s : %v\n", name, buf[:nr])
-			nw, ew := dst.Write(buf[0:nr])
-			if ew != nil {
-				return written, ew
-			}
-			if nw > 0 {
-				written += int64(nw)
-			}
-		}
-		if er != nil {
-			if er != io.EOF {
-				err = er
-			}
-			break
-		}
-	}
-	return written, err
+	transport := protocol.NewTransport(src)
+	return transport.Proxy(dst)
+
+	// for {
+	// 	nr, er = transport.Read(buf)
+	// 	// nr, er = src.Read(buf)
+	// 	if nr > 0 {
+	// 		// fmt.Printf("%s : %v\n", name, buf[:nr])
+	// 		nw, ew := dst.Write(buf[0:nr])
+	// 		if ew != nil {
+	// 			return written, ew
+	// 		}
+	// 		if nw > 0 {
+	// 			written += int64(nw)
+	// 		}
+	// 	}
+	// 	if er != nil {
+	// 		if er != io.EOF &&
+	// 			!errors.Is(er, protocol.ErrInvalidMagic) &&
+	// 			!errors.Is(er, protocol.ErrMessageTooLarge) {
+	// 			err = er
+	// 		}
+	// 		break
+	// 	}
+	// }
+	// return written, err
 }
