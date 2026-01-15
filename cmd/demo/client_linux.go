@@ -79,7 +79,7 @@ func (c *Client) Run() {
 	// read loop
 	go func() {
 		fmt.Println("start tx")
-		go handleTxReadDeviceV2(tx, dev, c.dst)
+		go handleTxReadDevice(tx, dev, c.dst)
 		// go handleTxReadDevice(dev, headerSize, c.dst)
 		// go handleTxWriteNetwork(tx, headerSize)
 	}()
@@ -139,54 +139,7 @@ func handleRxBatch(rx *quic.Stream, dev tun.LinuxTUN, headerSize int) {
 	}
 }
 
-func handleTxReadDevice(dev tun.LinuxTUN, headerSize int, dst string) {
-	var (
-		err error
-	)
-
-	for {
-		event := getDeviceReadEvent()
-		event.n, err = dev.BatchRead(*event.buf, headerSize, *event.sizes)
-		if err != nil {
-			panic(err)
-			return
-		}
-		for i := 0; i < event.n; i++ {
-			if waterutil.IPv4Destination((*event.buf)[i][headerSize:(*event.sizes)[i]+headerSize]).String() != dst {
-				// 移除 env.buf 和 env.sizes 中的元素
-				event.deleteElements(i)
-				continue
-			}
-		}
-		if event.n <= 0 {
-			putDeviceReadEvent(event)
-			continue
-		}
-		readDeviceBuf <- event
-	}
-}
-
-func handleTxWriteNetwork(tx *quic.Stream, headerSize int) {
-	var (
-		rw  = protocol.NewTransport(tx)
-		err error
-	)
-
-	for event := range readDeviceBuf {
-		if event.n > 1 {
-			_, err = rw.BatchWrite((*event.buf)[:event.n], (*event.sizes)[:event.n], headerSize)
-		} else {
-			_, err = rw.Write((*event.buf)[0][headerSize : (*event.sizes)[0]+headerSize])
-		}
-		if err != nil {
-			panic(err)
-			return
-		}
-		putDeviceReadEvent(event)
-	}
-}
-
-func handleTxReadDeviceV2(tx *quic.Stream, dev tun.LinuxTUN, dst string) {
+func handleTxReadDevice(tx *quic.Stream, dev tun.LinuxTUN, dst string) {
 	var (
 		err        error
 		headerSize = dev.FrontHeadroom()
