@@ -2,7 +2,6 @@ package hub
 
 import (
 	"context"
-	"fmt"
 	"runtime"
 	"sync"
 
@@ -93,7 +92,12 @@ func (h *Hub) Start() {
 func (h *Hub) Stop(reason ...string) {
 	close(h.sig)
 	if len(reason) > 0 {
-		fmt.Println(reason[0])
+		h.logger.Errorf(h.ctx, "hub stopped reason: %s", reason[0])
+	} else {
+		h.logger.Infof(h.ctx, "hub stopped")
 	}
-	fmt.Println("hub stopped")
+}
+
+func (h *Hub) Router() *router.Router {
+	return h.router
 }

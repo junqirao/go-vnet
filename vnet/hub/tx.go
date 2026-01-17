@@ -25,7 +25,7 @@ type (
 	}
 	TxAdaptor interface {
 		OnDialRx(ctx context.Context) (rw protocol.ReadWriter, err error)
-		OnError(e *TxError)
+		OnError(ctx context.Context, e *TxError)
 	}
 )
 
@@ -87,7 +87,7 @@ func (c *Destination) txLoop() {
 			}
 			_, err = c.tx.BatchWrite(buf[:offset], sizes[:offset], c.ref.cfg.HeaderSize)
 			if err != nil {
-				c.OnError(&TxError{
+				c.OnError(c.ctx, &TxError{
 					dst: c,
 					Err: err,
 				})
@@ -99,7 +99,7 @@ func (c *Destination) txLoop() {
 			event := <-c.txEventChan
 			_, err = c.tx.BatchWrite((event.Buffer)[:event.N], (event.Sizes)[:event.N], c.ref.cfg.HeaderSize)
 			if err != nil {
-				c.OnError(&TxError{
+				c.OnError(c.ctx, &TxError{
 					dst: c,
 					Err: err,
 				})
