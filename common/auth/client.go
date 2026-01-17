@@ -46,3 +46,16 @@ func (c *Client) Auth(ctx context.Context, request map[string]any, handler Clien
 
 	return c.Decode(ctx, out)
 }
+
+func (c *Client) AuthPtr(ctx context.Context, request map[string]any, handler ClientHandlerFunc, ptr any) (err error) {
+	in, err := c.Encode(ctx, request)
+	if err != nil {
+		return
+	}
+	out, err := handler(ctx, in)
+	if err != nil {
+		return
+	}
+
+	return c.DecodeTo(ctx, out, &ptr)
+}

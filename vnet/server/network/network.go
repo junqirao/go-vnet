@@ -6,13 +6,13 @@ import (
 	"go-vnet/common/addresses"
 	"go-vnet/common/device"
 	"go-vnet/common/flow"
-	"go-vnet/common/router"
+	"go-vnet/vnet/router"
 )
 
 type (
 	Network struct {
 		Config          `json:"config"`
-		router          router.Router
+		router          *router.Router
 		pool            *addresses.IPAllocator
 		control         *flow.Control
 		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *device.Device, err error)
@@ -34,13 +34,13 @@ func NewNetwork(cfg *Config) (n *Network, err error) {
 	}
 	n = &Network{
 		Config: *cfg,
-		router: router.NewRouter(cfg.RouterData),
+		router: router.NewRouter(),
 		pool:   allocator,
 	}
 	return
 }
 
-func (n *Network) Router() router.Router {
+func (n *Network) Router() *router.Router {
 	return n.router
 }
 

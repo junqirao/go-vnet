@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -10,6 +12,7 @@ import (
 	tt "go-vnet/common/tls"
 	"go-vnet/vnet/hub"
 	"go-vnet/vnet/protocol"
+	"go-vnet/vnet/session"
 )
 
 type quicClient struct {
@@ -27,10 +30,20 @@ func newQuicClient(client *Client) *quicClient {
 }
 
 func (c *quicClient) Run(ctx context.Context) (err error) {
-	tls := tt.GenerateTLSConfig(time.Hour*24*7, 1024)
-	tls.InsecureSkipVerify = true
+	// extra configs
+	tlsConfig := config.GetMappedConfig[*tls.Config](c.client.cfg, ConfigKeyTLS,
+		// generate if not set
+		tt.GenerateTLSConfig(time.Hour*24*7, 1024))
+
+	quicConfig := config.GetMappedConfig[*quic.Config](c.client.cfg, ConfigKeyQuicConfig, config.DefaultQuicConfig)
+
+	if c.client.cfg.InsecureSkipVerify {
+		tlsConfig.InsecureSkipVerify = true
+	}
+	server := fmt.Sprintf("%s:%d", c.client.cfg.Address, c.client.cfg.Port)
+	c.client.logger.Infof(ctx, "dial quic server: %s", server)
 	c.transport.conn, err = quic.DialAddr(ctx,
-		c.client.cfg.Server, tls, config.DefaultQuicConfig)
+		server, tlsConfig, quicConfig)
 	if err != nil {
 		return
 	}
@@ -66,4 +79,20 @@ func (c *quicClient) OnError(ctx context.Context, e *hub.TxError) {
 		_ = c.transport.stream.Close()
 		c.transport.stream = nil
 	}
+}
+
+func (c *quicClient) Handshake(ctx context.Context, payload map[string]any) (sess *session.Session, err error) {
+	resp := &handshakeResponse{}
+	err = c.client.auth.AuthPtr(ctx, payload,
+		func(ctx context.Context, in []byte) (out []byte, err error) {
+			if err = c.transport.conn.SendDatagram(in); err != nil {
+				return
+			}
+			return c.transport.conn.ReceiveDatagram(ctx)
+		},
+		resp,
+	)
+	sess = resp.Session
+	c.client.logger.Infof(ctx, "handshake success: %+v", sess)
+	return
 }

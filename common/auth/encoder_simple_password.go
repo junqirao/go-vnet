@@ -34,6 +34,11 @@ func (s simplePasswordEncoder) Encode(ctx context.Context, payload map[string]an
 }
 
 func (s simplePasswordEncoder) Decode(ctx context.Context, in []byte) (payload map[string]any, err error) {
+	result := make(map[string]any)
+	return result, s.DecodeTo(ctx, in, &result)
+}
+
+func (s simplePasswordEncoder) DecodeTo(_ context.Context, in []byte, ptr any) (err error) {
 	// 生成密码的哈希作为解密密钥
 	keyHash := sha256.Sum256([]byte(s.password))
 
@@ -42,11 +47,6 @@ func (s simplePasswordEncoder) Decode(ctx context.Context, in []byte) (payload m
 		decrypted[i] = b ^ keyHash[i%len(keyHash)]
 	}
 
-	var result map[string]any
-	err = json.Unmarshal(decrypted, &result)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	err = json.Unmarshal(decrypted, &ptr)
+	return
 }

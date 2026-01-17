@@ -6,8 +6,8 @@ import (
 
 	"go-vnet/common/auth"
 	"go-vnet/common/logger"
-	"go-vnet/server"
-	"go-vnet/server/network"
+	"go-vnet/vnet/server"
+	"go-vnet/vnet/server/network"
 )
 
 func main() {
@@ -16,7 +16,7 @@ func main() {
 		ID:         "test",
 		CIDR:       "192.168.98.0/24",
 		RouterData: nil,
-		MTU:        1400,
+		MTU:        1392,
 	})
 	if err != nil {
 		panic(err)

@@ -93,14 +93,19 @@ func (r rsaEncoder) Encode(ctx context.Context, payload map[string]any) (data []
 }
 
 func (r rsaEncoder) Decode(ctx context.Context, in []byte) (payload map[string]any, err error) {
+	result := make(map[string]any)
+	return result, r.DecodeTo(ctx, in, &result)
+}
+
+func (r rsaEncoder) DecodeTo(_ context.Context, in []byte, ptr any) (err error) {
 	if r.privateKey == nil {
-		return nil, errors.New("RSA private key not available")
+		return errors.New("RSA private key not available")
 	}
 
 	// Decode base64 encrypted data
 	encrypted, err := base64.StdEncoding.DecodeString(string(in))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// RSA decryption with OAEP padding
@@ -112,17 +117,12 @@ func (r rsaEncoder) Decode(ctx context.Context, in []byte) (payload map[string]a
 		nil,
 	)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Deserialize JSON to payload
-	var result map[string]any
-	err = json.Unmarshal(decrypted, &result)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	err = json.Unmarshal(decrypted, &ptr)
+	return
 }
 
 // GetPublicKeyPEM returns the public key in PEM format
