@@ -22,7 +22,7 @@ func (h *Hub) txLoop() {
 	go func() {
 		switch runtime.GOOS {
 		case "linux":
-			err = h.readDevLinux()
+			err = h.readDeviceLinux()
 		default:
 		}
 		err = h.readDevice()
@@ -97,7 +97,7 @@ func (h *Hub) readDevice() (err error) {
 	}
 }
 
-func (h *Hub) readDevLinux() (err error) {
+func (h *Hub) readDeviceLinux() (err error) {
 	var (
 		n      int
 		dev    = h.dev.(tun.LinuxTUN)

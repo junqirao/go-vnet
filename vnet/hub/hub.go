@@ -64,9 +64,14 @@ func NewHub(cfg Config, dev tun.Tun) *Hub {
 		txEventChan: make(chan *txEvent, cfg.MaxTxEventBuf),
 	}
 	hub.rxEventPool.New = func() any {
-		return &rxEvent{
-			buffer: &[protocol.MaxTransportByteSize]byte{},
+		e := &rxEvent{}
+		e.packet = &[protocol.MaxTransportByteSize]byte{}
+		e.buf = make([][]byte, cfg.BatchSize)
+		e.sizes = make([]int, cfg.BatchSize)
+		for i := 0; i < cfg.BatchSize; i++ {
+			e.buf[i] = make([]byte, cfg.MTU+cfg.HeaderSize)
 		}
+		return e
 	}
 	hub.txEventPool.New = func() any {
 		e := &txEvent{}
@@ -81,7 +86,8 @@ func NewHub(cfg Config, dev tun.Tun) *Hub {
 }
 
 func (h *Hub) Start() {
-	h.txLoop()
+	go h.txLoop()
+	h.rxLoop()
 }
 
 func (h *Hub) Stop(reason ...string) {

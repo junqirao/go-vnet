@@ -6,9 +6,10 @@ import (
 
 type (
 	rxEvent struct {
-		buffer *[protocol.MaxTransportByteSize]byte
+		packet *[protocol.MaxTransportByteSize]byte
+		buf    [][]byte
+		sizes  []int
 		n      int
-		typ    byte
 	}
 	txEvent struct {
 		Buffer [][]byte
