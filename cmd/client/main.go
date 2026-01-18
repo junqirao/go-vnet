@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -9,7 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"go-vnet/client"
+	"go-vnet/vnet/client"
 )
 
 func main() {
@@ -29,11 +28,7 @@ func main() {
 	c := client.NewClient(config)
 
 	// run
-	err = c.Run(context.Background())
-	if err != nil {
-		panic(err)
-		return
-	}
+	c.Run()
 }
 
 // loadConfigFromFile load config from file

@@ -23,6 +23,7 @@ type (
 		WriteMessage(typ byte, data []byte) (int, error)
 		BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int, err error)
 		ParseBatch(data []byte, buf [][]byte, sizes []int, offset int) (n int, err error)
+		Upstream() io.ReadWriter
 	}
 )
 
@@ -251,4 +252,8 @@ func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 	// Write complete message
 	_, err := t.upstream.Write((*t.buffer)[:7+length])
 	return 7 + length, err
+}
+
+func (t *Transport) Upstream() io.ReadWriter {
+	return t.upstream
 }

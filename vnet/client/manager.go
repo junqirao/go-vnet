@@ -3,29 +3,25 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"sync"
 	"time"
 
-	"go-vnet/common/session"
-	"go-vnet/server"
+	"go-vnet/vnet/server"
+	"go-vnet/vnet/session"
 )
 
 type (
-	SendReceiveCloser interface {
-		io.Closer
-		Send(data []byte) (err error)
-		Receive(ctx context.Context) (data []byte, err error)
-	}
 	Manager struct {
 		callMu  sync.Mutex
-		session *session.ClientSession
+		session *session.Session
+		sr      session.SendReceiveCloser
 	}
 )
 
-func NewManager(session *session.ClientSession) *Manager {
+func NewManager(session *session.Session, sr session.SendReceiveCloser) *Manager {
 	return &Manager{
 		session: session,
+		sr:      sr,
 	}
 }
 
@@ -48,11 +44,11 @@ func (manager *Manager) CallFunc(ctx context.Context, name string, args ...map[s
 
 	req, _ := json.Marshal(request)
 
-	if err = manager.session.Send(req); err != nil {
+	if err = manager.sr.Send(req); err != nil {
 		return
 	}
 
-	receive, err := manager.session.Receive(ctx)
+	receive, err := manager.sr.Receive(ctx)
 	if err != nil {
 		return
 	}

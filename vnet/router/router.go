@@ -425,17 +425,19 @@ func collectMD5(h hashWriter, node *TrieNode, prefix string, depth, maxDepth int
 		return
 	}
 
+	// 只写入活跃的路由节点
 	if node.leaf.Load() && node.target.Load() != nil {
 		h.Write([]byte(prefix))
 	}
 
+	// 只遍历有路由的分支或子节点
 	zero := node.zero.Load()
-	if zero != nil {
+	if zero != nil && (zero.leaf.Load() || zero.zero.Load() != nil || zero.one.Load() != nil) {
 		collectMD5(h, zero, prefix+"0", depth+1, maxDepth)
 	}
 
 	one := node.one.Load()
-	if one != nil {
+	if one != nil && (one.leaf.Load() || one.zero.Load() != nil || one.one.Load() != nil) {
 		collectMD5(h, one, prefix+"1", depth+1, maxDepth)
 	}
 }

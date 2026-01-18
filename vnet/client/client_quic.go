@@ -65,7 +65,7 @@ func (c *quicClient) OnDialRx(ctx context.Context) (rw protocol.ReadWriter, err 
 	if c.transport.stream != nil {
 		return protocol.NewTransport(c.transport.stream), nil
 	}
-	stream, err := c.transport.conn.AcceptStream(ctx)
+	stream, err := c.transport.conn.OpenStreamSync(ctx)
 	if err != nil {
 		return
 	}
@@ -81,7 +81,7 @@ func (c *quicClient) OnError(ctx context.Context, e *hub.TxError) {
 	}
 }
 
-func (c *quicClient) Handshake(ctx context.Context, payload map[string]any) (sess *session.Session, err error) {
+func (c *quicClient) Handshake(ctx context.Context, payload map[string]any) (sess *session.Session, sr session.SendReceiveCloser, err error) {
 	resp := &handshakeResponse{}
 	err = c.client.auth.AuthPtr(ctx, payload,
 		func(ctx context.Context, in []byte) (out []byte, err error) {
@@ -93,6 +93,7 @@ func (c *quicClient) Handshake(ctx context.Context, payload map[string]any) (ses
 		resp,
 	)
 	sess = resp.Session
+	sr = session.SendReceiverFromQuicConn(c.transport.conn)
 	c.client.logger.Infof(ctx, "handshake success: %+v", sess)
 	return
 }

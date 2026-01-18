@@ -3,10 +3,12 @@ package network
 import (
 	"context"
 
+	"golang.zx2c4.com/wireguard/device"
+
 	"go-vnet/common/addresses"
-	"go-vnet/common/device"
 	"go-vnet/common/flow"
 	"go-vnet/vnet/router"
+	"go-vnet/vnet/session"
 )
 
 type (
@@ -15,7 +17,7 @@ type (
 		router          *router.Router
 		pool            *addresses.IPAllocator
 		control         *flow.Control
-		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *device.Device, err error)
+		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *session.Device, err error)
 	}
 	Config struct {
 		ID              string `json:"id"`
@@ -23,7 +25,6 @@ type (
 		MTU             int    `json:"mtu"`
 		RouterData      []byte `json:"-"`
 		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *device.Device, err error)
-		deviceSignFunc  func(d *device.IDevice)
 	}
 )
 
@@ -44,8 +45,8 @@ func (n *Network) Router() *router.Router {
 	return n.router
 }
 
-func (n *Network) AcquireDevice(ctx context.Context, request map[string]any) (dev *device.Device, err error) {
-	dev = &device.Device{}
+func (n *Network) AcquireDevice(ctx context.Context, request map[string]any) (dev *session.Device, err error) {
+	dev = &session.Device{}
 	if n.allocDeviceFunc != nil {
 		if dev, err = n.allocDeviceFunc(ctx, request); err != nil {
 			return

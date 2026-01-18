@@ -14,7 +14,7 @@ import (
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
-	"go-vnet/server/consts"
+	"go-vnet/vnet/server/consts"
 	"go-vnet/vnet/server/network"
 	"go-vnet/vnet/session"
 )
@@ -110,7 +110,8 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 		}
 
 		ss := &serverSession{
-			conn: conn,
+			conn:              conn,
+			SendReceiveCloser: sr,
 		}
 		// handshake
 		ss.Session, ss.network, err = s.handshake(ctx, sr)
@@ -130,7 +131,7 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 		ss.network.Router().Register(routeAddress, ss)
 
 		// func call loop
-		// go s.handleFuncCallLoop(ctx, ss)
+		go s.handleFuncCallLoop(ctx, ss)
 
 		//
 		go func() {
