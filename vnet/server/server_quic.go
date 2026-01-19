@@ -116,8 +116,6 @@ func (s *quicServer) handleStreamProxy(ctx context.Context, sess *serverSession,
 	// send ack (byte 1) to client
 	_, _ = stream.Write([]byte{1})
 
-	s.logger.Infof(ctx, "handle stream proxy: %v->%v", src, dst)
-
 	dstSession, ok := v.(*serverSession)
 	if !ok {
 		s.logger.Errorf(ctx, "error session type: dst=%v", dst)
@@ -130,6 +128,7 @@ func (s *quicServer) handleStreamProxy(ctx context.Context, sess *serverSession,
 		s.logger.Errorf(ctx, "open stream error: dst=%v", dst)
 		return
 	}
+	s.logger.Infof(ctx, "open stream success: dst=%v id=%d", dst, stream.StreamID().StreamNum())
 
 	var (
 		written int64
@@ -141,6 +140,8 @@ func (s *quicServer) handleStreamProxy(ctx context.Context, sess *serverSession,
 		_ = stream.Close()
 		s.logger.Infof(ctx, "proxy stopped: %s,written=%v", name, written)
 	}()
+
+	s.logger.Infof(ctx, "handle stream proxy: %v->%v", src, dst)
 
 	written, err = s.proxy(ctx, name, dstStream, stream)
 	if err != nil {

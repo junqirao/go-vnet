@@ -23,6 +23,7 @@ func (h *Hub) getRxEvent() *rxEvent {
 }
 
 func (h *Hub) putRxEvent(e *rxEvent) {
+	e.n = 0
 	h.rxEventPool.Put(e)
 }
 
@@ -31,5 +32,6 @@ func (h *Hub) getTxEvent() *txEvent {
 }
 
 func (h *Hub) putTxEvent(e *txEvent) {
+	e.N = 0
 	h.txEventPool.Put(e)
 }

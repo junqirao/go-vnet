@@ -55,7 +55,7 @@ func (c *quicClient) Run(ctx context.Context) (err error) {
 				c.client.logger.Errorf(ctx, "accept stream error: %v", err.Error())
 				return
 			}
-			c.client.hub.HandleRx(stream)
+			go c.client.hub.HandleRx(stream, c.transport.conn.RemoteAddr().String())
 		}
 	}()
 	return

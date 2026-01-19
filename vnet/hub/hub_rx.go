@@ -2,8 +2,8 @@ package hub
 
 import (
 	"errors"
+	"fmt"
 	"io"
-	"net"
 	"runtime"
 
 	tun "github.com/sagernet/sing-tun"
@@ -24,6 +24,7 @@ func (h *Hub) writeDeviceLinux() {
 	h.Infof("batch write device loop started")
 	dev := h.dev.(tun.LinuxTUN)
 	for event := range h.rxEventChan {
+		fmt.Printf("rx->%v\n", event.buf[:event.n])
 		_, err := dev.BatchWrite(event.buf[:event.n], h.cfg.HeaderSize)
 		if err != nil {
 			h.Stop(err.Error())
@@ -36,6 +37,7 @@ func (h *Hub) writeDevice() {
 	h.Infof("write device loop started")
 	for event := range h.rxEventChan {
 		for i := 0; i < event.n; i++ {
+			fmt.Printf("rx->%v\n", event.buf[i][:event.sizes[i]])
 			_, err := h.dev.Write(event.buf[i][:event.sizes[i]])
 			if err != nil {
 				h.Stop(err.Error())
@@ -45,50 +47,44 @@ func (h *Hub) writeDevice() {
 	}
 }
 
-func (h *Hub) HandleRx(rwc io.ReadWriteCloser) {
-	type remotable interface {
-		RemoteAddr() net.Addr
-	}
+func (h *Hub) HandleRx(rwc io.ReadWriteCloser, remote string) {
+	defer func() {
+		h.Infof("rx from closed: %s", remote)
+		_ = rwc.Close()
+	}()
+	h.Infof("rx from started %s", remote)
 
-	go func() {
-		remote := ""
-		if r, ok := rwc.(remotable); ok {
-			remote = r.RemoteAddr().String()
+	var (
+		rw     = protocol.NewTransport(rwc)
+		offset = h.cfg.HeaderSize
+		nn     int
+	)
+
+	for {
+		event := h.getRxEvent()
+		typ, n, err := rw.ReadMessage((*event.packet)[:])
+		if errors.Is(err, protocol.ErrInvalidMagic) {
+			h.putRxEvent(event)
+			continue
 		}
-
-		defer func() {
-			h.Infof("rx from closed: %s", remote)
-			_ = rwc.Close()
-		}()
-		h.Infof("rx from started %s", remote)
-
-		rw := protocol.NewTransport(rwc)
-		for {
-			event := h.getRxEvent()
-			typ, n, err := rw.ReadMessage((*event.packet)[:])
-			if errors.Is(err, protocol.ErrInvalidMagic) {
-				h.putRxEvent(event)
-				continue
-			}
+		if err != nil {
+			h.putRxEvent(event)
+			return
+		}
+		switch typ {
+		case protocol.TypeTransport:
+			event.n = 1
+			event.sizes[0] = n
+			copy(event.buf[0][offset:offset+n], (*event.packet)[:n])
+			h.rxEventChan <- event
+		case protocol.TypeBatchTransport:
+			nn, err = rw.ParseBatch((*event.packet)[:n], event.buf, event.sizes, offset)
 			if err != nil {
 				h.putRxEvent(event)
 				return
 			}
-			switch typ {
-			case protocol.TypeTransport:
-				event.n = 1
-				event.sizes[0] = n
-				event.buf[0] = (*event.packet)[:n]
-				h.rxEventChan <- event
-			case protocol.TypeBatchTransport:
-				_, err = rw.ParseBatch((*event.packet)[:n], event.buf, event.sizes, h.cfg.HeaderSize)
-				if err != nil {
-					h.putRxEvent(event)
-					return
-				}
-				event.n = n
-				h.rxEventChan <- event
-			}
+			event.n = nn
+			h.rxEventChan <- event
 		}
-	}()
+	}
 }

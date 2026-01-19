@@ -160,7 +160,7 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 
 func (s *Server) proxy(ctx context.Context, name string, dst io.Writer, src io.Reader) (written int64, err error) {
 	var (
-		buf = make([]byte, 65535) // 优化: 增大缓冲区到1.4MB,提高吞吐量
+		buf = make([]byte, 65535)
 		nr  int
 		er  error
 	)
@@ -179,6 +179,7 @@ func (s *Server) proxy(ctx context.Context, name string, dst io.Writer, src io.R
 		if nr > 0 {
 			// equals dst.Write(buf[0:nr]) when control not set
 			nw, ew := dst.Write(buf[0:nr])
+			fmt.Printf("proxy %d->%d \n", nr, nw)
 			if ew != nil {
 				return written, ew
 			}

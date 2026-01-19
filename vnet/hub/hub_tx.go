@@ -41,7 +41,6 @@ func (h *Hub) txLoop() {
 				continue
 			}
 			dst := v.(*Destination)
-			fmt.Println("dst id", dst.id)
 			event, ok := tmpEvents[dst.id]
 			if !ok {
 				event = h.getTxEvent()
@@ -72,6 +71,7 @@ func (h *Hub) txLoop() {
 			h.putTxEvent(event)
 		}
 		clear(tmpEvents)
+		clear(dstMap)
 	}
 }
 
@@ -182,6 +182,9 @@ func (c *Destination) PushTxEvent(e *txEvent) (err error) {
 			})
 			return
 		}
+	}
+	for i := 0; i < e.N; i++ {
+		fmt.Printf("tx[%d/%d]->%v\n", i, e.N, e.Buffer[i][:e.Sizes[i]])
 	}
 	c.txEventChan <- e
 	return

@@ -90,6 +90,13 @@ func (h *Hub) Start() {
 }
 
 func (h *Hub) Stop(reason ...string) {
+	select {
+	case _, ok := <-h.sig:
+		if !ok {
+			return
+		}
+	default:
+	}
 	close(h.sig)
 	if len(reason) > 0 {
 		h.logger.Errorf(h.ctx, "hub stopped reason: %s", reason[0])
