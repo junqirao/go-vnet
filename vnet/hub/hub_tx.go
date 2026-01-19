@@ -169,11 +169,11 @@ func (h *Hub) readDeviceLinux() (err error) {
 			h.putTxEvent(e)
 			return
 		}
-		e.N = n
 		if n == 0 {
 			h.putTxEvent(e)
 			continue
 		}
+		e.N = n
 		h.txEventChan <- e
 	}
 }
@@ -214,7 +214,11 @@ func NewDestination(ctx context.Context, ip string, a TxAdaptor, ref *Hub) *Dest
 		sig:         make(chan struct{}),
 		txEventChan: make(chan *txEvent, ref.cfg.MaxTxEventBuf),
 	}
-	go c.txLoop()
+	if ref.cfg.BatchSize > 1 {
+		go c.txLoopN()
+	} else {
+		go c.txLoop()
+	}
 	return c
 }
 
@@ -309,6 +313,72 @@ func (c *Destination) txLoop() {
 		}
 		for i := 0; i < batch; i++ {
 			c.ref.putTxEvent(evs[i])
+		}
+	}
+}
+
+func (c *Destination) txLoopN() {
+	var (
+		buf   = make([][]byte, c.ref.cfg.MaxTxEventBuf)
+		sizes = make([]int, c.ref.cfg.MaxTxEventBuf)
+		err   error
+	)
+
+	for {
+		select {
+		case <-c.sig:
+			return
+		case <-c.ref.sig:
+			return
+		default:
+		}
+
+		totalPackets := 0
+		eventsToReturn := make([]*txEvent, 0, c.ref.cfg.MaxTxEventBuf)
+
+		// Collect events until buffer is full or channel is empty
+		for totalPackets < c.ref.cfg.MaxTxEventBuf {
+			select {
+			case event := <-c.txEventChan:
+				eventsToReturn = append(eventsToReturn, event)
+				// Expand all packets from this event
+				for j := 0; j < event.N; j++ {
+					if totalPackets >= c.ref.cfg.MaxTxEventBuf {
+						// Buffer full, write immediately
+						_, err = c.tx.BatchWrite(buf[:totalPackets], sizes[:totalPackets], c.ref.cfg.HeaderSize)
+						if err != nil {
+							c.OnError(c.ctx, &TxError{
+								dst: c,
+								Err: err,
+							})
+						}
+						totalPackets = 0
+					}
+					buf[totalPackets] = event.Buffer[j]
+					sizes[totalPackets] = event.Sizes[j]
+					totalPackets++
+				}
+			default:
+				// Channel empty, stop collecting
+				goto FLUSH
+			}
+		}
+
+	FLUSH:
+		// Write all collected packets
+		if totalPackets > 0 {
+			_, err = c.tx.BatchWrite(buf[:totalPackets], sizes[:totalPackets], c.ref.cfg.HeaderSize)
+			if err != nil {
+				c.OnError(c.ctx, &TxError{
+					dst: c,
+					Err: err,
+				})
+			}
+		}
+
+		// Return all events to pool
+		for _, event := range eventsToReturn {
+			c.ref.putTxEvent(event)
 		}
 	}
 }
