@@ -179,7 +179,7 @@ func (s *Server) proxy(ctx context.Context, name string, dst io.Writer, src io.R
 		if nr > 0 {
 			// equals dst.Write(buf[0:nr]) when control not set
 			nw, ew := dst.Write(buf[0:nr])
-			fmt.Printf("proxy %d->%d \n", nr, nw)
+			// fmt.Printf("proxy %d->%d \n", nr, nw)
 			if ew != nil {
 				return written, ew
 			}

@@ -2,7 +2,6 @@ package hub
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"runtime"
 
@@ -24,7 +23,7 @@ func (h *Hub) writeDeviceLinux() {
 	h.Infof("batch write device loop started")
 	dev := h.dev.(tun.LinuxTUN)
 	for event := range h.rxEventChan {
-		fmt.Printf("rx->%v\n", event.buf[:event.n])
+		// fmt.Printf("rx->%v\n", event.buf[:event.n])
 		_, err := dev.BatchWrite(event.buf[:event.n], h.cfg.HeaderSize)
 		if err != nil {
 			h.Stop(err.Error())
@@ -37,7 +36,7 @@ func (h *Hub) writeDevice() {
 	h.Infof("write device loop started")
 	for event := range h.rxEventChan {
 		for i := 0; i < event.n; i++ {
-			fmt.Printf("rx->%v\n", event.buf[i][:event.sizes[i]])
+			// fmt.Printf("rx->%v\n", event.buf[i][:event.sizes[i]])
 			_, err := h.dev.Write(event.buf[i][:event.sizes[i]])
 			if err != nil {
 				h.Stop(err.Error())

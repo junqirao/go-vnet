@@ -68,7 +68,6 @@ func (h *Hub) txLoop() {
 				continue
 			}
 			_ = dst.PushTxEvent(event)
-			h.putTxEvent(event)
 		}
 		clear(tmpEvents)
 		clear(dstMap)
@@ -183,9 +182,9 @@ func (c *Destination) PushTxEvent(e *txEvent) (err error) {
 			return
 		}
 	}
-	for i := 0; i < e.N; i++ {
-		fmt.Printf("tx[%d/%d]->%v\n", i, e.N, e.Buffer[i][:e.Sizes[i]])
-	}
+	// for i := 0; i < e.N; i++ {
+	// 	fmt.Printf("tx[%d/%d]->%v\n", i+1, e.N, e.Buffer[i][:e.Sizes[i]])
+	// }
 	c.txEventChan <- e
 	return
 }
@@ -240,38 +239,30 @@ func (c *Destination) txLoop() {
 		}
 
 		length := len(c.txEventChan)
+		batch := min(c.ref.cfg.MaxTxEventBuf, length)
 		if length > 1 {
-			offset := 0
-			nEvent := 0
-			for ; nEvent < length && offset <= c.ref.cfg.MaxTxEventBuf-c.ref.cfg.BatchSize; nEvent++ {
+			for i := 0; i < batch; i++ {
 				event := <-c.txEventChan
-				evs[nEvent] = event
-				for i := 0; i < event.N; i++ {
-					buf[offset] = (event.Buffer)[i]
-					sizes[offset] = (event.Sizes)[i]
-					offset++
-				}
-			}
-			_, err = c.tx.BatchWrite(buf[:offset], sizes[:offset], c.ref.cfg.HeaderSize)
-			if err != nil {
-				c.OnError(c.ctx, &TxError{
-					dst: c,
-					Err: err,
-				})
-			}
-			for i := 0; i < nEvent; i++ {
-				c.ref.putTxEvent(evs[i])
+				evs[i] = event
+				buf[i] = event.Buffer[0]
+				sizes[i] = event.Sizes[0]
 			}
 		} else {
 			event := <-c.txEventChan
-			_, err = c.tx.BatchWrite((event.Buffer)[:event.N], (event.Sizes)[:event.N], c.ref.cfg.HeaderSize)
-			if err != nil {
-				c.OnError(c.ctx, &TxError{
-					dst: c,
-					Err: err,
-				})
-			}
-			c.ref.putTxEvent(event)
+			evs[0] = event
+			batch = 1
+			buf[0] = event.Buffer[0]
+			sizes[0] = event.Sizes[0]
+		}
+		_, err = c.tx.BatchWrite(buf[:batch], sizes[:batch], c.ref.cfg.HeaderSize)
+		if err != nil {
+			c.OnError(c.ctx, &TxError{
+				dst: c,
+				Err: err,
+			})
+		}
+		for i := 0; i < batch; i++ {
+			c.ref.putTxEvent(evs[i])
 		}
 	}
 }
