@@ -4,6 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -23,6 +26,11 @@ func main() {
 
 	// print config
 	printConfig(config)
+
+	go func() {
+		log.Println("start pprof at :6060")
+		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
+	}()
 
 	// create client
 	c := client.NewClient(config)
