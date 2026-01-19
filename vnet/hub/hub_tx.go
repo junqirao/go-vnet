@@ -14,8 +14,7 @@ import (
 func (h *Hub) txLoop() {
 	var (
 		err       error
-		tmpEvents = make(map[string]*txEvent)
-		dstMap    = make(map[string]*Destination)
+		batchSize = h.cfg.BatchSize
 	)
 
 	defer func() {
@@ -33,44 +32,91 @@ func (h *Hub) txLoop() {
 		err = h.readDevice()
 	}()
 
+	// Pre-allocate slices to avoid allocations in hot path
+	type routeInfo struct {
+		dst   *Destination
+		index int
+	}
+	var routes []routeInfo
+
+	// Destination batch cache: map dst -> event and dst for final send
+	type dstBatch struct {
+		dst   *Destination
+		event *txEvent
+	}
+	dstBatches := make(map[string]*dstBatch)
+
 	for e := range h.txEventChan {
-		for i := 0; i < e.N; i++ {
+		n := e.N
+		if len(routes) < n {
+			routes = make([]routeInfo, n)
+		}
+
+		validRoutes := 0
+		// Batch route all packets first
+		for i := 0; i < n; i++ {
 			v, ok := h.router.Route(e.Buffer[i][h.cfg.HeaderSize : e.Sizes[i]+h.cfg.HeaderSize])
 			if !ok || v == nil {
-				// drop non network packet or loopback
 				continue
 			}
-			dst := v.(*Destination)
-			event, ok := tmpEvents[dst.id]
-			if !ok {
-				event = h.getTxEvent()
-				tmpEvents[dst.id] = event
-				dstMap[dst.id] = dst
-			}
-			// send if full
-			if event.N+1 == h.cfg.BatchSize {
-				_ = dst.PushTxEvent(event)
-				event = h.getTxEvent()
-				tmpEvents[dst.id] = event
-			}
-			copy(event.Buffer[event.N], e.Buffer[i])
-			event.Sizes[event.N] = e.Sizes[i]
-			event.N++
+			routes[validRoutes].dst = v.(*Destination)
+			routes[validRoutes].index = i
+			validRoutes++
 		}
-		for id, event := range tmpEvents {
-			if event.N <= 0 {
-				h.putTxEvent(event)
+
+		// Fast path: single destination for all packets
+		if validRoutes > 0 {
+			firstDst := routes[0].dst
+			allSame := true
+			for i := 1; i < validRoutes; i++ {
+				if routes[i].dst != firstDst {
+					allSame = false
+					break
+				}
+			}
+
+			if allSame {
+				_ = firstDst.PushTxEvent(e)
 				continue
 			}
-			dst, ok := dstMap[id]
-			if !ok || dst == nil {
-				h.putTxEvent(event)
-				continue
-			}
-			_ = dst.PushTxEvent(event)
 		}
-		clear(tmpEvents)
-		clear(dstMap)
+
+		// Multiple destinations: aggregate and send
+		for i := 0; i < validRoutes; i++ {
+			dst := routes[i].dst
+			batch := dstBatches[dst.id]
+			if batch == nil {
+				batch = &dstBatch{
+					dst:   dst,
+					event: h.getTxEvent(),
+				}
+				dstBatches[dst.id] = batch
+			}
+
+			// Copy packet data
+			copy(batch.event.Buffer[batch.event.N], e.Buffer[routes[i].index])
+			batch.event.Sizes[batch.event.N] = e.Sizes[routes[i].index]
+			batch.event.N++
+
+			// Send if batch is full
+			if batch.event.N == batchSize {
+				_ = dst.PushTxEvent(batch.event)
+				delete(dstBatches, dst.id)
+			}
+		}
+
+		// Recycle source event
+		h.putTxEvent(e)
+
+		// Send remaining batches
+		for _, batch := range dstBatches {
+			if batch.event.N > 0 {
+				_ = batch.dst.PushTxEvent(batch.event)
+			} else {
+				h.putTxEvent(batch.event)
+			}
+		}
+		clear(dstBatches)
 	}
 }
 
