@@ -3,7 +3,6 @@ package hub
 import (
 	"context"
 	"runtime"
-	"sync"
 
 	tun "github.com/sagernet/sing-tun"
 
@@ -19,13 +18,11 @@ type (
 		sig    chan struct{}
 		logger logger.Logger
 		// rx
-		rxEventPool sync.Pool
+		rxEventPool *EventPool[*rxEvent]
 		rxEventChan chan *rxEvent
-		rxEventCh   chan *rxEvent // 预填充缓冲区（channel 方案，并发安全）
 		// tx
-		txEventPool sync.Pool
+		txEventPool *EventPool[*txEvent]
 		txEventChan chan *txEvent
-		txEventCh   chan *txEvent // 预填充缓冲区（channel 方案，并发安全）
 		// tun
 		dev tun.Tun
 		// router
@@ -59,12 +56,12 @@ func NewHub(cfg Config, dev tun.Tun) *Hub {
 		sig:         make(chan struct{}),
 		logger:      logger.DefaultLogger,
 		router:      router.NewRouter(),
-		rxEventPool: sync.Pool{},
 		rxEventChan: make(chan *rxEvent, cfg.MaxRxEventBuf),
-		txEventPool: sync.Pool{},
 		txEventChan: make(chan *txEvent, cfg.MaxTxEventBuf),
 	}
-	hub.rxEventPool.New = func() any {
+
+	// 初始化 rx 事件池
+	hub.rxEventPool = NewEventPool[*rxEvent](128, func() *rxEvent {
 		e := &rxEvent{}
 		e.packet = &[protocol.MaxTransportByteSize]byte{}
 		e.buf = make([][]byte, cfg.BatchSize)
@@ -73,8 +70,10 @@ func NewHub(cfg Config, dev tun.Tun) *Hub {
 			e.buf[i] = make([]byte, cfg.MTU+cfg.HeaderSize)
 		}
 		return e
-	}
-	hub.txEventPool.New = func() any {
+	})
+
+	// 初始化 tx 事件池
+	hub.txEventPool = NewEventPool[*txEvent](128, func() *txEvent {
 		e := &txEvent{}
 		e.Buffer = make([][]byte, cfg.BatchSize)
 		e.Sizes = make([]int, cfg.BatchSize)
@@ -82,17 +81,7 @@ func NewHub(cfg Config, dev tun.Tun) *Hub {
 			e.Buffer[i] = make([]byte, cfg.MTU+cfg.HeaderSize)
 		}
 		return e
-	}
-
-	// 预填充 channel 缓冲区，保证池内一直保持一定数量的对象
-	// channel 天然并发安全，避免 slice 的竞态条件和扩容问题
-	minPoolSize := 256 // 可根据负载调整
-	hub.rxEventCh = make(chan *rxEvent, minPoolSize)
-	hub.txEventCh = make(chan *txEvent, minPoolSize)
-	for i := 0; i < minPoolSize; i++ {
-		hub.rxEventCh <- hub.rxEventPool.Get().(*rxEvent)
-		hub.txEventCh <- hub.txEventPool.Get().(*txEvent)
-	}
+	})
 
 	return hub
 }
