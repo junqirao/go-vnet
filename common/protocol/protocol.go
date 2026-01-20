@@ -106,17 +106,34 @@ func (t *Transport) BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 	if length == 1 {
 		return t.Write(buf[0][headerSize : sizes[0]+headerSize])
 	}
+
+	start := 0
 	nn := 0
-	for i := 0; i < length; i += MaxTransportBatchSize {
-		end := i + MaxTransportBatchSize
-		if end > length {
-			end = length
+	for start < length {
+		end := start
+		totalSize := 0
+
+		// 累加包的大小，直到达到限制条件
+		for end < length && (end-start) < MaxTransportBatchSize {
+			// 计算新增这个包后的总数据长度（包含2字节sizes_length + 2*包数量 + 所有数据大小）
+			newTotalSize := 2 + 2*(end-start+1) + totalSize + sizes[end]
+			if newTotalSize > 65530 {
+				// 如果超过最大限制，且至少有一个包，则停止累加
+				if end > start {
+					break
+				}
+				// 如果单个包就超过限制，仍然尝试发送（由batchWrite返回错误）
+			}
+			totalSize += sizes[end]
+			end++
 		}
-		nn, err = t.batchWrite(buf[i:end], sizes[i:end], headerSize)
+
+		nn, err = t.batchWrite(buf[start:end], sizes[start:end], headerSize)
 		if err != nil {
 			return nn, err
 		}
 		n += nn
+		start = end
 	}
 	return
 }

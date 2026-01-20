@@ -37,9 +37,11 @@ func (h *Hub) txLoop() {
 		dst   *Destination
 		index int
 	}
-	var routes []routeInfo
-	var packetSlices [][]byte
-	var targets []any
+	var (
+		routes       = make([]routeInfo, h.cfg.BatchSize)
+		packetSlices = make([][]byte, h.cfg.BatchSize)
+		targets      = make([]any, h.cfg.BatchSize)
+	)
 
 	// Destination batch cache: map dst -> event and dst for final send
 	type dstBatch struct {
@@ -50,19 +52,6 @@ func (h *Hub) txLoop() {
 
 	for e := range h.txEventChan {
 		n := e.N
-		// 扩展预分配切片
-		if len(routes) < n {
-			routes = make([]routeInfo, n)
-		}
-		if len(packetSlices) < n {
-			packetSlices = make([][]byte, n)
-		}
-		if len(targets) < n {
-			targets = make([]any, n)
-		}
-		packetSlices = packetSlices[:n]
-		targets = targets[:n]
-
 		validRoutes := 0
 		// 准备批量路由的数据包切片（避免循环内重复计算偏移）
 		for i := 0; i < n; i++ {
@@ -70,7 +59,7 @@ func (h *Hub) txLoop() {
 		}
 
 		// 批量路由查询，减少循环开销
-		validRouteCount := h.router.RouteBatch(packetSlices, targets)
+		validRouteCount := h.router.RouteBatch(packetSlices[:n], targets[:n])
 
 		// 收集有效路由（单次遍历）
 		for i := 0; i < n && validRoutes < validRouteCount; i++ {
