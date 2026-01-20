@@ -84,9 +84,12 @@ func (c *Client) Run() {
 		}
 	}()
 
-	// start sync router loop
+	// start sync router loop delay
 	c.manager = NewManager(sess, sr)
-	go c.syncRouterLoop()
+	go func() {
+		time.Sleep(time.Millisecond * 500)
+		c.syncRouterLoop()
+	}()
 
 	// setup hub
 	c.hub = hub.NewHub(hub.Config{

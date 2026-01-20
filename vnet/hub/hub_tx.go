@@ -38,6 +38,8 @@ func (h *Hub) txLoop() {
 		index int
 	}
 	var routes []routeInfo
+	var packetSlices [][]byte
+	var targets []any
 
 	// Destination batch cache: map dst -> event and dst for final send
 	type dstBatch struct {
@@ -48,20 +50,35 @@ func (h *Hub) txLoop() {
 
 	for e := range h.txEventChan {
 		n := e.N
+		// 扩展预分配切片
 		if len(routes) < n {
 			routes = make([]routeInfo, n)
 		}
+		if len(packetSlices) < n {
+			packetSlices = make([][]byte, n)
+		}
+		if len(targets) < n {
+			targets = make([]any, n)
+		}
+		packetSlices = packetSlices[:n]
+		targets = targets[:n]
 
 		validRoutes := 0
-		// Batch route all packets first
+		// 准备批量路由的数据包切片（避免循环内重复计算偏移）
 		for i := 0; i < n; i++ {
-			v, ok := h.router.Route(e.Buffer[i][h.cfg.HeaderSize : e.Sizes[i]+h.cfg.HeaderSize])
-			if !ok || v == nil {
-				continue
+			packetSlices[i] = e.Buffer[i][h.cfg.HeaderSize : e.Sizes[i]+h.cfg.HeaderSize]
+		}
+
+		// 批量路由查询，减少循环开销
+		validRouteCount := h.router.RouteBatch(packetSlices, targets)
+
+		// 收集有效路由（单次遍历）
+		for i := 0; i < n && validRoutes < validRouteCount; i++ {
+			if targets[i] != nil {
+				routes[validRoutes].dst = targets[i].(*Destination)
+				routes[validRoutes].index = i
+				validRoutes++
 			}
-			routes[validRoutes].dst = v.(*Destination)
-			routes[validRoutes].index = i
-			validRoutes++
 		}
 
 		// Fast path: single destination for all packets
@@ -93,9 +110,11 @@ func (h *Hub) txLoop() {
 				dstBatches[dst.id] = batch
 			}
 
-			// Copy packet data
-			copy(batch.event.Buffer[batch.event.N], e.Buffer[routes[i].index])
-			batch.event.Sizes[batch.event.N] = e.Sizes[routes[i].index]
+			// Copy packet data（直接索引访问，减少变量查找）
+			srcIdx := routes[i].index
+			dstIdx := batch.event.N
+			copy(batch.event.Buffer[dstIdx], e.Buffer[srcIdx])
+			batch.event.Sizes[dstIdx] = e.Sizes[srcIdx]
 			batch.event.N++
 
 			// Send if batch is full
@@ -253,20 +272,15 @@ func (c *Destination) negotiate() (err error) {
 	if err != nil {
 		return
 	}
-	buf := make([]byte, 1)
-	if _, err = ups.Read(buf); err != nil {
+	var buf [1]byte
+	if _, err = ups.Read(buf[:]); err != nil {
 		return
 	}
-	okOrNot := func(b byte) string {
-		if b == 1 {
-			return "success"
-		}
-		return "failed"
-	}
-	c.ref.logger.Infof(c.ctx, "negotiate response: %s", okOrNot(buf[0]))
 	if buf[0] != 1 {
+		c.ref.logger.Infof(c.ctx, "negotiate failed: %d", buf[0])
 		return fmt.Errorf("negotiate failed: %d", buf[0])
 	}
+	c.ref.logger.Infof(c.ctx, "negotiate success")
 	c.tx = tx
 	return
 }
@@ -321,6 +335,7 @@ func (c *Destination) txLoopN() {
 		eventsToReturn = make([]*txEvent, c.ref.cfg.MaxTxEventBuf)
 		err            error
 	)
+	maxBuf := c.ref.cfg.MaxTxEventBuf
 
 	for {
 		select {
@@ -331,21 +346,20 @@ func (c *Destination) txLoopN() {
 		case event := <-c.txEventChan:
 			totalPackets := 0
 			eventCount := 0
+			remainingBuf := maxBuf
 
-			// Directly assign to slice index
-			eventsToReturn[eventCount] = event
-			eventCount++
-
-			// Expand all packets from this event
+			// Expand first event's packets
 			for j := 0; j < event.N; j++ {
 				buf[totalPackets] = event.Buffer[j]
 				sizes[totalPackets] = event.Sizes[j]
 				totalPackets++
+				remainingBuf--
 			}
+			eventsToReturn[eventCount] = event
+			eventCount++
 
-			// Batch collect more events without select
-			for totalPackets < c.ref.cfg.MaxTxEventBuf && eventCount < c.ref.cfg.MaxTxEventBuf {
-				// Drain channel without blocking
+			// Batch collect more events without blocking
+			for remainingBuf > 0 {
 				if len(c.txEventChan) == 0 {
 					break
 				}
@@ -353,21 +367,12 @@ func (c *Destination) txLoopN() {
 				eventsToReturn[eventCount] = event
 				eventCount++
 
-				for j := 0; j < event.N; j++ {
-					if totalPackets >= c.ref.cfg.MaxTxEventBuf {
-						// Buffer full, write immediately
-						_, err = c.tx.BatchWrite(buf[:totalPackets], sizes[:totalPackets], c.ref.cfg.HeaderSize)
-						if err != nil {
-							c.OnError(c.ctx, &TxError{
-								dst: c,
-								Err: err,
-							})
-						}
-						totalPackets = 0
-					}
+				// Pack packets from this event
+				for j := 0; j < event.N && remainingBuf > 0; j++ {
 					buf[totalPackets] = event.Buffer[j]
 					sizes[totalPackets] = event.Sizes[j]
 					totalPackets++
+					remainingBuf--
 				}
 			}
 
@@ -382,7 +387,7 @@ func (c *Destination) txLoopN() {
 				}
 			}
 
-			// Return all events to pool
+			// Return all events to pool（批量释放，减少锁竞争）
 			for i := 0; i < eventCount; i++ {
 				c.ref.putTxEvent(eventsToReturn[i])
 			}

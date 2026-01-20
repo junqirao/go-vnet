@@ -150,6 +150,23 @@ func (r *Router) MD5() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// RouteBatch 批量路由查询，减少循环开销
+// packets: IP 包数据切片
+// targets: 输出路由目标切片，长度必须等于 packets 长度
+// 返回: 成功路由的数量
+func (r *Router) RouteBatch(packets [][]byte, targets []any) int {
+	count := 0
+	for i := len(packets) - 1; i >= 0; i-- {
+		if target, ok := r.Route(packets[i]); ok {
+			targets[i] = target
+			count++
+		} else {
+			targets[i] = nil
+		}
+	}
+	return count
+}
+
 // Range 遍历所有路由条目
 // 注意: 由于无锁实现，遍历过程中可能有并发修改
 func (r *Router) Range(fn func(addr string, val any)) {

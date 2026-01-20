@@ -21,9 +21,11 @@ type (
 		// rx
 		rxEventPool sync.Pool
 		rxEventChan chan *rxEvent
+		rxEventCh   chan *rxEvent // 预填充缓冲区（channel 方案，并发安全）
 		// tx
 		txEventPool sync.Pool
 		txEventChan chan *txEvent
+		txEventCh   chan *txEvent // 预填充缓冲区（channel 方案，并发安全）
 		// tun
 		dev tun.Tun
 		// router
@@ -81,6 +83,17 @@ func NewHub(cfg Config, dev tun.Tun) *Hub {
 		}
 		return e
 	}
+
+	// 预填充 channel 缓冲区，保证池内一直保持一定数量的对象
+	// channel 天然并发安全，避免 slice 的竞态条件和扩容问题
+	minPoolSize := 256 // 可根据负载调整
+	hub.rxEventCh = make(chan *rxEvent, minPoolSize)
+	hub.txEventCh = make(chan *txEvent, minPoolSize)
+	for i := 0; i < minPoolSize; i++ {
+		hub.rxEventCh <- hub.rxEventPool.Get().(*rxEvent)
+		hub.txEventCh <- hub.txEventPool.Get().(*txEvent)
+	}
+
 	return hub
 }
 
