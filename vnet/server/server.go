@@ -14,6 +14,7 @@ import (
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
+	"go-vnet/common/protocol"
 	"go-vnet/common/session"
 	"go-vnet/vnet/server/consts"
 	"go-vnet/vnet/server/network"
@@ -41,12 +42,6 @@ type (
 		Run(ctx context.Context) (err error)
 		Accept(ctx context.Context) (sr session.SendReceiveCloser, conn any, err error)
 		HandleProxy(ctx context.Context, session *serverSession) (err error)
-	}
-	serverSession struct {
-		*session.Session
-		session.SendReceiveCloser
-		network *network.Network
-		conn    any
 	}
 )
 
@@ -158,9 +153,37 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 	}
 }
 
-func (s *Server) proxy(ctx context.Context, name string, dst io.Writer, src io.Reader) (written int64, err error) {
+func (s *Server) handleFuncCallLoop(ctx context.Context, ss *serverSession) {
 	var (
-		buf = make([]byte, 65535)
+		err      error
+		datagram []byte
+	)
+
+	defer func() {
+		s.logger.Infof(ctx, "handle func call loop stopped: %s, reason=%v", ss.IP, err)
+	}()
+
+	for {
+		select {
+		case <-s.sig:
+			err = errors.New("server closed")
+			return
+		case <-ctx.Done():
+			err = ctx.Err()
+			return
+		default:
+			datagram, err = ss.Receive(ctx)
+			if err != nil {
+				return
+			}
+			s.manager.PushEvent(ss, datagram)
+		}
+	}
+}
+
+func (s *Server) proxy(ctx context.Context, name string, dst io.WriteCloser, src io.ReadCloser) (written int64, err error) {
+	var (
+		buf = make([]byte, protocol.MaxTransportByteSize)
 		nr  int
 		er  error
 	)
@@ -181,6 +204,7 @@ func (s *Server) proxy(ctx context.Context, name string, dst io.Writer, src io.R
 			nw, ew := dst.Write(buf[0:nr])
 			// fmt.Printf("proxy %d->%d \n", nr, nw)
 			if ew != nil {
+				_ = dst.Close()
 				return written, ew
 			}
 			if nw > 0 {
@@ -189,6 +213,7 @@ func (s *Server) proxy(ctx context.Context, name string, dst io.Writer, src io.R
 		}
 		if er != nil {
 			if er != io.EOF {
+				_ = src.Close()
 				err = er
 			}
 			break
@@ -285,30 +310,44 @@ func (s *Server) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 	return
 }
 
-func (s *Server) handleFuncCallLoop(ctx context.Context, ss *serverSession) {
+func (s *Server) negotiation(_ context.Context, sess *serverSession, src io.ReadWriter) (dstSession *serverSession, dst string, err error) {
+	// get dst ip by first packet, 10s timeout
 	var (
-		err      error
-		datagram []byte
+		buf   = make([]byte, 15)
+		ch    = make(chan []byte)
+		first []byte
 	)
 
-	defer func() {
-		s.logger.Infof(ctx, "handle func call loop stopped: %s, reason=%v", ss.IP, err)
+	go func() {
+		n, err := src.Read(buf)
+		if err != nil {
+			return
+		}
+		ch <- buf[:n]
 	}()
 
-	for {
-		select {
-		case <-s.sig:
-			err = errors.New("server closed")
-			return
-		case <-ctx.Done():
-			err = ctx.Err()
-			return
-		default:
-			datagram, err = ss.Receive(ctx)
-			if err != nil {
-				return
-			}
-			s.manager.PushEvent(ss, datagram)
-		}
+	timer := time.NewTimer(time.Second * 3)
+	select {
+	case <-timer.C:
+		err = fmt.Errorf("read first pkg timeout. src=%v", sess.IP)
+		return
+	case first = <-ch:
 	}
+
+	dst = string(first)
+
+	v, ok := sess.network.Router().RouteString(dst)
+	if !ok {
+		err = fmt.Errorf("route not found: dst=%v", dst)
+		return
+	}
+
+	// send ack (byte 1) to client
+	_, _ = src.Write([]byte{1})
+	dstSession, ok = v.(*serverSession)
+	if !ok {
+		err = fmt.Errorf("error session type: dst=%v", dst)
+		return
+	}
+	return
 }

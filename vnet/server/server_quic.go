@@ -78,53 +78,24 @@ func (s *quicServer) HandleProxy(ctx context.Context, session *serverSession) (e
 }
 
 func (s *quicServer) handleStreamProxy(ctx context.Context, sess *serverSession, stream *quic.Stream) {
-	// get dst ip by first packet, 10s timeout
-	var (
-		buf   = make([]byte, 15)
-		ch    = make(chan []byte)
-		first []byte
-	)
-
-	go func() {
-		n, err := stream.Read(buf)
-		if err != nil {
-			return
-		}
-		ch <- buf[:n]
-	}()
-
-	timer := time.NewTimer(time.Second * 10)
-	select {
-	case <-timer.C:
-		s.logger.Errorf(ctx, "read first pkg timeout. src=%v", sess.IP)
-		return
-	case first = <-ch:
-	}
-
-	var (
-		dst = string(first)
-		src = sess.IP
-	)
-
-	v, ok := sess.network.Router().RouteString(dst)
-	if !ok {
-		s.logger.Errorf(ctx, "route not found: dst=%v", dst)
+	dstSession, dst, err := s.negotiation(ctx, sess, stream)
+	if err != nil {
 		_ = stream.Close()
+		s.logger.Errorf(ctx, "error during negotiation: %s", err.Error())
+		return
+	}
+	src := sess.IP
+
+	conn, err := dstSession.QuicConn()
+	if err != nil {
+		_ = stream.Close()
+		s.logger.Errorf(ctx, "internal error: %s", err.Error())
 		return
 	}
 
-	// send ack (byte 1) to client
-	_, _ = stream.Write([]byte{1})
-
-	dstSession, ok := v.(*serverSession)
-	if !ok {
-		s.logger.Errorf(ctx, "error session type: dst=%v", dst)
-		return
-	}
-
-	conn := dstSession.conn.(*quic.Conn)
 	dstStream, err := conn.OpenStreamSync(ctx)
 	if err != nil {
+		_ = stream.Close()
 		s.logger.Errorf(ctx, "open stream error: dst=%v", dst)
 		return
 	}
@@ -136,8 +107,6 @@ func (s *quicServer) handleStreamProxy(ctx context.Context, sess *serverSession,
 	)
 
 	defer func() {
-		_ = dstStream.Close()
-		_ = stream.Close()
 		s.logger.Infof(ctx, "proxy stopped: %s,written=%v", name, written)
 	}()
 
