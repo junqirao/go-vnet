@@ -1,7 +1,7 @@
 package hub
 
 import (
-	"go-vnet/vnet/protocol"
+	"go-vnet/common/protocol"
 )
 
 type (

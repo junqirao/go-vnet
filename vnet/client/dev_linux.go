@@ -7,7 +7,7 @@ import (
 	"github.com/sagernet/netlink"
 	tun "github.com/sagernet/sing-tun"
 
-	"go-vnet/vnet/session"
+	"go-vnet/common/session"
 )
 
 func (c *Client) setupDevice(ctx context.Context, sess *session.Session) (dev tun.Tun, err error) {

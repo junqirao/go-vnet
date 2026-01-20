@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"sync"
 
-	"go-vnet/vnet/protocol"
+	"go-vnet/common/protocol"
 )
 
 const (

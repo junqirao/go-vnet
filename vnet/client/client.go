@@ -10,14 +10,14 @@ import (
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
-	"go-vnet/vnet/hub"
+	"go-vnet/common/session"
+	hub2 "go-vnet/vnet/client/hub"
 	"go-vnet/vnet/server"
-	"go-vnet/vnet/session"
 )
 
 type (
 	Client struct {
-		hub      *hub.Hub
+		hub      *hub2.Hub
 		ctx      context.Context
 		cfg      *Config
 		auth     *auth.Client
@@ -28,7 +28,7 @@ type (
 		sig      chan struct{}
 	}
 	internal interface {
-		hub.TxAdaptor
+		hub2.TxAdaptor
 		Handshake(ctx context.Context, payload map[string]any) (sess *session.Session, sr session.SendReceiveCloser, err error)
 		Run(ctx context.Context) (err error)
 	}
@@ -92,7 +92,7 @@ func (c *Client) Run() {
 	}()
 
 	// setup hub
-	c.hub = hub.NewHub(hub.Config{
+	c.hub = hub2.NewHub(hub2.Config{
 		Name:          "test",
 		MTU:           sess.DispatchedDevice.MTU,
 		MaxRxEventBuf: 1024,
@@ -166,7 +166,7 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 				if ok {
 					c.hub.Router().UnRegister(ip)
 				}
-				if dst, ok := v.(*hub.Destination); ok {
+				if dst, ok := v.(*hub2.Destination); ok {
 					_ = dst.Close()
 				}
 			}
@@ -180,7 +180,7 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 				}
 				c.logger.Infof(ctx, "add route: %s", ip)
 				c.hub.Router().Register(ip,
-					hub.NewDestination(context.Background(), strings.Split(ip, "/")[0], c.internal, c.hub))
+					hub2.NewDestination(context.Background(), strings.Split(ip, "/")[0], c.internal, c.hub))
 			}
 		}
 

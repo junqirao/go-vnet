@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"go-vnet/vnet/protocol"
+	"go-vnet/common/protocol"
 )
 
 // eventMockReadWriter implements ReadWriter for event testing

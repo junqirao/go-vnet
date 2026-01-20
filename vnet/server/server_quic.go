@@ -9,8 +9,8 @@ import (
 	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/config"
+	"go-vnet/common/session"
 	tt "go-vnet/common/tls"
-	"go-vnet/vnet/session"
 )
 
 type (

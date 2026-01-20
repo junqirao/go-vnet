@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"go-vnet/vnet/protocol"
+	"go-vnet/common/protocol"
 )
 
 // mockReadWriter implements io.ReadWriter for testing

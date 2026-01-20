@@ -9,10 +9,10 @@ import (
 	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/config"
+	"go-vnet/common/protocol"
+	"go-vnet/common/session"
 	tt "go-vnet/common/tls"
-	"go-vnet/vnet/hub"
-	"go-vnet/vnet/protocol"
-	"go-vnet/vnet/session"
+	"go-vnet/vnet/client/hub"
 )
 
 type quicClient struct {

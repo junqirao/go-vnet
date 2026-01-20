@@ -7,8 +7,8 @@ import (
 
 	"go-vnet/common/addresses"
 	"go-vnet/common/flow"
-	"go-vnet/vnet/router"
-	"go-vnet/vnet/session"
+	"go-vnet/common/router"
+	"go-vnet/common/session"
 )
 
 type (

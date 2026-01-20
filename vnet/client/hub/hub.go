@@ -7,8 +7,8 @@ import (
 	tun "github.com/sagernet/sing-tun"
 
 	"go-vnet/common/logger"
-	"go-vnet/vnet/protocol"
-	"go-vnet/vnet/router"
+	"go-vnet/common/protocol"
+	"go-vnet/common/router"
 )
 
 type (

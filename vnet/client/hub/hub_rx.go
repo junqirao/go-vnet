@@ -7,7 +7,7 @@ import (
 
 	tun "github.com/sagernet/sing-tun"
 
-	"go-vnet/vnet/protocol"
+	"go-vnet/common/protocol"
 )
 
 func (h *Hub) rxLoop() {
