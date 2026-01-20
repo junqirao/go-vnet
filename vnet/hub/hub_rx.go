@@ -29,6 +29,8 @@ func (h *Hub) writeDeviceLinux() {
 			h.Stop(err.Error())
 			return
 		}
+		// Return event to pool for reuse
+		h.putRxEvent(event)
 	}
 }
 
@@ -43,6 +45,8 @@ func (h *Hub) writeDevice() {
 				return
 			}
 		}
+		// Return event to pool for reuse
+		h.putRxEvent(event)
 	}
 }
 

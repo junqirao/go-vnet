@@ -285,43 +285,41 @@ func (c *Destination) txLoop() {
 			return
 		case <-c.ref.sig:
 			return
-		default:
-		}
-
-		length := len(c.txEventChan)
-		batch := min(c.ref.cfg.MaxTxEventBuf, length)
-		if length > 1 {
-			for i := 0; i < batch; i++ {
-				event := <-c.txEventChan
-				evs[i] = event
-				buf[i] = event.Buffer[0]
-				sizes[i] = event.Sizes[0]
-			}
-		} else {
-			event := <-c.txEventChan
+		case event := <-c.txEventChan:
 			evs[0] = event
-			batch = 1
 			buf[0] = event.Buffer[0]
 			sizes[0] = event.Sizes[0]
-		}
-		_, err = c.tx.BatchWrite(buf[:batch], sizes[:batch], c.ref.cfg.HeaderSize)
-		if err != nil {
-			c.OnError(c.ctx, &TxError{
-				dst: c,
-				Err: err,
-			})
-		}
-		for i := 0; i < batch; i++ {
-			c.ref.putTxEvent(evs[i])
+			batch := 1
+
+			// Batch collect more events without blocking
+			for batch < c.ref.cfg.MaxTxEventBuf && len(c.txEventChan) > 0 {
+				event = <-c.txEventChan
+				evs[batch] = event
+				buf[batch] = event.Buffer[0]
+				sizes[batch] = event.Sizes[0]
+				batch++
+			}
+
+			_, err = c.tx.BatchWrite(buf[:batch], sizes[:batch], c.ref.cfg.HeaderSize)
+			if err != nil {
+				c.OnError(c.ctx, &TxError{
+					dst: c,
+					Err: err,
+				})
+			}
+			for i := 0; i < batch; i++ {
+				c.ref.putTxEvent(evs[i])
+			}
 		}
 	}
 }
 
 func (c *Destination) txLoopN() {
 	var (
-		buf   = make([][]byte, c.ref.cfg.MaxTxEventBuf)
-		sizes = make([]int, c.ref.cfg.MaxTxEventBuf)
-		err   error
+		buf            = make([][]byte, c.ref.cfg.MaxTxEventBuf)
+		sizes          = make([]int, c.ref.cfg.MaxTxEventBuf)
+		eventsToReturn = make([]*txEvent, c.ref.cfg.MaxTxEventBuf)
+		err            error
 	)
 
 	for {
@@ -330,18 +328,31 @@ func (c *Destination) txLoopN() {
 			return
 		case <-c.ref.sig:
 			return
-		default:
-		}
+		case event := <-c.txEventChan:
+			totalPackets := 0
+			eventCount := 0
 
-		totalPackets := 0
-		eventsToReturn := make([]*txEvent, 0, c.ref.cfg.MaxTxEventBuf)
+			// Directly assign to slice index
+			eventsToReturn[eventCount] = event
+			eventCount++
 
-		// Collect events until buffer is full or channel is empty
-		for totalPackets < c.ref.cfg.MaxTxEventBuf {
-			select {
-			case event := <-c.txEventChan:
-				eventsToReturn = append(eventsToReturn, event)
-				// Expand all packets from this event
+			// Expand all packets from this event
+			for j := 0; j < event.N; j++ {
+				buf[totalPackets] = event.Buffer[j]
+				sizes[totalPackets] = event.Sizes[j]
+				totalPackets++
+			}
+
+			// Batch collect more events without select
+			for totalPackets < c.ref.cfg.MaxTxEventBuf && eventCount < c.ref.cfg.MaxTxEventBuf {
+				// Drain channel without blocking
+				if len(c.txEventChan) == 0 {
+					break
+				}
+				event = <-c.txEventChan
+				eventsToReturn[eventCount] = event
+				eventCount++
+
 				for j := 0; j < event.N; j++ {
 					if totalPackets >= c.ref.cfg.MaxTxEventBuf {
 						// Buffer full, write immediately
@@ -358,27 +369,23 @@ func (c *Destination) txLoopN() {
 					sizes[totalPackets] = event.Sizes[j]
 					totalPackets++
 				}
-			default:
-				// Channel empty, stop collecting
-				goto FLUSH
 			}
-		}
 
-	FLUSH:
-		// Write all collected packets
-		if totalPackets > 0 {
-			_, err = c.tx.BatchWrite(buf[:totalPackets], sizes[:totalPackets], c.ref.cfg.HeaderSize)
-			if err != nil {
-				c.OnError(c.ctx, &TxError{
-					dst: c,
-					Err: err,
-				})
+			// Write all collected packets
+			if totalPackets > 0 {
+				_, err = c.tx.BatchWrite(buf[:totalPackets], sizes[:totalPackets], c.ref.cfg.HeaderSize)
+				if err != nil {
+					c.OnError(c.ctx, &TxError{
+						dst: c,
+						Err: err,
+					})
+				}
 			}
-		}
 
-		// Return all events to pool
-		for _, event := range eventsToReturn {
-			c.ref.putTxEvent(event)
+			// Return all events to pool
+			for i := 0; i < eventCount; i++ {
+				c.ref.putTxEvent(eventsToReturn[i])
+			}
 		}
 	}
 }
