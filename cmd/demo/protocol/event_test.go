@@ -1,18 +1,25 @@
 package protocol
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
 	"io"
 	"testing"
 	"time"
+
+	"go-vnet/vnet/protocol"
 )
 
 // eventMockReadWriter implements ReadWriter for event testing
 type eventMockReadWriter struct {
 	readBuf  *bytes.Buffer
 	writeBuf *bytes.Buffer
+}
+
+func (m *eventMockReadWriter) Upstream() io.ReadWriter {
+	return bufio.NewReadWriter(bufio.NewReader(m.readBuf), bufio.NewWriter(m.writeBuf))
 }
 
 func newEventMockReadWriter() *eventMockReadWriter {
@@ -40,7 +47,7 @@ func (m *eventMockReadWriter) ReadMessage(data []byte) (typ byte, n int, err err
 
 	// Validate magic
 	if magic[0] != 0x56 || magic[1] != 0x4E || magic[2] != 0x45 || magic[3] != 0x54 {
-		return 0, 0, ErrInvalidMagic
+		return 0, 0, protocol.ErrInvalidMagic
 	}
 
 	// Read type and length (3 bytes)

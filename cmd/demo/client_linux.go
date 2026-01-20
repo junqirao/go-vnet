@@ -14,8 +14,10 @@ import (
 	tun "github.com/sagernet/sing-tun"
 	"github.com/songgao/water/waterutil"
 
-	"go-vnet/common/config"
 	"go-vnet/common/protocol"
+
+	protocol2 "go-vnet/cmd/demo/protocol"
+	"go-vnet/common/config"
 	tt "go-vnet/common/tls"
 )
 
@@ -97,7 +99,7 @@ func (c *Client) Run() {
 
 func handleRxBatch(rx *quic.Stream, dev tun.LinuxTUN) {
 	rw := protocol.NewTransport(rx)
-	p := protocol.NewPacketEventProcessor(rw)
+	p := protocol2.NewPacketEventProcessor(rw)
 	batch := protocol.MaxTransportBatchSize
 	headerSize := dev.FrontHeadroom()
 
@@ -139,10 +141,10 @@ func handleTxReadDevice(tx *quic.Stream, dev tun.LinuxTUN, dst string) {
 		err        error
 		headerSize = dev.FrontHeadroom()
 		rw         = protocol.NewTransport(tx)
-		p          = protocol.NewPacketEventProcessor(rw,
-			protocol.WithMaxPacketSize(mtu+headerSize),
-			protocol.WithHeaderSize(headerSize),
-			protocol.WithBatchSize(dev.BatchSize()),
+		p          = protocol2.NewPacketEventProcessor(rw,
+			protocol2.WithMaxPacketSize(mtu+headerSize),
+			protocol2.WithHeaderSize(headerSize),
+			protocol2.WithBatchSize(dev.BatchSize()),
 		)
 	)
 

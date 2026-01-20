@@ -4,6 +4,8 @@ import (
 	"errors"
 	"runtime"
 	"sync"
+
+	"go-vnet/vnet/protocol"
 )
 
 const (
@@ -35,7 +37,7 @@ func defaultPacketEventProcessorOptions() *PacketEventProcessorOptions {
 type (
 	PacketEventProcessor struct {
 		PacketEventProcessorOptions
-		rw         ReadWriter
+		rw         protocol.ReadWriter
 		rEventPool sync.Pool        // read(rx) event pool
 		rChan      chan *ReadEvent  // read(rx) channel
 		wEventPool sync.Pool        // write(tx) event pool
@@ -139,7 +141,7 @@ func (w *WriteEvent) DeleteElements(i ...int) {
 	}
 }
 
-func NewPacketEventProcessor(rw ReadWriter, opts ...Opt) *PacketEventProcessor {
+func NewPacketEventProcessor(rw protocol.ReadWriter, opts ...Opt) *PacketEventProcessor {
 	o := defaultPacketEventProcessorOptions()
 	for _, opt := range opts {
 		opt(o)
@@ -175,7 +177,7 @@ func (p *PacketEventProcessor) readLoop() {
 		event := p.getRxEvent()
 		// 直接传递数组指针，避免创建切片
 		typ, n, err := p.rw.ReadMessage((*event.buffer)[:])
-		if errors.Is(err, ErrInvalidMagic) {
+		if errors.Is(err, protocol.ErrInvalidMagic) {
 			p.PutRXEvent(event)
 			continue
 		}

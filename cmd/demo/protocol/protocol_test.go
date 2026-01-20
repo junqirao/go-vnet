@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"testing"
+
+	"go-vnet/vnet/protocol"
 )
 
 // mockReadWriter implements io.ReadWriter for testing
@@ -47,7 +49,7 @@ func buildRawMessage(data []byte) []byte {
 
 func TestNewTransport(t *testing.T) {
 	mock := newMockReadWriter()
-	transport := NewTransport(mock)
+	transport := protocol.NewTransport(mock)
 	if transport == nil {
 		t.Fatal("NewTransport returned nil")
 	}
@@ -79,7 +81,7 @@ func TestTransport_Read(t *testing.T) {
 			msg := buildRawMessage(tt.data)
 			mock.readBuf.Write(msg)
 
-			transport := NewTransport(mock)
+			transport := protocol.NewTransport(mock)
 			out := make([]byte, len(tt.data))
 			n, err := transport.Read(out)
 
@@ -108,7 +110,7 @@ func TestTransport_Read_InvalidMagic(t *testing.T) {
 	msg := []byte{0x00, 0x02, 0x03, 0x04, 0x00, 0x00, 0x05, 'h', 'e', 'l', 'l', 'o'}
 	mock.readBuf.Write(msg)
 
-	transport := NewTransport(mock)
+	transport := protocol.NewTransport(mock)
 	out := make([]byte, 10)
 	_, err := transport.Read(out)
 
@@ -123,7 +125,7 @@ func TestTransport_Read_TooLarge(t *testing.T) {
 	msg := []byte{0x56, 0x4E, 0x45, 0x54, 0x02, 0xFF, 0xFF} // length = 65535 > 65530
 	mock.readBuf.Write(msg)
 
-	transport := NewTransport(mock)
+	transport := protocol.NewTransport(mock)
 	out := make([]byte, 10)
 	_, err := transport.Read(out)
 
@@ -151,7 +153,7 @@ func TestTransport_Write(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := newMockReadWriter()
-			transport := NewTransport(mock)
+			transport := protocol.NewTransport(mock)
 
 			n, err := transport.Write(tt.data)
 
@@ -175,7 +177,7 @@ func TestTransport_Write(t *testing.T) {
 
 func TestTransport_Write_TooLarge(t *testing.T) {
 	mock := newMockReadWriter()
-	transport := NewTransport(mock)
+	transport := protocol.NewTransport(mock)
 
 	// Data too large (> 65531 bytes)
 	data := bytes.Repeat([]byte("a"), 65532)
@@ -208,7 +210,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := newMockReadWriter()
-			transport := NewTransport(mock)
+			transport := protocol.NewTransport(mock)
 
 			// Write raw data (will be wrapped in protocol)
 			_, err := transport.Write(tt.data)
@@ -239,7 +241,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 
 func TestTransport_PrintEncodedData(t *testing.T) {
 	mock := newMockReadWriter()
-	transport := NewTransport(mock).(*Transport)
+	transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 	// Test data
 	data := []byte("hello world")
@@ -314,7 +316,7 @@ func TestTransport_ReadMessage(t *testing.T) {
 			msg := buildMessage(tt.typ, tt.data)
 			mock.readBuf.Write(msg)
 
-			transport := NewTransport(mock).(*Transport)
+			transport := protocol.NewTransport(mock).(*protocol.Transport)
 			dataBuf := make([]byte, len(tt.data))
 			typ, n, err := transport.ReadMessage(dataBuf)
 
@@ -360,7 +362,7 @@ func TestTransport_WriteMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := newMockReadWriter()
-			transport := NewTransport(mock).(*Transport)
+			transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 			n, err := transport.WriteMessage(tt.typ, tt.data)
 
@@ -384,7 +386,7 @@ func TestTransport_WriteMessage(t *testing.T) {
 
 func TestTransport_WriteMessage_TooLarge(t *testing.T) {
 	mock := newMockReadWriter()
-	transport := NewTransport(mock).(*Transport)
+	transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 	// Data too large (> 65531 bytes)
 	data := bytes.Repeat([]byte("a"), 65532)
@@ -416,7 +418,7 @@ func TestTransport_ReadMessage_RoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := newMockReadWriter()
-			transport := NewTransport(mock).(*Transport)
+			transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 			// Write message
 			_, err := transport.WriteMessage(tt.typ, tt.data)
@@ -450,7 +452,7 @@ func BenchmarkTransport_Read_Small(b *testing.B) {
 	data := []byte("hello world")
 	msg := buildRawMessage(data)
 
-	transport := NewTransport(mock)
+	transport := protocol.NewTransport(mock)
 	out := make([]byte, len(data))
 
 	b.ResetTimer()
@@ -471,7 +473,7 @@ func BenchmarkTransport_Read_Medium(b *testing.B) {
 	data := bytes.Repeat([]byte("test"), 100)
 	msg := buildRawMessage(data)
 
-	transport := NewTransport(mock)
+	transport := protocol.NewTransport(mock)
 	out := make([]byte, len(data))
 
 	b.ResetTimer()
@@ -492,7 +494,7 @@ func BenchmarkTransport_Read_Large(b *testing.B) {
 	data := bytes.Repeat([]byte("test"), 1000)
 	msg := buildRawMessage(data)
 
-	transport := NewTransport(mock)
+	transport := protocol.NewTransport(mock)
 	out := make([]byte, len(data))
 
 	b.ResetTimer()
@@ -512,7 +514,7 @@ func BenchmarkTransport_Write_Small(b *testing.B) {
 	mock := newMockReadWriter()
 	data := []byte("hello world")
 
-	transport := NewTransport(mock)
+	transport := protocol.NewTransport(mock)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -530,7 +532,7 @@ func BenchmarkTransport_Write_Medium(b *testing.B) {
 	mock := newMockReadWriter()
 	data := bytes.Repeat([]byte("test"), 100)
 
-	transport := NewTransport(mock)
+	transport := protocol.NewTransport(mock)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -548,7 +550,7 @@ func BenchmarkTransport_Write_Large(b *testing.B) {
 	mock := newMockReadWriter()
 	data := bytes.Repeat([]byte("test"), 1000)
 
-	transport := NewTransport(mock)
+	transport := protocol.NewTransport(mock)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -567,7 +569,7 @@ func BenchmarkTransport_ReadMessage_Small(b *testing.B) {
 	data := []byte("hello world")
 	msg := buildMessage(0x02, data)
 
-	transport := NewTransport(mock).(*Transport)
+	transport := protocol.NewTransport(mock).(*protocol.Transport)
 	dataBuf := make([]byte, len(data))
 
 	b.ResetTimer()
@@ -588,7 +590,7 @@ func BenchmarkTransport_ReadMessage_Medium(b *testing.B) {
 	data := bytes.Repeat([]byte("test"), 100)
 	msg := buildMessage(0x02, data)
 
-	transport := NewTransport(mock).(*Transport)
+	transport := protocol.NewTransport(mock).(*protocol.Transport)
 	dataBuf := make([]byte, len(data))
 
 	b.ResetTimer()
@@ -609,7 +611,7 @@ func BenchmarkTransport_ReadMessage_Large(b *testing.B) {
 	data := bytes.Repeat([]byte("test"), 1000)
 	msg := buildMessage(0x02, data)
 
-	transport := NewTransport(mock).(*Transport)
+	transport := protocol.NewTransport(mock).(*protocol.Transport)
 	dataBuf := make([]byte, len(data))
 
 	b.ResetTimer()
@@ -627,7 +629,7 @@ func BenchmarkTransport_ReadMessage_Large(b *testing.B) {
 
 func BenchmarkTransport_WriteMessage_Small(b *testing.B) {
 	mock := newMockReadWriter()
-	transport := NewTransport(mock).(*Transport)
+	transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -644,7 +646,7 @@ func BenchmarkTransport_WriteMessage_Small(b *testing.B) {
 func BenchmarkTransport_WriteMessage_Medium(b *testing.B) {
 	mock := newMockReadWriter()
 	data := bytes.Repeat([]byte("test"), 100)
-	transport := NewTransport(mock).(*Transport)
+	transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -661,7 +663,7 @@ func BenchmarkTransport_WriteMessage_Medium(b *testing.B) {
 func BenchmarkTransport_WriteMessage_Large(b *testing.B) {
 	mock := newMockReadWriter()
 	data := bytes.Repeat([]byte("test"), 1000)
-	transport := NewTransport(mock).(*Transport)
+	transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -683,7 +685,7 @@ func BenchmarkTransport_RoundTrip_Small(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		mock := newMockReadWriter()
-		transport := NewTransport(mock).(*Transport)
+		transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 		// Write
 		_, err := transport.Write(data)
@@ -711,7 +713,7 @@ func BenchmarkTransport_RoundTrip_Large(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		mock := newMockReadWriter()
-		transport := NewTransport(mock).(*Transport)
+		transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 		// Write
 		_, err := transport.Write(data)
@@ -747,7 +749,7 @@ func buildBatchMessage(headerSize int, bufs [][]byte, sizes []int) []byte {
 	msg[1] = 0x4E
 	msg[2] = 0x45
 	msg[3] = 0x54
-	msg[4] = TypeBatchTransport
+	msg[4] = protocol.TypeBatchTransport
 	binary.BigEndian.PutUint16(msg[5:7], uint16(dataLen))
 
 	// Build data format
@@ -805,7 +807,7 @@ func TestTransport_BatchWrite(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := newMockReadWriter()
-			transport := NewTransport(mock).(*Transport)
+			transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 			n, err := transport.BatchWrite(tt.buf, tt.sizes, tt.headerSize)
 
@@ -829,7 +831,7 @@ func TestTransport_BatchWrite(t *testing.T) {
 
 func TestTransport_BatchWrite_TooLarge(t *testing.T) {
 	mock := newMockReadWriter()
-	transport := NewTransport(mock).(*Transport)
+	transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 	// Create data that will exceed 65530 bytes
 	buf := make([][]byte, 1)
@@ -879,7 +881,7 @@ func TestTransport_ParseBatch(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := newMockReadWriter()
-			transport := NewTransport(mock).(*Transport)
+			transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 			// Build batch message
 			msg := buildBatchMessage(tt.headerSize, tt.bufData, tt.sizes)
@@ -925,7 +927,7 @@ func TestTransport_ParseBatch(t *testing.T) {
 }
 
 func TestTransport_ParseBatch_Errors(t *testing.T) {
-	transport := NewTransport(newMockReadWriter()).(*Transport)
+	transport := protocol.NewTransport(newMockReadWriter()).(*protocol.Transport)
 
 	t.Run("sizes array too small", func(t *testing.T) {
 		data := []byte{
@@ -1007,7 +1009,7 @@ func TestTransport_BatchWrite_ParseBatch_RoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := newMockReadWriter()
-			transport := NewTransport(mock).(*Transport)
+			transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 			// Prepare input
 			buf := make([][]byte, len(tt.bufData))
@@ -1057,7 +1059,7 @@ func TestTransport_BatchWrite_ParseBatch_RoundTrip(t *testing.T) {
 
 func TestTransport_BatchWrite_PrintEncodedData(t *testing.T) {
 	mock := newMockReadWriter()
-	transport := NewTransport(mock).(*Transport)
+	transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 	// Test data
 	headerSize := 8
@@ -1106,8 +1108,8 @@ func TestTransport_BatchWrite_PrintEncodedData(t *testing.T) {
 	if magic[0] != 0x56 || magic[1] != 0x4E || magic[2] != 0x45 || magic[3] != 0x54 {
 		t.Errorf("Expected magic VNET, got %c%c%c%c", magic[0], magic[1], magic[2], magic[3])
 	}
-	if typ != TypeBatchTransport {
-		t.Errorf("Expected type 0x%02X, got 0x%02X", TypeBatchTransport, typ)
+	if typ != protocol.TypeBatchTransport {
+		t.Errorf("Expected type 0x%02X, got 0x%02X", protocol.TypeBatchTransport, typ)
 	}
 	if sizesLen != uint16(len(sizes)) {
 		t.Errorf("Expected sizes length %d, got %d", len(sizes), sizesLen)
@@ -1118,7 +1120,7 @@ func TestTransport_BatchWrite_PrintEncodedData(t *testing.T) {
 
 func BenchmarkTransport_BatchWrite_Small(b *testing.B) {
 	mock := newMockReadWriter()
-	transport := NewTransport(mock).(*Transport)
+	transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 	buf := make([][]byte, 3)
 	for i := range buf {
@@ -1140,7 +1142,7 @@ func BenchmarkTransport_BatchWrite_Small(b *testing.B) {
 
 func BenchmarkTransport_BatchWrite_Medium(b *testing.B) {
 	mock := newMockReadWriter()
-	transport := NewTransport(mock).(*Transport)
+	transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 	buf := make([][]byte, 10)
 	for i := range buf {
@@ -1165,7 +1167,7 @@ func BenchmarkTransport_BatchWrite_Medium(b *testing.B) {
 
 func BenchmarkTransport_BatchWrite_Large(b *testing.B) {
 	mock := newMockReadWriter()
-	transport := NewTransport(mock).(*Transport)
+	transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 	buf := make([][]byte, 5)
 	for i := range buf {
@@ -1189,7 +1191,7 @@ func BenchmarkTransport_BatchWrite_Large(b *testing.B) {
 }
 
 func BenchmarkTransport_ParseBatch_Small(b *testing.B) {
-	transport := NewTransport(newMockReadWriter()).(*Transport)
+	transport := protocol.NewTransport(newMockReadWriter()).(*protocol.Transport)
 
 	buf := make([][]byte, 3)
 	for i := range buf {
@@ -1219,7 +1221,7 @@ func BenchmarkTransport_ParseBatch_Small(b *testing.B) {
 }
 
 func BenchmarkTransport_ParseBatch_Medium(b *testing.B) {
-	transport := NewTransport(newMockReadWriter()).(*Transport)
+	transport := protocol.NewTransport(newMockReadWriter()).(*protocol.Transport)
 
 	buf := make([][][]byte, 1)
 	buf[0] = make([][]byte, 10)
@@ -1253,7 +1255,7 @@ func BenchmarkTransport_ParseBatch_Medium(b *testing.B) {
 }
 
 func BenchmarkTransport_ParseBatch_Large(b *testing.B) {
-	transport := NewTransport(newMockReadWriter()).(*Transport)
+	transport := protocol.NewTransport(newMockReadWriter()).(*protocol.Transport)
 
 	buf := make([][]byte, 5)
 	for i := range buf {
@@ -1297,7 +1299,7 @@ func BenchmarkTransport_BatchWrite_ParseBatch_RoundTrip_Small(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		mock := newMockReadWriter()
-		transport := NewTransport(mock).(*Transport)
+		transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 		// Write
 		_, err := transport.BatchWrite(buf, sizes, 0)
@@ -1338,7 +1340,7 @@ func BenchmarkTransport_BatchWrite_ParseBatch_RoundTrip_Large(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		mock := newMockReadWriter()
-		transport := NewTransport(mock).(*Transport)
+		transport := protocol.NewTransport(mock).(*protocol.Transport)
 
 		// Write
 		_, err := transport.BatchWrite(buf, sizes, 0)
