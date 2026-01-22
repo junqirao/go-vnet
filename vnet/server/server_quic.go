@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -55,66 +56,28 @@ func (s *quicServer) Close() error {
 	return s.listener.Close()
 }
 
-func (s *quicServer) HandleProxy(ctx context.Context, session *serverSession) (err error) {
-	conn, ok := session.conn.(*quic.Conn)
-	if !ok {
-		return fmt.Errorf("invalid connection type: %T", session.conn)
+func (s *quicServer) AcceptTransport(session *serverSession) (rwc io.ReadWriteCloser, err error) {
+	conn, err := session.QuicConn()
+	if err != nil {
+		return nil, err
 	}
-	for {
-		select {
-		case <-s.sig:
-			return
-		case <-ctx.Done():
-			return
-		default:
-			stream, err := conn.AcceptStream(ctx)
-			if err != nil {
-				s.logger.Errorf(ctx, "accept stream error: %s", err.Error())
-				return err
-			}
-			go s.handleStreamProxy(ctx, session, stream)
-		}
-	}
+	rwc, err = conn.AcceptStream(session.Ctx)
+	return
 }
 
-func (s *quicServer) handleStreamProxy(ctx context.Context, sess *serverSession, stream *quic.Stream) {
-	dstSession, dst, err := s.negotiation(ctx, sess, stream)
+func (s *quicServer) GetDstTransportWriter(src *serverSession, dst *serverSession) (rwc io.ReadWriteCloser, err error) {
+	conn, err := dst.QuicConn()
 	if err != nil {
-		_ = stream.Close()
-		s.logger.Errorf(ctx, "error during negotiation: %s", err.Error())
-		return
-	}
-	src := sess.IP
-
-	conn, err := dstSession.QuicConn()
-	if err != nil {
-		_ = stream.Close()
-		s.logger.Errorf(ctx, "internal error: %s", err.Error())
+		s.logger.Errorf(src.Ctx, "internal error: %s", err.Error())
 		return
 	}
 
-	dstStream, err := conn.OpenStreamSync(ctx)
+	dstStream, err := conn.OpenStreamSync(src.Ctx)
 	if err != nil {
-		_ = stream.Close()
-		s.logger.Errorf(ctx, "open stream error: dst=%v", dst)
+		s.logger.Errorf(src.Ctx, "open stream error: dst=%v", dst)
 		return
 	}
-	s.logger.Infof(ctx, "open stream success: dst=%v id=%d", dst, stream.StreamID().StreamNum())
-
-	var (
-		written int64
-		name    = fmt.Sprintf("%s->%s", src, dst)
-	)
-
-	defer func() {
-		s.logger.Infof(ctx, "proxy stopped: %s,written=%v", name, written)
-	}()
-
-	s.logger.Infof(ctx, "handle stream proxy: %v->%v", src, dst)
-
-	written, err = s.proxy(ctx, name, dstStream, stream)
-	if err != nil {
-		s.logger.Errorf(ctx, "proxy error: %s ,err=%v", name, err.Error())
-		return
-	}
+	s.logger.Infof(src.Ctx, "open stream success: dst=%v id=%d", dst, dstStream.StreamID().StreamNum())
+	rwc = dstStream
+	return
 }

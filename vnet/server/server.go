@@ -41,7 +41,8 @@ type (
 		io.Closer
 		Run(ctx context.Context) (err error)
 		Accept(ctx context.Context) (sr session.SendReceiveCloser, conn any, err error)
-		HandleProxy(ctx context.Context, session *serverSession) (err error)
+		AcceptTransport(session *serverSession) (rwc io.ReadWriteCloser, err error)
+		GetDstTransportWriter(src *serverSession, dst *serverSession) (rwc io.ReadWriteCloser, err error)
 	}
 )
 
@@ -104,63 +105,120 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 			return
 		}
 
-		ss := &serverSession{
-			conn:              conn,
-			SendReceiveCloser: sr,
-		}
-		// handshake
-		ss.Session, ss.network, err = s.handshake(ctx, sr)
-		if err != nil {
-			s.logger.Errorf(ctx, "handshake error: %s", err.Error())
-			sr.CloseWithError(err)
-			continue
-		}
-
-		routeAddress := fmt.Sprintf("%s/32", ss.IP)
-
-		// set ctx key
-		ctx = context.WithValue(ctx, consts.CtxKeyServerSession, ss)
-		ctx = context.WithValue(ctx, consts.CtxKeyRouteAddress, routeAddress)
-
-		// register router
-		ss.network.Router().Register(routeAddress, ss)
-
-		// func call loop
-		go s.handleFuncCallLoop(ctx, ss)
-
-		//
-		go func() {
-			var (
-				ep error
-			)
-
-			defer func() {
-				// release device
-				err := ss.network.ReleaseDevice(ss.DispatchedDevice.CIDR)
-				if err != nil {
-					s.logger.Errorf(ctx, "release device error: %s", err.Error())
-				}
-				// unregister session
-				s.sessions.Delete(ss.IP)
-				// unregister router
-				ss.network.Router().UnRegister(routeAddress)
-				// close connection
-				sr.CloseWithError(ep)
-			}()
-
-			ep = s.internal.HandleProxy(ctx, ss)
-		}()
+		go s.handleSession(sr, conn)
 	}
 }
 
-func (s *Server) handleFuncCallLoop(ctx context.Context, ss *serverSession) {
+func (s *Server) handleSession(sr session.SendReceiveCloser, conn any) {
+	var (
+		err         error
+		ctx, cancel = context.WithCancel(context.Background())
+		ss          = &serverSession{
+			conn:              conn,
+			SendReceiveCloser: sr,
+		}
+	)
+
+	defer func() {
+		// close all goroutines
+		cancel()
+	}()
+
+	// handshake
+	ss.Session, ss.network, err = s.handshake(ctx, sr)
+	if err != nil {
+		s.logger.Errorf(ctx, "handshake error: %s", err.Error())
+		sr.CloseWithError(err)
+		return
+	}
+
+	routeAddress := fmt.Sprintf("%s/32", ss.IP)
+
+	// set ctx key
+	ctx = context.WithValue(ctx, consts.CtxKeyServerSession, ss)
+	ctx = context.WithValue(ctx, consts.CtxKeyRouteAddress, routeAddress)
+	ss.Ctx = ctx
+
+	// register router
+	ss.network.Router().Register(routeAddress, ss)
+
+	var (
+		ep error
+	)
+
+	// handle func call
+	go s.handleFuncCallLoop(ss)
+
+	defer func() {
+		// release device
+		err := ss.network.ReleaseDevice(ss.DispatchedDevice.CIDR)
+		if err != nil {
+			s.logger.Errorf(ss.Ctx, "release device error: %s", err.Error())
+		}
+		// unregister session
+		s.sessions.Delete(ss.IP)
+		// unregister router
+		ss.network.Router().UnRegister(routeAddress)
+		// close connection
+		sr.CloseWithError(ep)
+	}()
+
+	for {
+		select {
+		case <-s.sig:
+			ep = errors.New("server closed")
+			return
+		case <-ctx.Done():
+			ep = ctx.Err()
+			return
+		default:
+			rwc, err := s.internal.AcceptTransport(ss)
+			if err != nil {
+				s.logger.Errorf(ss.Ctx, "accept transport error: %s", err.Error())
+				continue
+			}
+			go s.handleTransport(ss, rwc)
+		}
+	}
+}
+
+func (s *Server) handleTransport(ss *serverSession, srcRwc io.ReadWriteCloser) {
+	src := ss.IP
+	dstSession, dst, err := s.negotiation(ss.Ctx, ss, srcRwc)
+	if err != nil {
+		_ = srcRwc.Close()
+		s.logger.Errorf(ss.Ctx, "error during negotiation: %s", err.Error())
+		return
+	}
+	dstRwc, err := s.internal.GetDstTransportWriter(ss, dstSession)
+	if err != nil {
+		return
+	}
+
+	var (
+		written int64
+		name    = fmt.Sprintf("%s->%s", src, dst)
+	)
+
+	defer func() {
+		s.logger.Infof(ss.Ctx, "proxy stopped: %s,written=%v", name, written)
+	}()
+
+	s.logger.Infof(ss.Ctx, "handle proxy start: %s", name)
+	written, err = s.proxy(ss.Ctx, name, dstRwc, srcRwc)
+	if err != nil {
+		s.logger.Errorf(ss.Ctx, "proxy error: %s ,err=%v", name, err.Error())
+	}
+}
+
+func (s *Server) handleFuncCallLoop(ss *serverSession) {
 	var (
 		err      error
 		datagram []byte
 	)
 
 	defer func() {
-		s.logger.Infof(ctx, "handle func call loop stopped: %s, reason=%v", ss.IP, err)
+		s.logger.Infof(ss.Ctx, "handle func call loop stopped: %s, reason=%v", ss.IP, err)
 	}()
 
 	for {
@@ -168,11 +226,11 @@ func (s *Server) handleFuncCallLoop(ctx context.Context, ss *serverSession) {
 		case <-s.sig:
 			err = errors.New("server closed")
 			return
-		case <-ctx.Done():
-			err = ctx.Err()
+		case <-ss.Ctx.Done():
+			err = ss.Ctx.Err()
 			return
 		default:
-			datagram, err = ss.Receive(ctx)
+			datagram, err = ss.Receive(ss.Ctx)
 			if err != nil {
 				return
 			}
