@@ -94,6 +94,6 @@ func (c *quicClient) Handshake(ctx context.Context, payload map[string]any) (ses
 	)
 	sess = resp.Session
 	sr = session.SendReceiverFromQuicConn(c.transport.conn)
-	c.client.logger.Infof(ctx, "handshake success: %+v", sess)
+	c.client.logger.Infof(ctx, "handshake success: id=%v,ip=%v", sess.SessionId, sess.IP)
 	return
 }

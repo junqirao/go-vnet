@@ -17,6 +17,7 @@ import (
 type (
 	quicServer struct {
 		*Server
+		cfg      *TransportConfig
 		listener *quic.Listener
 	}
 )
@@ -27,7 +28,8 @@ func newQuicServer(s *Server) internalServer {
 	}
 }
 
-func (s *quicServer) Run(ctx context.Context) (err error) {
+func (s *quicServer) Setup(ctx context.Context, cfg *TransportConfig) (err error) {
+	s.cfg = cfg
 	// extra configs
 	tlsConfig := config.GetMappedConfig[*tls.Config](s.cfg, ConfigKeyTLS,
 		// generate if not set
@@ -48,7 +50,6 @@ func (s *quicServer) Accept(ctx context.Context) (ss *serverSession, err error) 
 		return
 	}
 	ss = &serverSession{
-		ref:               s,
 		conn:              c,
 		SendReceiveCloser: session.SendReceiverFromQuicConn(c),
 	}

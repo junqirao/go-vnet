@@ -14,6 +14,7 @@ type (
 		*session.Session
 		session.SendReceiveCloser
 		ref     internalServer
+		cfg     *TransportConfig
 		network *network.Network
 		conn    any
 	}

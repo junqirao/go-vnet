@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"go-vnet/common/auth"
+	"go-vnet/common/config"
 	"go-vnet/common/logger"
 	"go-vnet/vnet/server"
 	"go-vnet/vnet/server/network"
@@ -28,7 +29,6 @@ func main() {
 	l := logger.NewStdLogger(nil, "transport_server")
 	cfg := server.NewConfig(
 		server.WithLogger(l),
-		server.WithAddress("0.0.0.0:9800"),
 		server.WithAuthConfig(auth.Config{
 			Type:     auth.TypeSimplePassword,
 			Password: "",
@@ -41,6 +41,12 @@ func main() {
 			return nil
 		}),
 	)
+	cfg.Servers = append(cfg.Servers, &server.TransportConfig{
+		MappedConfig: config.NewMappedConfig(),
+		Port:         9800,
+		Address:      "0.0.0.0",
+		Type:         server.TypeQuic,
+	})
 	s := server.NewServer(cfg)
 	err = s.Serve(context.Background())
 	if err != nil {

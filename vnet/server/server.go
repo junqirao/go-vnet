@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,17 +30,17 @@ var (
 
 type (
 	Server struct {
-		internal internalServer
-		cfg      *Config
-		logger   logger.Logger
-		sig      chan struct{}
-		auth     *auth.Server
-		manager  *Manager
-		sessions sync.Map // src : *serverSession
+		internals sync.Map // name : internalServer
+		cfg       *Config
+		logger    logger.Logger
+		sig       chan struct{}
+		auth      *auth.Server
+		manager   *Manager
+		sessions  sync.Map // src : *serverSession
 	}
 	internalServer interface {
 		io.Closer
-		Run(ctx context.Context) (err error)
+		Setup(ctx context.Context, cfg *TransportConfig) (err error)
 		Accept(ctx context.Context) (ss *serverSession, err error)
 		AcceptTransport(session *serverSession) (rwc io.ReadWriteCloser, err error)
 		GetDstTransportWriter(src *serverSession, dst *serverSession) (rwc io.ReadWriteCloser, err error)
@@ -47,10 +48,6 @@ type (
 )
 
 func NewServer(cfg *Config) *Server {
-	if cfg.Name == "" {
-		cfg.Name = fmt.Sprintf("unnamed-%s-server-%s", cfg.Type, uuid.NewString()[:8])
-	}
-
 	s := &Server{
 		cfg:     cfg,
 		logger:  config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
@@ -61,47 +58,79 @@ func NewServer(cfg *Config) *Server {
 	chainFunc := config.GetMappedConfig[[]auth.ServerAuthChainFunc](cfg,
 		ConfigKeyAuthChainFunc, []auth.ServerAuthChainFunc{})
 	s.auth = auth.NewServer(cfg.Auth, chainFunc)
-
-	switch cfg.Type {
-	case TypeQuic:
-		s.internal = newQuicServer(s)
-	default:
-		panic(fmt.Sprintf("invalid server type: %s", cfg.Type))
-	}
 	return s
 }
 
 func (s *Server) Serve(ctx context.Context) (err error) {
-	if err = s.internal.Run(ctx); err != nil {
-		return
-	}
-	defer func() {
-		_ = s.manager.Close()
-		_ = s.internal.Close()
-	}()
-	s.logger.Infof(ctx, "%s server %s started at %s:%d", s.cfg.Type, s.cfg.Name, s.cfg.Address, s.cfg.Port)
-
 	go func() {
 		_ = s.manager.ProcessFuncCallLoop(ctx)
 	}()
+	defer func() {
+		_ = s.manager.Close()
+	}()
+
+	for _, server := range s.cfg.Servers {
+		go func(cfg *TransportConfig) {
+			if err := s.serve(ctx, cfg); err != nil {
+				s.logger.Errorf(ctx, "transport server stopped with error: %s", err.Error())
+			}
+		}(server)
+	}
+
+	select {
+	case <-s.sig:
+		s.logger.Info(ctx, "quic server closed")
+		return
+	}
+}
+
+func (s *Server) serve(ctx context.Context, cfg *TransportConfig) (err error) {
+	var internal internalServer
+
+	if cfg.Name == "" {
+		cfg.Name = fmt.Sprintf("unnamed-%s-server-%s", cfg.Type, uuid.NewString()[:8])
+	}
+	switch cfg.Type {
+	case TypeQuic:
+		internal = newQuicServer(s)
+		s.internals.Store(cfg.Name, internal)
+	default:
+		err = fmt.Errorf("invalid server type: %s", cfg.Type)
+		return
+	}
+
+	s.logger.Infof(ctx, "%s server %s started at %s:%d", cfg.Type, cfg.Name, cfg.Address, cfg.Port)
+
+	if err = internal.Setup(ctx, cfg); err != nil {
+		return err
+	}
 
 	for {
 		select {
 		case <-s.sig:
-			s.logger.Info(ctx, "quic server closed")
+			s.logger.Info(ctx, fmt.Sprintf("%s server closed: %s", cfg.Type, cfg.Name))
 			return
 		default:
 		}
 
 		var (
-			ss *serverSession
+			ss  *serverSession
+			id  = uuid.NewString()
+			ctx = context.WithValue(ctx, "id", id)
 		)
 
 		// accept connection
-		ss, err = s.internal.Accept(ctx)
+		ss, err = internal.Accept(ctx)
 		if err != nil {
 			s.logger.Errorf(ctx, "accept connection error: %s", err.Error())
 			continue
+		}
+		ss.cfg = cfg
+		ss.ref = internal
+		ss.Session = &session.Session{
+			Ctx:       ctx,
+			Type:      session.Type(cfg.Type.String()),
+			SessionId: fmt.Sprintf("%s-%v", strings.ToLower(ss.cfg.Type.String()), id),
 		}
 
 		go s.handleSession(ss)
@@ -111,7 +140,7 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 func (s *Server) handleSession(ss *serverSession) {
 	var (
 		err         error
-		ctx, cancel = context.WithCancel(context.Background())
+		ctx, cancel = context.WithCancel(ss.Ctx)
 	)
 
 	defer func() {
@@ -120,7 +149,7 @@ func (s *Server) handleSession(ss *serverSession) {
 	}()
 
 	// handshake
-	ss.Session, ss.network, err = s.handshake(ctx, ss)
+	err = s.handshake(ctx, ss)
 	if err != nil {
 		s.logger.Errorf(ctx, "handshake error: %s", err.Error())
 		ss.CloseWithError(err)
@@ -169,7 +198,7 @@ func (s *Server) handleSession(ss *serverSession) {
 			ep = ctx.Err()
 			return
 		default:
-			rwc, err := s.internal.AcceptTransport(ss)
+			rwc, err := ss.ref.AcceptTransport(ss)
 			if err != nil {
 				s.logger.Errorf(ss.Ctx, "accept transport error: %s", err.Error())
 				continue
@@ -187,7 +216,7 @@ func (s *Server) handleTransport(ss *serverSession, srcRwc io.ReadWriteCloser) {
 		s.logger.Errorf(ss.Ctx, "error during negotiation: %s", err.Error())
 		return
 	}
-	dstRwc, err := s.internal.GetDstTransportWriter(ss, dstSession)
+	dstRwc, err := ss.ref.GetDstTransportWriter(ss, dstSession)
 	if err != nil {
 		return
 	}
@@ -277,17 +306,17 @@ func (s *Server) proxy(ctx context.Context, name string, dst io.WriteCloser, src
 	return written, err
 }
 
-func (s *Server) handshake(ctx context.Context, sr session.SendReceiveCloser) (sess *session.Session, nwk *network.Network, err error) {
+func (s *Server) handshake(ctx context.Context, ss *serverSession) (err error) {
 	// Set a context with a 10-second timeout
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer func() {
 		cancel()
 	}()
 
-	datagram, err := sr.Receive(ctx)
+	datagram, err := ss.Receive(ctx)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			err = fmt.Errorf("timeout while waiting for authentication data: %s", sess.SessionId)
+			err = fmt.Errorf("timeout while waiting for authentication data: traceid=%v", ctx.Value("id"))
 			return
 		}
 		return
@@ -310,7 +339,7 @@ func (s *Server) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 			return
 		}
 
-		_ = sr.Send(bs)
+		_ = ss.Send(bs)
 	}()
 
 	// get network_id from request
@@ -320,13 +349,13 @@ func (s *Server) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 		return
 	}
 
-	nwk, ok = network.GetManager().GetNetwork(networkId)
+	ss.network, ok = network.GetManager().GetNetwork(networkId)
 	if !ok {
 		err = ErrResourceNotFound.WithCause(fmt.Errorf("network not found: id=%s", networkId))
 		return
 	}
 
-	dev, err := nwk.AcquireDevice(ctx, request)
+	dev, err := ss.network.AcquireDevice(ctx, request)
 	if err != nil {
 		err = ErrResourceError.WithCause(fmt.Errorf("acquire device error: %s", err.Error()))
 		return
@@ -335,31 +364,26 @@ func (s *Server) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 
 	ip, _, _ := net.ParseCIDR(dev.CIDR)
 
-	sess = &session.Session{
-		IP:        ip.To4().String(),
-		Ctx:       ctx,
-		Type:      session.Type(s.cfg.Type),
-		SessionId: uuid.New().String(),
-		NetworkId: networkId,
-		NetworkInfo: map[string]any{
-			"id":   networkId,
-			"cidr": nwk.CIDR,
-			"mtu":  nwk.MTU,
-		},
-		DispatchedDevice: session.Device{
-			Id:   dev.Id,
-			Name: dev.Name,
-			CIDR: dev.CIDR,
-			MTU:  dev.MTU,
-		},
+	ss.IP = ip.To4().String()
+	ss.NetworkId = networkId
+	ss.NetworkInfo = map[string]any{
+		"id":   networkId,
+		"cidr": ss.network.CIDR,
+		"mtu":  ss.network.MTU,
+	}
+	ss.DispatchedDevice = session.Device{
+		Id:   dev.Id,
+		Name: dev.Name,
+		CIDR: dev.CIDR,
+		MTU:  dev.MTU,
 	}
 
 	// build response
-	resp["session"] = sess
+	resp["session"] = ss.Session
 
 	// all these registration will be unregistered in acceptStreamLoop
 	// when the connection is closed (can not accept new stream)
-	s.logger.Infof(ctx, "handle connection, route=%s", sess.IP)
+	s.logger.Infof(ctx, "handle connection, route=%s", ss.IP)
 	return
 }
 
