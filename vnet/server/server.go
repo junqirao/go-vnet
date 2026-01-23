@@ -35,12 +35,12 @@ type (
 		sig      chan struct{}
 		auth     *auth.Server
 		manager  *Manager
-		sessions sync.Map // src : *session.ServerSession
+		sessions sync.Map // src : *serverSession
 	}
 	internalServer interface {
 		io.Closer
 		Run(ctx context.Context) (err error)
-		Accept(ctx context.Context) (sr session.SendReceiveCloser, conn any, err error)
+		Accept(ctx context.Context) (ss *serverSession, err error)
 		AcceptTransport(session *serverSession) (rwc io.ReadWriteCloser, err error)
 		GetDstTransportWriter(src *serverSession, dst *serverSession) (rwc io.ReadWriteCloser, err error)
 	}
@@ -94,29 +94,24 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 		}
 
 		var (
-			sr   session.SendReceiveCloser
-			conn any
+			ss *serverSession
 		)
 
 		// accept connection
-		sr, conn, err = s.internal.Accept(ctx)
+		ss, err = s.internal.Accept(ctx)
 		if err != nil {
 			s.logger.Errorf(ctx, "accept connection error: %s", err.Error())
-			return
+			continue
 		}
 
-		go s.handleSession(sr, conn)
+		go s.handleSession(ss)
 	}
 }
 
-func (s *Server) handleSession(sr session.SendReceiveCloser, conn any) {
+func (s *Server) handleSession(ss *serverSession) {
 	var (
 		err         error
 		ctx, cancel = context.WithCancel(context.Background())
-		ss          = &serverSession{
-			conn:              conn,
-			SendReceiveCloser: sr,
-		}
 	)
 
 	defer func() {
@@ -125,12 +120,14 @@ func (s *Server) handleSession(sr session.SendReceiveCloser, conn any) {
 	}()
 
 	// handshake
-	ss.Session, ss.network, err = s.handshake(ctx, sr)
+	ss.Session, ss.network, err = s.handshake(ctx, ss)
 	if err != nil {
 		s.logger.Errorf(ctx, "handshake error: %s", err.Error())
-		sr.CloseWithError(err)
+		ss.CloseWithError(err)
 		return
 	}
+	// store session
+	s.sessions.Store(ss.IP, ss)
 
 	routeAddress := fmt.Sprintf("%s/32", ss.IP)
 
@@ -160,7 +157,7 @@ func (s *Server) handleSession(sr session.SendReceiveCloser, conn any) {
 		// unregister router
 		ss.network.Router().UnRegister(routeAddress)
 		// close connection
-		sr.CloseWithError(ep)
+		ss.CloseWithError(ep)
 	}()
 
 	for {
@@ -360,8 +357,6 @@ func (s *Server) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 	// build response
 	resp["session"] = sess
 
-	// register session
-	s.sessions.Store(sess.IP, sess)
 	// all these registration will be unregistered in acceptStreamLoop
 	// when the connection is closed (can not accept new stream)
 	s.logger.Infof(ctx, "handle connection, route=%s", sess.IP)

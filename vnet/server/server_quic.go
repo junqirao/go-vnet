@@ -42,13 +42,16 @@ func (s *quicServer) Run(ctx context.Context) (err error) {
 	return
 }
 
-func (s *quicServer) Accept(ctx context.Context) (sr session.SendReceiveCloser, conn any, err error) {
+func (s *quicServer) Accept(ctx context.Context) (ss *serverSession, err error) {
 	c, err := s.listener.Accept(ctx)
 	if err != nil {
 		return
 	}
-	conn = c
-	sr = session.SendReceiverFromQuicConn(c)
+	ss = &serverSession{
+		ref:               s,
+		conn:              c,
+		SendReceiveCloser: session.SendReceiverFromQuicConn(c),
+	}
 	return
 }
 

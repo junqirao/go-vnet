@@ -13,6 +13,7 @@ type (
 	serverSession struct {
 		*session.Session
 		session.SendReceiveCloser
+		ref     internalServer
 		network *network.Network
 		conn    any
 	}
