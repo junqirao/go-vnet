@@ -66,6 +66,7 @@ func (h *Hub) HandleRx(rwc io.ReadWriteCloser, remote string) {
 	for {
 		event := h.getRxEvent()
 		typ, n, err := rw.ReadMessage((*event.packet)[:])
+		// fmt.Printf("read message: type=%d n=%d, err=%v\n", typ, n, err)
 		if errors.Is(err, protocol.ErrInvalidMagic) {
 			h.putRxEvent(event)
 			continue

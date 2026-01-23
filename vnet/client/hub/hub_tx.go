@@ -202,7 +202,8 @@ type (
 		Err error
 	}
 	TxAdaptor interface {
-		OnDialRx(ctx context.Context) (rw protocol.ReadWriter, err error)
+		Dial(ctx context.Context, dst string) (rw protocol.ReadWriter, err error)
+		CloseDst(ctx context.Context, dst string)
 		OnError(ctx context.Context, e *TxError)
 	}
 )
@@ -210,6 +211,10 @@ type (
 func (e *TxError) Error() string {
 	return fmt.Errorf("connection %s error caused: %w",
 		e.dst.id, e.Err).Error()
+}
+
+func (e *TxError) Dst() *Destination {
+	return e.dst
 }
 
 func NewDestination(ctx context.Context, ip string, a TxAdaptor, ref *Hub) *Destination {
@@ -251,7 +256,7 @@ func (c *Destination) negotiate() (err error) {
 	if c.tx != nil {
 		return
 	}
-	tx, err := c.OnDialRx(c.ctx)
+	tx, err := c.Dial(c.ctx, c.ip)
 	if err != nil {
 		return
 	}
@@ -382,6 +387,10 @@ func (c *Destination) txLoopN() {
 			}
 		}
 	}
+}
+
+func (c *Destination) Ip() string {
+	return c.ip
 }
 
 func (c *Destination) Close() error {

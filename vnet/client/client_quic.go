@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -18,8 +19,8 @@ import (
 type quicClient struct {
 	client    *Client
 	transport struct {
-		conn   *quic.Conn
-		stream *quic.Stream
+		conn    *quic.Conn
+		streams sync.Map
 	}
 }
 
@@ -55,30 +56,44 @@ func (c *quicClient) Run(ctx context.Context) (err error) {
 				c.client.logger.Errorf(ctx, "accept stream error: %v", err.Error())
 				return
 			}
+			c.client.logger.Infof(ctx, "accept stream: %v", stream.StreamID())
 			go c.client.hub.HandleRx(stream, c.transport.conn.RemoteAddr().String())
 		}
 	}()
 	return
 }
 
-func (c *quicClient) OnDialRx(ctx context.Context) (rw protocol.ReadWriter, err error) {
-	if c.transport.stream != nil {
-		return protocol.NewTransport(c.transport.stream), nil
+func (c *quicClient) Dial(ctx context.Context, dst string) (rw protocol.ReadWriter, err error) {
+	v, ok := c.transport.streams.Load(dst)
+	if ok {
+		rw = v.(protocol.ReadWriter)
+		return
 	}
 	stream, err := c.transport.conn.OpenStreamSync(ctx)
 	if err != nil {
 		return
 	}
-	c.transport.stream = stream
-	return protocol.NewTransport(stream), nil
+	rw = protocol.NewTransport(stream)
+	c.transport.streams.Store(dst, rw)
+	return
+}
+
+func (c *quicClient) CloseDst(ctx context.Context, dst string) {
+	v, ok := c.transport.streams.LoadAndDelete(dst)
+	if ok {
+		if rw, ok := v.(protocol.ReadWriter); ok {
+			if stream, ok := rw.Upstream().(*quic.Stream); ok {
+				id := stream.StreamID()
+				_ = stream.Close()
+				c.client.logger.Infof(ctx, "close stream: %v->%s", id, dst)
+			}
+		}
+	}
 }
 
 func (c *quicClient) OnError(ctx context.Context, e *hub.TxError) {
 	c.client.logger.Error(ctx, e.Error())
-	if c.transport.stream != nil {
-		_ = c.transport.stream.Close()
-		c.transport.stream = nil
-	}
+	c.CloseDst(ctx, e.Dst().Ip())
 }
 
 func (c *quicClient) Handshake(ctx context.Context, payload map[string]any) (sess *session.Session, sr session.SendReceiveCloser, err error) {

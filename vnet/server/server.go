@@ -187,6 +187,7 @@ func (s *Server) handleSession(ss *serverSession) {
 		ss.network.Router().UnRegister(routeAddress)
 		// close connection
 		ss.CloseWithError(ep)
+		s.logger.Infof(ss.Ctx, "%s session closed: %s", ss.IP, ss.SessionId)
 	}()
 
 	for {
@@ -201,7 +202,7 @@ func (s *Server) handleSession(ss *serverSession) {
 			rwc, err := ss.ref.AcceptTransport(ss)
 			if err != nil {
 				s.logger.Errorf(ss.Ctx, "accept transport error: %s", err.Error())
-				continue
+				return
 			}
 			go s.handleTransport(ss, rwc)
 		}

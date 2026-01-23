@@ -78,10 +78,10 @@ func (s *quicServer) GetDstTransportWriter(src *serverSession, dst *serverSessio
 
 	dstStream, err := conn.OpenStreamSync(src.Ctx)
 	if err != nil {
-		s.logger.Errorf(src.Ctx, "open stream error: dst=%v", dst)
+		s.logger.Errorf(src.Ctx, "open stream error: dst=%v", dst.SessionId)
 		return
 	}
-	s.logger.Infof(src.Ctx, "open stream success: dst=%v id=%d", dst, dstStream.StreamID().StreamNum())
+	s.logger.Infof(src.Ctx, "open stream success: dst=%v id=%d", dst.SessionId, dstStream.StreamID().StreamNum())
 	rwc = dstStream
 	return
 }
