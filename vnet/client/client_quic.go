@@ -112,3 +112,7 @@ func (c *quicClient) Handshake(ctx context.Context, payload map[string]any) (ses
 	c.client.logger.Infof(ctx, "handshake success: id=%v,ip=%v", sess.SessionId, sess.IP)
 	return
 }
+
+func (c *quicClient) Close() (err error) {
+	return c.transport.conn.CloseWithError(1, "exit")
+}

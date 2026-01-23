@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"strings"
 	"time"
 
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
+	"go-vnet/common/grace"
 	"go-vnet/common/logger"
 	"go-vnet/common/session"
 	"go-vnet/vnet/client/hub"
@@ -28,6 +30,7 @@ type (
 		sig      chan struct{}
 	}
 	internal interface {
+		io.Closer
 		hub.TxAdaptor
 		Handshake(ctx context.Context, payload map[string]any) (sess *session.Session, sr session.SendReceiveCloser, err error)
 		Run(ctx context.Context) (err error)
@@ -47,10 +50,7 @@ func NewClient(cfg *Config) *Client {
 	}
 }
 
-func (c *Client) Run() {
-	// init
-	ctx := context.Background()
-
+func (c *Client) Run(ctx context.Context) {
 	switch c.cfg.Type {
 	case TypeQuic:
 		c.internal = newQuicClient(c)
@@ -93,11 +93,18 @@ func (c *Client) Run() {
 
 	// setup hub
 	c.hub = hub.NewHub(hub.Config{
-		Name:          "test",
+		Name:          sess.SessionId,
 		MTU:           sess.DispatchedDevice.MTU,
 		MaxRxEventBuf: 1024,
 		MaxTxEventBuf: 1024,
 	}, dev)
+
+	// register grace exit
+	grace.Register(ctx, "CloseAndRelease", func() {
+		_ = dev.Close()
+		_ = c.internal.Close()
+	})
+
 	c.hub.Start()
 }
 
