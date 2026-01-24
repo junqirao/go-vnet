@@ -100,7 +100,7 @@ func (c *Client) Run() {
 func handleRxBatch(rx *quic.Stream, dev tun.LinuxTUN) {
 	rw := protocol.NewTransport(rx)
 	p := protocol2.NewPacketEventProcessor(rw)
-	batch := protocol.MaxTransportBatchSize
+	batch := 46
 	headerSize := dev.FrontHeadroom()
 
 	var (
