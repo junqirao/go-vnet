@@ -94,6 +94,9 @@ func (s *Server) serve(ctx context.Context, cfg *TransportConfig) (err error) {
 	case TypeQuic:
 		internal = newQuicServer(s)
 		s.internals.Store(cfg.Name, internal)
+	case TypeTCP:
+		internal = newTcpServer(s)
+		s.internals.Store(cfg.Name, internal)
 	default:
 		err = fmt.Errorf("invalid server type: %s", cfg.Type)
 		return

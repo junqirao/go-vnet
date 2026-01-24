@@ -41,12 +41,22 @@ func main() {
 			return nil
 		}),
 	)
-	cfg.Servers = append(cfg.Servers, &server.TransportConfig{
-		MappedConfig: config.NewMappedConfig(),
-		Port:         9800,
-		Address:      "0.0.0.0",
-		Type:         server.TypeQuic,
-	})
+	cfg.Servers = append(cfg.Servers,
+		&server.TransportConfig{
+			MappedConfig: config.NewMappedConfig(),
+			Name:         "quic_test",
+			Port:         9800,
+			Address:      "0.0.0.0",
+			Type:         server.TypeQuic,
+		},
+		&server.TransportConfig{
+			MappedConfig: config.NewMappedConfig(),
+			Name:         "tcp_test",
+			Port:         9801,
+			Address:      "0.0.0.0",
+			Type:         server.TypeTCP,
+		},
+	)
 	s := server.NewServer(cfg)
 	err = s.Serve(context.Background())
 	if err != nil {

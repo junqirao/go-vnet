@@ -22,6 +22,7 @@ var (
 
 const (
 	TypeQuic Type = "quic"
+	TypeTCP  Type = "tcp"
 )
 
 type (
