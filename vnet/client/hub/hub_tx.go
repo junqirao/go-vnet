@@ -41,6 +41,7 @@ func (h *Hub) txLoop() {
 		routes       = make([]routeInfo, h.cfg.BatchSize)
 		packetSlices = make([][]byte, h.cfg.BatchSize)
 		targets      = make([]any, h.cfg.BatchSize)
+		e            *txEvent
 	)
 
 	// Destination batch cache: map dst -> event and dst for final send
@@ -50,7 +51,12 @@ func (h *Hub) txLoop() {
 	}
 	dstBatches := make(map[string]*dstBatch)
 
-	for e := range h.txEventChan {
+	for {
+		select {
+		case <-h.sig:
+			return
+		case e = <-h.txEventChan:
+		}
 		n := e.N
 		validRoutes := 0
 		// 准备批量路由的数据包切片（避免循环内重复计算偏移）

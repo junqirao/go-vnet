@@ -26,28 +26,30 @@ type (
 		sig chan struct{}
 	}
 	quicRxHook struct {
-		ctx    context.Context
-		c      *quicClient
-		stream *quic.Stream
+		ctx      context.Context
+		c        *quicClient
+		remote   string
+		streamId quic.StreamID
 	}
 )
 
 func newQuicRxHook(ctx context.Context, c *quicClient, stream *quic.Stream) hub.RxHook {
 	return &quicRxHook{
-		ctx:    ctx,
-		c:      c,
-		stream: stream,
+		ctx:      ctx,
+		c:        c,
+		remote:   c.transport.conn.RemoteAddr().String(),
+		streamId: stream.StreamID(),
 	}
 }
 
 func (q *quicRxHook) OnStart() {
 	q.c.client.logger.Infof(q.ctx, "[RX] quic accept stream: id=%v,from=%v",
-		q.stream.StreamID(), q.c.transport.conn.RemoteAddr().String())
+		q.streamId, q.remote)
 }
 
 func (q *quicRxHook) OnClose(err error) {
 	q.c.client.logger.Infof(q.ctx, "[RX] quic close stream: id=%v,from=%v,err=%v",
-		q.stream.StreamID(), q.c.transport.conn.RemoteAddr().String(), err)
+		q.streamId, q.remote, err)
 }
 
 func newQuicClient(client *Client) *quicClient {
@@ -169,5 +171,14 @@ func (c *quicClient) Close() (err error) {
 		err = c.transport.conn.CloseWithError(quic.ApplicationErrorCode(0), "exit")
 		c.transport.conn = nil
 	}
+	c.transport.streams.Range(func(key, value any) bool {
+		if stream, ok := value.(protocol.ReadWriter); ok {
+			if quicStream, ok := stream.Upstream().(*quic.Stream); ok {
+				_ = quicStream.Close()
+			}
+		}
+		return true
+	})
+	c.transport.streams.Clear()
 	return
 }
