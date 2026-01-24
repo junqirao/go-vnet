@@ -12,7 +12,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"go-vnet/common/grace"
 	"go-vnet/vnet/client"
 )
 
@@ -39,10 +38,7 @@ func main() {
 	ctx := context.Background()
 
 	// run
-	go c.Run(ctx)
-
-	// grace exit
-	grace.GracefulExit(ctx)
+	c.Run(ctx)
 }
 
 // loadConfigFromFile load config from file

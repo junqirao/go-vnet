@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
+	"runtime"
 	"strings"
 	"time"
 
@@ -21,13 +22,19 @@ import (
 )
 
 const (
-	ReconnectInterval   = time.Second * 10
-	SyncRouterInterval  = time.Second * 5
-	MaxErrorToReconnect = 3
+	MaxReconnectInterval = 30
+	SyncRouterInterval   = time.Second * 5
+	MaxErrorToReconnect  = 3
+)
+
+const (
+	StateRunning      State = 1
+	StateReconnecting State = 2
 )
 
 type (
 	Client struct {
+		state    State
 		hub      *hub.Hub
 		ctx      context.Context
 		cfg      *Config
@@ -48,6 +55,7 @@ type (
 	handshakeResponse struct {
 		Session *session.Session `json:"session"`
 	}
+	State uint8
 )
 
 func NewClient(cfg *Config) *Client {
@@ -61,16 +69,32 @@ func NewClient(cfg *Config) *Client {
 }
 
 func (c *Client) Run(ctx context.Context) {
+	if err := c.run(ctx); err != nil {
+		c.logger.Errorf(ctx, "run client error: %v", err.Error())
+		return
+	}
+
+	// register grace exit
+	grace.Register(ctx, "CloseAndRelease", c.ReleaseAll)
+	// grace exit
+	grace.GracefulExit(ctx)
+}
+
+func (c *Client) run(ctx context.Context) (err error) {
+	// set context
+	c.ctx = ctx
+
+	// init internal client
 	switch c.cfg.Type {
 	case TypeQuic:
 		c.internal = newQuicClient(c)
 	default:
-		c.logger.Errorf(ctx, "unsupported client type: %s", c.cfg.Type)
+		err = fmt.Errorf("unsupported client type: %s", c.cfg.Type)
 		return
 	}
 
 	// run internal client
-	if err := c.internal.Setup(ctx); err != nil {
+	if err = c.internal.Setup(ctx); err != nil {
 		c.logger.Errorf(ctx, "run %s client error: %v", c.cfg.Type, err.Error())
 		return
 	}
@@ -84,23 +108,12 @@ func (c *Client) Run(ctx context.Context) {
 	c.session = sess
 
 	// setup tun device
-	dev, err := c.setupDevice(ctx, sess)
-	if err != nil {
+	if c.dev, err = c.setupDevice(ctx, sess); err != nil {
 		return
 	}
-	defer func() {
-		if dev != nil {
-			_ = dev.Close()
-		}
-	}()
-	c.dev = dev
 
-	// start sync router loop delay
+	// create manager for control connection
 	c.manager = NewManager(sess, sr)
-	go func() {
-		time.Sleep(time.Millisecond * 500)
-		c.syncRouterLoop()
-	}()
 
 	// setup hub
 	c.hub = hub.NewHub(hub.Config{
@@ -108,12 +121,17 @@ func (c *Client) Run(ctx context.Context) {
 		MTU:           sess.DispatchedDevice.MTU,
 		MaxRxEventBuf: 1024,
 		MaxTxEventBuf: 1024,
-	}, dev)
+	}, c.dev)
 
-	// register grace exit
-	grace.Register(ctx, "CloseAndRelease", c.ReleaseAll)
+	// start sync router loop delay
+	go func() {
+		time.Sleep(time.Millisecond * 500)
+		c.syncRouterLoop()
+	}()
 
-	c.hub.Start()
+	// start hub
+	go c.hub.Start()
+	return
 }
 
 func (c *Client) handshake(ctx context.Context) (session *session.Session, sr session.SendReceiveCloser, err error) {
@@ -208,6 +226,8 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 }
 
 func (c *Client) syncRouterLoop() {
+	c.state = StateRunning
+
 	c.logger.Infof(c.ctx, "sync router loop started")
 	defer c.logger.Infof(c.ctx, "sync router loop stopped")
 
@@ -247,15 +267,29 @@ func (c *Client) syncRouterLoop() {
 }
 
 func (c *Client) reconnectLoop() {
+	c.state = StateReconnecting
 	var (
-		tries = 0
+		tries    = 0
+		interval = 1
 	)
 
+	// 预计算的斐波那契数列（避免递归重复计算）
+	fib := func(n int) int {
+		if n <= 0 {
+			return 1
+		}
+		a, b := 1, 1
+		for i := 2; i <= n; i++ {
+			a, b = b, a+b
+		}
+		return b
+	}
+
 	for {
-		c.logger.Infof(c.ctx, "trying to reconnect: %d, in %d seconds", tries+1, int(ReconnectInterval.Seconds()))
+		c.logger.Infof(c.ctx, "trying to reconnect in %d seconds, tries: %d", interval, tries+1)
 
 		// delay before reconnect to avoid busy loop
-		time.Sleep(ReconnectInterval)
+		time.Sleep(time.Duration(interval) * time.Second)
 
 		// reconnect
 		err := c.Reconnect()
@@ -266,13 +300,17 @@ func (c *Client) reconnectLoop() {
 
 		c.logger.Errorf(c.ctx, "failed to reconnect: %s", err.Error())
 		tries++
+		interval = fib(tries + 1)
+		if interval > MaxReconnectInterval {
+			interval = MaxReconnectInterval
+		}
 	}
 }
 
 func (c *Client) Reconnect() (err error) {
 	c.logger.Infof(c.ctx, "reconnecting...")
 	c.ReleaseAll()
-	return errors.New("not implemented")
+	return c.run(context.Background())
 }
 
 func (c *Client) ReleaseAll() {
@@ -293,4 +331,9 @@ func (c *Client) ReleaseAll() {
 		_ = c.dev.Close()
 		c.dev = nil
 	}
+	c.manager = nil
+	c.session = nil
+	c.ctx = nil
+	// force GC
+	runtime.GC()
 }
