@@ -10,6 +10,18 @@ import (
 	"go-vnet/common/protocol"
 )
 
+type (
+	RxHook interface {
+		OnStart()
+		OnClose(err error)
+	}
+	noopRxHook struct{}
+)
+
+func (n noopRxHook) OnStart() {}
+
+func (n noopRxHook) OnClose(err error) {}
+
 func (h *Hub) rxLoop() {
 	switch runtime.GOOS {
 	case "linux":
@@ -50,45 +62,81 @@ func (h *Hub) writeDevice() {
 	}
 }
 
-func (h *Hub) HandleRx(rwc io.ReadWriteCloser, remote string) {
-	defer func() {
-		h.Infof("rx from closed: %s", remote)
-		_ = rwc.Close()
-	}()
-	h.Infof("rx from started %s", remote)
-
+func (h *Hub) HandleRx(rwc io.ReadWriteCloser, hook ...RxHook) (cancel func()) {
 	var (
-		rw     = protocol.NewTransport(rwc)
-		offset = h.cfg.HeaderSize
-		nn     int
+		sig = make(chan struct{})
 	)
 
-	for {
-		event := h.getRxEvent()
-		typ, n, err := rw.ReadMessage((*event.packet)[:])
-		// fmt.Printf("read message: type=%d n=%d, err=%v\n", typ, n, err)
-		if errors.Is(err, protocol.ErrInvalidMagic) {
-			h.putRxEvent(event)
-			continue
+	cancel = func() {
+		select {
+		case _, ok := <-sig:
+			if !ok {
+				return
+			}
+		default:
 		}
-		if err != nil {
-			h.putRxEvent(event)
-			return
+		close(sig)
+	}
+
+	go func() {
+		var (
+			rw     = protocol.NewTransport(rwc)
+			offset = h.cfg.HeaderSize
+			nn     int
+			err    error
+			typ    byte
+			n      int
+			ho     RxHook
+		)
+		if len(hook) > 0 {
+			ho = hook[0]
+		} else {
+			ho = &noopRxHook{}
 		}
-		switch typ {
-		case protocol.TypeTransport:
-			event.n = 1
-			event.sizes[0] = n
-			copy(event.buf[0][offset:offset+n], (*event.packet)[:n])
-			h.rxEventChan <- event
-		case protocol.TypeBatchTransport:
-			nn, err = rw.ParseBatch((*event.packet)[:n], event.buf, event.sizes, offset)
+
+		ho.OnStart()
+		defer func() {
+			_ = rwc.Close()
+			cancel()
+			ho.OnClose(err)
+		}()
+
+		for {
+			select {
+			case <-h.sig:
+				return
+			case <-sig:
+				return
+			default:
+			}
+
+			event := h.getRxEvent()
+			typ, n, err = rw.ReadMessage((*event.packet)[:])
+			// fmt.Printf("read message: type=%d n=%d, err=%v\n", typ, n, err)
+			if errors.Is(err, protocol.ErrInvalidMagic) {
+				h.putRxEvent(event)
+				continue
+			}
 			if err != nil {
 				h.putRxEvent(event)
 				return
 			}
-			event.n = nn
-			h.rxEventChan <- event
+			switch typ {
+			case protocol.TypeTransport:
+				event.n = 1
+				event.sizes[0] = n
+				copy(event.buf[0][offset:offset+n], (*event.packet)[:n])
+				h.rxEventChan <- event
+			case protocol.TypeBatchTransport:
+				nn, err = rw.ParseBatch((*event.packet)[:n], event.buf, event.sizes, offset)
+				if err != nil {
+					h.putRxEvent(event)
+					return
+				}
+				event.n = nn
+				h.rxEventChan <- event
+			}
 		}
-	}
+	}()
+	return
 }

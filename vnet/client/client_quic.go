@@ -16,12 +16,38 @@ import (
 	"go-vnet/vnet/client/hub"
 )
 
-type quicClient struct {
-	client    *Client
-	transport struct {
-		conn    *quic.Conn
-		streams sync.Map
+type (
+	quicClient struct {
+		client    *Client
+		transport struct {
+			conn    *quic.Conn
+			streams sync.Map
+		}
+		sig chan struct{}
 	}
+	quicRxHook struct {
+		ctx    context.Context
+		c      *quicClient
+		stream *quic.Stream
+	}
+)
+
+func newQuicRxHook(ctx context.Context, c *quicClient, stream *quic.Stream) hub.RxHook {
+	return &quicRxHook{
+		ctx:    ctx,
+		c:      c,
+		stream: stream,
+	}
+}
+
+func (q *quicRxHook) OnStart() {
+	q.c.client.logger.Infof(q.ctx, "[RX] quic accept stream: id=%v,from=%v",
+		q.stream.StreamID(), q.c.transport.conn.RemoteAddr().String())
+}
+
+func (q *quicRxHook) OnClose(err error) {
+	q.c.client.logger.Infof(q.ctx, "[RX] quic close stream: id=%v,from=%v,err=%v",
+		q.stream.StreamID(), q.c.transport.conn.RemoteAddr().String(), err)
 }
 
 func newQuicClient(client *Client) *quicClient {
@@ -30,7 +56,8 @@ func newQuicClient(client *Client) *quicClient {
 	}
 }
 
-func (c *quicClient) Run(ctx context.Context) (err error) {
+func (c *quicClient) Setup(ctx context.Context) (err error) {
+	c.sig = make(chan struct{})
 	// extra configs
 	tlsConfig := config.GetMappedConfig[*tls.Config](c.client.cfg, ConfigKeyTLS,
 		// generate if not set
@@ -49,18 +76,32 @@ func (c *quicClient) Run(ctx context.Context) (err error) {
 		return
 	}
 
-	go func() {
-		for {
-			stream, err := c.transport.conn.AcceptStream(ctx)
-			if err != nil {
-				c.client.logger.Errorf(ctx, "accept stream error: %v", err.Error())
-				return
-			}
-			c.client.logger.Infof(ctx, "accept stream: %v", stream.StreamID())
-			go c.client.hub.HandleRx(stream, c.transport.conn.RemoteAddr().String())
+	go c.rxLoop(ctx)
+	return
+}
+
+func (c *quicClient) rxLoop(ctx context.Context) {
+	var cancels []func()
+	defer func() {
+		for _, cancel := range cancels {
+			cancel()
 		}
 	}()
-	return
+
+	for {
+		select {
+		case <-c.sig:
+			return
+		default:
+		}
+		stream, err := c.transport.conn.AcceptStream(ctx)
+		if err != nil {
+			c.client.logger.Errorf(ctx, "accept stream error: %v", err.Error())
+			return
+		}
+		hook := newQuicRxHook(ctx, c, stream)
+		cancels = append(cancels, c.client.hub.HandleRx(stream, hook))
+	}
 }
 
 func (c *quicClient) Dial(ctx context.Context, dst string) (rw protocol.ReadWriter, err error) {
@@ -75,6 +116,7 @@ func (c *quicClient) Dial(ctx context.Context, dst string) (rw protocol.ReadWrit
 	}
 	rw = protocol.NewTransport(stream)
 	c.transport.streams.Store(dst, rw)
+	c.client.logger.Infof(ctx, "[TX] open stream: id=%v,dst=%s", stream.StreamID(), dst)
 	return
 }
 
@@ -85,7 +127,7 @@ func (c *quicClient) CloseDst(ctx context.Context, dst string) {
 			if stream, ok := rw.Upstream().(*quic.Stream); ok {
 				id := stream.StreamID()
 				_ = stream.Close()
-				c.client.logger.Infof(ctx, "close stream: %v->%s", id, dst)
+				c.client.logger.Infof(ctx, "[TX] close stream: id=%v,dst=%s", id, dst)
 			}
 		}
 	}
@@ -114,5 +156,18 @@ func (c *quicClient) Handshake(ctx context.Context, payload map[string]any) (ses
 }
 
 func (c *quicClient) Close() (err error) {
-	return c.transport.conn.CloseWithError(1, "exit")
+	select {
+	case _, ok := <-c.sig:
+		if ok {
+			close(c.sig)
+		}
+		return
+	default:
+
+	}
+	if c.transport.conn != nil {
+		err = c.transport.conn.CloseWithError(quic.ApplicationErrorCode(0), "exit")
+		c.transport.conn = nil
+	}
+	return
 }

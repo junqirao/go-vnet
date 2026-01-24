@@ -245,9 +245,6 @@ func (c *Destination) PushTxEvent(e *txEvent) (err error) {
 			return
 		}
 	}
-	// for i := 0; i < e.N; i++ {
-	// 	fmt.Printf("tx[%d/%d]->%v\n", i+1, e.N, e.Buffer[i][:e.Sizes[i]])
-	// }
 	c.txEventChan <- e
 	return
 }
@@ -261,7 +258,7 @@ func (c *Destination) negotiate() (err error) {
 		return
 	}
 	ups := tx.Upstream()
-	c.ref.logger.Infof(c.ctx, "send negotiate packet: %s", c.ip)
+	c.ref.logger.Infof(c.ctx, "[TX] send negotiate packet: %s", c.ip)
 	_, err = ups.Write([]byte(c.ip))
 	if err != nil {
 		return
@@ -271,10 +268,10 @@ func (c *Destination) negotiate() (err error) {
 		return
 	}
 	if buf[0] != 1 {
-		c.ref.logger.Infof(c.ctx, "negotiate failed: %d", buf[0])
+		c.ref.logger.Infof(c.ctx, "[TX] negotiate failed: %d", buf[0])
 		return fmt.Errorf("negotiate failed: %d", buf[0])
 	}
-	c.ref.logger.Infof(c.ctx, "negotiate success")
+	c.ref.logger.Infof(c.ctx, "[TX] negotiate success")
 	c.tx = tx
 	return
 }
@@ -286,6 +283,11 @@ func (c *Destination) txLoop() {
 		sizes = make([]int, c.ref.cfg.MaxTxEventBuf)
 		err   error
 	)
+
+	defer func() {
+		c.ref.logger.Infof(c.ctx, "[TX] txLoop exit: dst=%s,err=%v", c.ip, err)
+	}()
+	c.ref.logger.Infof(c.ctx, "[TX] txLoop start: dst=%s", c.ip)
 
 	for {
 		select {
@@ -330,6 +332,11 @@ func (c *Destination) txLoopN() {
 		err            error
 	)
 	maxBuf := c.ref.cfg.MaxTxEventBuf
+
+	defer func() {
+		c.ref.logger.Infof(c.ctx, "[TX] txLoopN exit: dst=%s,err=%v", c.ip, err)
+	}()
+	c.ref.logger.Infof(c.ctx, "[TX] txLoopN start: dst=%s", c.ip)
 
 	for {
 		select {

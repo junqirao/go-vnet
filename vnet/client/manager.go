@@ -35,6 +35,13 @@ func (manager *Manager) CallFunc(ctx context.Context, name string, args ...map[s
 		}
 	}()
 
+	// Create timeout context if not already set
+	var cancel context.CancelFunc
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		ctx, cancel = context.WithTimeout(ctx, time.Second*3)
+		defer cancel()
+	}
+
 	request := server.FuncCallRequest{
 		FuncName: name,
 	}

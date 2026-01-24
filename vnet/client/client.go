@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"time"
+
+	tun "github.com/sagernet/sing-tun"
 
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
@@ -15,6 +18,12 @@ import (
 	"go-vnet/common/session"
 	"go-vnet/vnet/client/hub"
 	"go-vnet/vnet/server"
+)
+
+const (
+	ReconnectInterval   = time.Second * 10
+	SyncRouterInterval  = time.Second * 5
+	MaxErrorToReconnect = 3
 )
 
 type (
@@ -28,12 +37,13 @@ type (
 		manager  *Manager
 		session  *session.Session
 		sig      chan struct{}
+		dev      tun.Tun
 	}
 	internal interface {
 		io.Closer
 		hub.TxAdaptor
 		Handshake(ctx context.Context, payload map[string]any) (sess *session.Session, sr session.SendReceiveCloser, err error)
-		Run(ctx context.Context) (err error)
+		Setup(ctx context.Context) (err error)
 	}
 	handshakeResponse struct {
 		Session *session.Session `json:"session"`
@@ -60,7 +70,7 @@ func (c *Client) Run(ctx context.Context) {
 	}
 
 	// run internal client
-	if err := c.internal.Run(ctx); err != nil {
+	if err := c.internal.Setup(ctx); err != nil {
 		c.logger.Errorf(ctx, "run %s client error: %v", c.cfg.Type, err.Error())
 		return
 	}
@@ -83,6 +93,7 @@ func (c *Client) Run(ctx context.Context) {
 			_ = dev.Close()
 		}
 	}()
+	c.dev = dev
 
 	// start sync router loop delay
 	c.manager = NewManager(sess, sr)
@@ -100,10 +111,7 @@ func (c *Client) Run(ctx context.Context) {
 	}, dev)
 
 	// register grace exit
-	grace.Register(ctx, "CloseAndRelease", func() {
-		_ = dev.Close()
-		_ = c.internal.Close()
-	})
+	grace.Register(ctx, "CloseAndRelease", c.ReleaseAll)
 
 	c.hub.Start()
 }
@@ -201,23 +209,88 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 
 func (c *Client) syncRouterLoop() {
 	c.logger.Infof(c.ctx, "sync router loop started")
+	defer c.logger.Infof(c.ctx, "sync router loop stopped")
+
+	ticker := time.NewTicker(SyncRouterInterval)
+	defer ticker.Stop()
+
+	errCount := 0
+
+	// sync router once
+	_ = c.syncRouter(c.ctx)
+
 	for {
 		select {
 		case <-c.sig:
-			c.logger.Infof(c.ctx, "manager connection closed.")
+			c.logger.Infof(c.ctx, "received shutdown signal")
 			return
 		case <-c.ctx.Done():
-			c.logger.Infof(c.ctx, "manager connection closed.")
+			c.logger.Infof(c.ctx, "context cancelled")
 			return
-		default:
+		case <-ticker.C:
+			// sync router with client context instead of Background
+			if err := c.syncRouter(c.ctx); err != nil {
+				c.logger.Errorf(c.ctx, "failed to sync router: %s", err.Error())
+				errCount++
+				if errCount >= MaxErrorToReconnect {
+					ticker.Stop()
+					c.logger.Infof(c.ctx, "max errors reached (%d), attempting reconnect", errCount)
+					go c.reconnectLoop()
+					return
+				}
+			} else {
+				// reset error count on success
+				errCount = 0
+			}
+		}
+	}
+}
+
+func (c *Client) reconnectLoop() {
+	var (
+		tries = 0
+	)
+
+	for {
+		c.logger.Infof(c.ctx, "trying to reconnect: %d, in %d seconds", tries+1, int(ReconnectInterval.Seconds()))
+
+		// delay before reconnect to avoid busy loop
+		time.Sleep(ReconnectInterval)
+
+		// reconnect
+		err := c.Reconnect()
+		if err == nil {
+			c.logger.Infof(c.ctx, "reconnected successfully")
+			return
 		}
 
-		// sync router
-		if err := c.syncRouter(context.Background()); err != nil {
-			c.logger.Errorf(c.ctx, "failed to sync router: %s", err.Error())
-		}
+		c.logger.Errorf(c.ctx, "failed to reconnect: %s", err.Error())
+		tries++
+	}
+}
 
-		// sleep interval
-		time.Sleep(time.Second * 5)
+func (c *Client) Reconnect() (err error) {
+	c.logger.Infof(c.ctx, "reconnecting...")
+	c.ReleaseAll()
+	return errors.New("not implemented")
+}
+
+func (c *Client) ReleaseAll() {
+	if c.hub != nil {
+		c.hub.Stop("client release all")
+		c.hub.Router().Range(func(key string, value any) {
+			if dst, ok := value.(*hub.Destination); ok {
+				_ = dst.Close()
+			}
+		})
+		c.hub = nil
+	}
+	if c.internal != nil {
+		_ = c.internal.Close()
+		c.internal = nil
+	}
+	if c.dev != nil {
+		_ = c.dev.Close()
+		c.dev = nil
 	}
 }
