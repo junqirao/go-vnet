@@ -249,7 +249,7 @@ func (s *Server) handleTransport(ss *serverSession, srcRwc io.ReadWriteCloser) {
 		s.logger.Errorf(ss.Ctx, "error during negotiation: %s", err.Error())
 		return
 	}
-	dstRwc, err := ss.ref.GetDstTransportWriter(ss, dstSession)
+	dstRwc, err := dstSession.ref.GetDstTransportWriter(ss, dstSession)
 	if err != nil {
 		return
 	}
