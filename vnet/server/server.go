@@ -62,9 +62,9 @@ func NewServer(cfg *Config) *Server {
 }
 
 func (s *Server) Serve(ctx context.Context) (err error) {
-	go func() {
-		_ = s.manager.ProcessFuncCallLoop(ctx)
-	}()
+	// go func() {
+	// 	_ = s.manager.ProcessFuncCallLoop(ctx)
+	// }()
 	defer func() {
 		_ = s.manager.Close()
 	}()
@@ -264,7 +264,7 @@ func (s *Server) handleFuncCallLoop(ss *serverSession) {
 			if err != nil {
 				return
 			}
-			s.manager.PushEvent(ss, datagram)
+			_ = s.manager.HandleEvent(ss.Ctx, ss, datagram)
 		}
 	}
 }

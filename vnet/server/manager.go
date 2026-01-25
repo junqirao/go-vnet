@@ -38,32 +38,18 @@ func NewManager() *Manager {
 	return m
 }
 
-func (manager *Manager) ProcessFuncCallLoop(ctx context.Context) (err error) {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-manager.sig:
-			return
-		case ev := <-manager.events:
-			var (
-				req  FuncCallRequest
-				resp *FuncCallResponse
-			)
-
-			err = json.Unmarshal(ev.Data, &req)
-			if err != nil {
-				return
-			}
-			resp, err = manager.handleFuncCall(ctx, ev.Session, &req)
-			if err != nil {
-				return
-			}
-			respBytes, _ := json.Marshal(resp)
-			_ = ev.Session.Send(respBytes)
-		}
-	}
-}
+// func (manager *Manager) ProcessFuncCallLoop(ctx context.Context) (err error) {
+// 	for {
+// 		select {
+// 		case <-ctx.Done():
+// 			return ctx.Err()
+// 		case <-manager.sig:
+// 			return
+// 		case ev := <-manager.events:
+// 			_ = manager.HandleEvent(ctx, ev.Session, ev.Data)
+// 		}
+// 	}
+// }
 
 func (manager *Manager) Close() error {
 	close(manager.sig)
@@ -88,9 +74,27 @@ func (manager *Manager) handleFuncCall(_ context.Context, session *serverSession
 	return &FuncCallResponse{Code: -1, Message: "unknown func name"}, nil
 }
 
-func (manager *Manager) PushEvent(session *serverSession, data []byte) {
-	manager.events <- &FuncCallEvent{
-		Session: session,
-		Data:    data,
+// func (manager *Manager) HandleEventAsync(session *serverSession, data []byte) {
+// 	manager.events <- &FuncCallEvent{
+// 		Session: session,
+// 		Data:    data,
+// 	}
+// }
+
+func (manager *Manager) HandleEvent(ctx context.Context, session *serverSession, data []byte) (err error) {
+	var (
+		req  FuncCallRequest
+		resp *FuncCallResponse
+	)
+
+	err = json.Unmarshal(data, &req)
+	if err != nil {
+		return
 	}
+	resp, err = manager.handleFuncCall(ctx, session, &req)
+	if err != nil {
+		return
+	}
+	respBytes, _ := json.Marshal(resp)
+	return session.Send(respBytes)
 }
