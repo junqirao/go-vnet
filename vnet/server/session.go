@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/quic-go/quic-go"
 
@@ -17,8 +18,17 @@ type (
 		cfg     *TransportConfig
 		network *network.Network
 		conn    any
+		storage sync.Map
 	}
 )
+
+func newServerSession(sr session.SendReceiveCloser, conn any) *serverSession {
+	return &serverSession{
+		SendReceiveCloser: sr,
+		conn:              conn,
+		storage:           sync.Map{},
+	}
+}
 
 func (s *serverSession) QuicConn() (c *quic.Conn, err error) {
 	if s.Type != session.TypeQuic {

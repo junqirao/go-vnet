@@ -58,7 +58,7 @@ func newQuicClient(client *Client) *quicClient {
 	}
 }
 
-func (c *quicClient) Setup(ctx context.Context) (err error) {
+func (c *quicClient) Setup(ctx context.Context) (control session.SendReceiveCloser, err error) {
 	c.sig = make(chan struct{})
 	// extra configs
 	tlsConfig := config.GetMappedConfig[*tls.Config](c.client.cfg, ConfigKeyTLS,
@@ -78,6 +78,7 @@ func (c *quicClient) Setup(ctx context.Context) (err error) {
 		return
 	}
 
+	control = session.SendReceiverFromQuicConn(c.transport.conn)
 	go c.rxLoop(ctx)
 	return
 }
@@ -140,23 +141,6 @@ func (c *quicClient) OnError(ctx context.Context, e *hub.TxError) {
 	c.CloseDst(ctx, e.Dst().Ip())
 }
 
-func (c *quicClient) Handshake(ctx context.Context, payload map[string]any) (sess *session.Session, sr session.SendReceiveCloser, err error) {
-	resp := &handshakeResponse{}
-	err = c.client.auth.AuthPtr(ctx, payload,
-		func(ctx context.Context, in []byte) (out []byte, err error) {
-			if err = c.transport.conn.SendDatagram(in); err != nil {
-				return
-			}
-			return c.transport.conn.ReceiveDatagram(ctx)
-		},
-		resp,
-	)
-	sess = resp.Session
-	sr = session.SendReceiverFromQuicConn(c.transport.conn)
-	c.client.logger.Infof(ctx, "handshake success: id=%v,ip=%v", sess.SessionId, sess.IP)
-	return
-}
-
 func (c *quicClient) Close() (err error) {
 	select {
 	case _, ok := <-c.sig:
@@ -180,5 +164,10 @@ func (c *quicClient) Close() (err error) {
 		return true
 	})
 	c.transport.streams.Clear()
+	return
+}
+
+func (c *quicClient) AfterHandshake(ctx context.Context, session *session.Session) {
+	// do nothing
 	return
 }

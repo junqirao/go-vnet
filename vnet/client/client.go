@@ -49,8 +49,8 @@ type (
 	internal interface {
 		io.Closer
 		hub.TxAdaptor
-		Handshake(ctx context.Context, payload map[string]any) (sess *session.Session, sr session.SendReceiveCloser, err error)
-		Setup(ctx context.Context) (err error)
+		Setup(ctx context.Context) (control session.SendReceiveCloser, err error)
+		AfterHandshake(ctx context.Context, session *session.Session)
 	}
 	handshakeResponse struct {
 		Session *session.Session `json:"session"`
@@ -88,19 +88,23 @@ func (c *Client) run(ctx context.Context) (err error) {
 	switch c.cfg.Type {
 	case TypeQuic:
 		c.internal = newQuicClient(c)
+	case TypeTCP:
+		c.internal = newTcpClient(c)
 	default:
 		err = fmt.Errorf("unsupported client type: %s", c.cfg.Type)
 		return
 	}
 
+	var control session.SendReceiveCloser
+
 	// run internal client
-	if err = c.internal.Setup(ctx); err != nil {
+	if control, err = c.internal.Setup(ctx); err != nil {
 		c.logger.Errorf(ctx, "run %s client error: %v", c.cfg.Type, err.Error())
 		return
 	}
 
 	// handshake
-	sess, sr, err := c.handshake(ctx)
+	sess, err := c.handshake(ctx, control)
 	if err != nil {
 		c.logger.Errorf(ctx, "handshake error: %v", err.Error())
 		return
@@ -113,7 +117,7 @@ func (c *Client) run(ctx context.Context) (err error) {
 	}
 
 	// create manager for control connection
-	c.manager = NewManager(sess, sr)
+	c.manager = NewManager(sess, control)
 
 	// setup hub
 	c.hub = hub.NewHub(hub.Config{
@@ -131,17 +135,32 @@ func (c *Client) run(ctx context.Context) (err error) {
 
 	// start hub
 	go c.hub.Start()
+
+	// after hook
+	c.internal.AfterHandshake(ctx, sess)
 	return
 }
 
-func (c *Client) handshake(ctx context.Context) (session *session.Session, sr session.SendReceiveCloser, err error) {
+func (c *Client) handshake(ctx context.Context, sr session.SendReceiveCloser) (session *session.Session, err error) {
 	payload := c.cfg.authPayload
 	if payload == nil {
 		payload = make(map[string]any)
 	}
 	payload["network_id"] = c.cfg.NetworkId
 
-	return c.internal.Handshake(ctx, payload)
+	resp := &handshakeResponse{}
+	err = c.auth.AuthPtr(ctx, payload,
+		func(ctx context.Context, in []byte) (out []byte, err error) {
+			if err = sr.Send(in); err != nil {
+				return
+			}
+			return sr.Receive(ctx)
+		},
+		resp,
+	)
+	session = resp.Session
+	c.logger.Infof(ctx, "handshake success: id=%v,ip=%v", session.SessionId, session.IP)
+	return
 }
 
 func (c *Client) syncRouter(ctx context.Context) (err error) {

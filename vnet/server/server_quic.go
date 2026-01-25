@@ -49,10 +49,7 @@ func (s *quicServer) Accept(ctx context.Context) (ss *serverSession, err error) 
 	if err != nil {
 		return
 	}
-	ss = &serverSession{
-		conn:              c,
-		SendReceiveCloser: session.SendReceiverFromQuicConn(c),
-	}
+	ss = newServerSession(session.SendReceiverFromQuicConn(c), c)
 	return
 }
 

@@ -22,7 +22,7 @@ type (
 		listener      *net.TCPListener
 		acceptErr     chan error
 		acceptCh      chan net.Conn
-		transportChs  sync.Map // ip : chan net.Conn
+		txChs         sync.Map // ip : chan net.Conn
 		transportConn sync.Map // ip : net.Conn
 		workerPool    *ants.Pool
 	}
@@ -34,6 +34,7 @@ func newTcpServer(s *Server) internalServer {
 		Server:        s,
 		acceptErr:     make(chan error),
 		acceptCh:      make(chan net.Conn),
+		txChs:         sync.Map{},
 		transportConn: sync.Map{},
 		workerPool:    wp,
 	}
@@ -69,12 +70,11 @@ func (s *tcpServer) acceptLoop(ctx context.Context) {
 				err = s.dispatch(ctx, conn)
 				if err != nil {
 					s.logger.Errorf(ctx, "dispatch connection error: %s", err.Error())
-					return
-				}
-				// drop err if full
-				select {
-				case s.acceptErr <- err:
-				default:
+					// drop err if full
+					select {
+					case s.acceptErr <- err:
+					default:
+					}
 				}
 			})
 			if err != nil {
@@ -88,7 +88,7 @@ func (s *tcpServer) acceptLoop(ctx context.Context) {
 func (s *tcpServer) dispatch(ctx context.Context, conn net.Conn) (err error) {
 	// timeout 3s for first packet
 	var (
-		buf   = make([]byte, 15)
+		buf   = make([]byte, 33)
 		ch    = make(chan []byte)
 		first []byte
 	)
@@ -107,43 +107,54 @@ func (s *tcpServer) dispatch(ctx context.Context, conn net.Conn) (err error) {
 		err = fmt.Errorf("read first pkg timeout. remote=%v", conn.RemoteAddr().String())
 		return
 	case first = <-ch:
+		s.logger.Infof(ctx, "dispatch connection, packet=%v", first)
 	}
 
-	if s.isControl(first) {
+	defer func() {
+		// send back ack or close
+		if err != nil {
+			s.logger.Errorf(ctx, "dispatch connection error: %s", err.Error())
+			_ = conn.Close()
+		}
+		_, err = conn.Write([]byte{1})
+	}()
+
+	switch first[0] {
+	case 1:
 		s.logger.Infof(ctx, "dispatch control connection, remote=%s", conn.RemoteAddr().String())
 		s.acceptCh <- conn
-		return
-	}
+	case 4:
+		src := net.IPv4(first[1], first[2], first[3], first[4]).String()
+		dst := net.IPv4(first[5], first[6], first[7], first[8]).String()
+		// make sure the connection is established
+		v, ok := s.sessions.Load(dst)
+		if !ok {
+			err = fmt.Errorf("refer session not found: dst=%s", dst)
+			return
+		}
 
-	src := string(first)
-	s.logger.Infof(ctx, "dispatch transport connection, refer=%s", src)
-	// make sure the connection is established
-	if _, ok := s.sessions.Load(src); !ok {
-		err = fmt.Errorf("refer session not found: refer=%s", src)
-		return
+		s.logger.Infof(ctx, "dispatch transport connection, dst=%s", dst)
+		s.transportConn.Store(dst, conn)
+
+		sess := v.(*serverSession)
+		if src == dst {
+			// rx only
+			sess.storage.Store("rx", conn)
+			s.logger.Infof(ctx, "dispatch rx connection, src=%s,session=%s", src, sess.SessionId)
+		} else {
+			// tx
+			v, _ = s.txChs.LoadOrStore(src, make(chan net.Conn))
+			tch, ok := v.(chan net.Conn)
+			if !ok {
+				err = fmt.Errorf("internal error: invalid transport channel")
+				return
+			}
+			tch <- conn
+		}
+	default:
+		err = fmt.Errorf("unsupported dispatch packet type: %d", first[0])
 	}
-	s.transportConn.Store(src, conn)
-	v, _ := s.transportChs.LoadOrStore(src, make(chan net.Conn))
-	tch, ok := v.(chan net.Conn)
-	if !ok {
-		err = fmt.Errorf("internal error: invalid transport channel")
-		return
-	}
-	tch <- conn
 	return
-}
-
-func (s *tcpServer) isControl(b []byte) bool {
-	for i := 0; i < len(b); i++ {
-		if i == 0 && b[i] != 1 {
-			return false
-		}
-		if i > 0 && b[i] != 0 {
-			return false
-		}
-	}
-	return true
-
 }
 
 func (s *tcpServer) Accept(ctx context.Context) (ss *serverSession, err error) {
@@ -154,10 +165,7 @@ func (s *tcpServer) Accept(ctx context.Context) (ss *serverSession, err error) {
 	case err = <-s.acceptErr:
 		return
 	case conn := <-s.acceptCh:
-		ss = &serverSession{
-			conn:              conn,
-			SendReceiveCloser: session.SendReceiverFromNetConn(conn),
-		}
+		ss = newServerSession(session.SendReceiverFromNetConn(conn), conn)
 		return
 	}
 }
@@ -167,7 +175,7 @@ func (s *tcpServer) Close() error {
 }
 
 func (s *tcpServer) AcceptTransport(session *serverSession) (rwc io.ReadWriteCloser, err error) {
-	v, _ := s.transportChs.LoadOrStore(session.IP, make(chan net.Conn))
+	v, _ := s.txChs.LoadOrStore(session.IP, make(chan net.Conn))
 	ch, ok := v.(chan net.Conn)
 	if !ok {
 		// usually not gonna happen
@@ -183,8 +191,8 @@ func (s *tcpServer) AcceptTransport(session *serverSession) (rwc io.ReadWriteClo
 	}
 }
 
-func (s *tcpServer) GetDstTransportWriter(src *serverSession, dst *serverSession) (rwc io.ReadWriteCloser, err error) {
-	v, ok := s.transportConn.Load(dst.IP)
+func (s *tcpServer) GetDstTransportWriter(_ *serverSession, dst *serverSession) (rwc io.ReadWriteCloser, err error) {
+	v, ok := dst.storage.Load("rx")
 	if !ok {
 		err = fmt.Errorf("transport connection not found: refer=%s", dst.IP)
 		return
