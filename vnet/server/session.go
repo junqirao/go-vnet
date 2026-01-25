@@ -15,6 +15,7 @@ type (
 		*session.Session
 		session.SendReceiveCloser
 		ref     internalServer
+		sig     chan struct{}
 		cfg     *TransportConfig
 		network *network.Network
 		conn    any
@@ -27,6 +28,7 @@ func newServerSession(sr session.SendReceiveCloser, conn any) *serverSession {
 		SendReceiveCloser: sr,
 		conn:              conn,
 		storage:           sync.Map{},
+		sig:               make(chan struct{}),
 	}
 }
 
@@ -36,5 +38,17 @@ func (s *serverSession) QuicConn() (c *quic.Conn, err error) {
 		return
 	}
 	c = s.conn.(*quic.Conn)
+	return
+}
+
+func (s *serverSession) Stop() {
+	select {
+	case _, ok := <-s.sig:
+		if !ok {
+			return
+		}
+	default:
+		close(s.sig)
+	}
 	return
 }

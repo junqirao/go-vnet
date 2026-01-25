@@ -62,9 +62,7 @@ func NewServer(cfg *Config) *Server {
 }
 
 func (s *Server) Serve(ctx context.Context) (err error) {
-	// go func() {
-	// 	_ = s.manager.ProcessFuncCallLoop(ctx)
-	// }()
+	go s.checkStatusLoop()
 	defer func() {
 		_ = s.manager.Close()
 	}()
@@ -81,6 +79,34 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 	case <-s.sig:
 		s.logger.Info(ctx, "quic server closed")
 		return
+	}
+}
+
+func (s *Server) checkStatusLoop() {
+	for {
+		select {
+		case <-s.sig:
+			return
+		default:
+		}
+		s.sessions.Range(func(key, sess any) bool {
+			ip := key.(string)
+			v, ok := s.manager.pingRecord.Load(ip)
+			if !ok {
+				// make sure the session could be removed if no ping packet received
+				s.manager.pingRecord.Store(ip, time.Now())
+				return true
+			}
+			last := v.(time.Time)
+			if time.Since(last) > time.Second*10 {
+				s.logger.Infof(sess.(*serverSession).Ctx, "remove session %s, last ping time: %s", ip, last.String())
+				sess.(*serverSession).Stop()
+				// must delete the session
+				s.sessions.Delete(ip)
+			}
+			return true
+		})
+		time.Sleep(time.Second * 10)
 	}
 }
 
@@ -197,6 +223,9 @@ func (s *Server) handleSession(ss *serverSession) {
 		select {
 		case <-s.sig:
 			ep = errors.New("server closed")
+			return
+		case <-ss.sig:
+			ep = errors.New("session closed")
 			return
 		case <-ctx.Done():
 			ep = ctx.Err()

@@ -4,16 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"sync"
+	"time"
 )
 
 type (
 	Manager struct {
-		sig    chan struct{}
-		events chan *FuncCallEvent
-	}
-	FuncCallEvent struct {
-		Session *serverSession
-		Data    []byte
+		sig        chan struct{}
+		pingRecord sync.Map // src -> time.Time
 	}
 )
 
@@ -32,24 +30,10 @@ type (
 
 func NewManager() *Manager {
 	m := &Manager{
-		sig:    make(chan struct{}),
-		events: make(chan *FuncCallEvent, 1024),
+		sig: make(chan struct{}),
 	}
 	return m
 }
-
-// func (manager *Manager) ProcessFuncCallLoop(ctx context.Context) (err error) {
-// 	for {
-// 		select {
-// 		case <-ctx.Done():
-// 			return ctx.Err()
-// 		case <-manager.sig:
-// 			return
-// 		case ev := <-manager.events:
-// 			_ = manager.HandleEvent(ctx, ev.Session, ev.Data)
-// 		}
-// 	}
-// }
 
 func (manager *Manager) Close() error {
 	close(manager.sig)
@@ -64,6 +48,7 @@ const (
 func (manager *Manager) handleFuncCall(_ context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
 	switch req.FuncName {
 	case FuncNamePing:
+		manager.pingRecord.Store(session.IP, time.Now())
 		return &FuncCallResponse{Code: 0, Data: session.network.Router().MD5()}, nil
 	case FuncNameGetRouterData:
 		data := session.network.Router().Keys()
@@ -73,13 +58,6 @@ func (manager *Manager) handleFuncCall(_ context.Context, session *serverSession
 	}
 	return &FuncCallResponse{Code: -1, Message: "unknown func name"}, nil
 }
-
-// func (manager *Manager) HandleEventAsync(session *serverSession, data []byte) {
-// 	manager.events <- &FuncCallEvent{
-// 		Session: session,
-// 		Data:    data,
-// 	}
-// }
 
 func (manager *Manager) HandleEvent(ctx context.Context, session *serverSession, data []byte) (err error) {
 	var (

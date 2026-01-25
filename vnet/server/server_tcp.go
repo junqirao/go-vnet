@@ -186,6 +186,11 @@ func (s *tcpServer) AcceptTransport(session *serverSession) (rwc io.ReadWriteClo
 	case <-s.Server.sig:
 		err = errors.New("server closed")
 		return
+	case err = <-s.acceptErr:
+		return
+	case <-session.sig:
+		err = errors.New("session closed")
+		return
 	case rwc = <-ch:
 		return
 	}
