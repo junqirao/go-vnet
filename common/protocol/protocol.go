@@ -13,7 +13,6 @@ const (
 const (
 	TypeTransport      byte = 0x0
 	TypeBatchTransport byte = 0x1
-	TypeCompress       byte = 0x2
 )
 
 type (
@@ -47,11 +46,7 @@ type (
 		buffer   *[MaxTransportByteSize]byte
 	}
 	TransportOptions struct {
-		magic    [4]byte
-		compress struct {
-			threshold int
-			enable    bool
-		}
+		magic [4]byte
 	}
 	TransportOpt func(o *TransportOptions)
 )
@@ -61,8 +56,6 @@ var (
 		options := &TransportOptions{
 			magic: transportMagicBytes,
 		}
-		options.compress.threshold = 1024 * 10
-		options.compress.enable = true
 		return options
 	}
 	SetMagic = func(m [4]byte) TransportOpt {
@@ -290,11 +283,7 @@ func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 }
 
 func (t *Transport) Upstream() io.ReadWriter {
-	upstream := t.upstream
-	if ups, ok := upstream.(*ZSTDCompressWrapper); ok {
-		upstream = ups.Upstream()
-	}
-	return upstream
+	return t.upstream
 }
 
 func (t *Transport) Close() (err error) {
