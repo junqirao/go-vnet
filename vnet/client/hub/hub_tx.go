@@ -408,5 +408,8 @@ func (c *Destination) Ip() string {
 
 func (c *Destination) Close() error {
 	close(c.sig)
+	if c.tx != nil {
+		return c.tx.Close()
+	}
 	return nil
 }

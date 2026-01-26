@@ -96,7 +96,7 @@ func (h *Hub) HandleRx(rwc io.ReadWriteCloser, hook ...RxHook) (cancel func()) {
 
 		ho.OnStart()
 		defer func() {
-			_ = rwc.Close()
+			_ = rw.Close()
 			cancel()
 			ho.OnClose(err)
 		}()

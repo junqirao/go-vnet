@@ -13,11 +13,12 @@ const (
 const (
 	TypeTransport      byte = 0x0
 	TypeBatchTransport byte = 0x1
+	TypeCompress       byte = 0x2
 )
 
 type (
 	ReadWriter interface {
-		io.ReadWriter
+		io.ReadWriteCloser
 		ReadMessage(data []byte) (typ byte, n int, err error)
 		WriteMessage(typ byte, data []byte) (int, error)
 		BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int, err error)
@@ -36,25 +37,51 @@ var (
 	ErrMessageTooLarge = errors.New("message too large")
 )
 
-// Transport protocol
-// | magic 4 bytes | type 1 byte | length 2 byte | data n byte |
-// magic: "VNET" (0x56 0x4E 0x45 0x54) - unique protocol identifier
-type Transport struct {
-	upstream io.ReadWriter
-	buffer   *[MaxTransportByteSize]byte
-	magic    [4]byte
-}
+type (
+	// Transport protocol
+	// | magic 4 bytes | type 1 byte | length 2 byte | data n byte |
+	// magic: "VNET" (0x56 0x4E 0x45 0x54) - unique protocol identifier
+	Transport struct {
+		*TransportOptions
+		upstream io.ReadWriteCloser
+		buffer   *[MaxTransportByteSize]byte
+	}
+	TransportOptions struct {
+		magic    [4]byte
+		compress struct {
+			threshold int
+			enable    bool
+		}
+	}
+	TransportOpt func(o *TransportOptions)
+)
+
+var (
+	defaultTransportOptions = func() *TransportOptions {
+		options := &TransportOptions{
+			magic: transportMagicBytes,
+		}
+		options.compress.threshold = 1024 * 10
+		options.compress.enable = true
+		return options
+	}
+	SetMagic = func(m [4]byte) TransportOpt {
+		return func(o *TransportOptions) {
+			o.magic = m
+		}
+	}
+)
 
 // NewTransport creates a new Transport protocol read writer
-func NewTransport(upstream io.ReadWriter, magic ...[4]byte) ReadWriter {
-	mg := transportMagicBytes
-	if len(magic) > 0 {
-		mg = magic[0]
+func NewTransport(upstream io.ReadWriteCloser, opts ...TransportOpt) ReadWriter {
+	options := defaultTransportOptions()
+	for _, opt := range opts {
+		opt(options)
 	}
 	return &Transport{
-		upstream: upstream,
-		buffer:   &[MaxTransportByteSize]byte{},
-		magic:    mg,
+		upstream:         upstream,
+		buffer:           &[MaxTransportByteSize]byte{},
+		TransportOptions: options,
 	}
 }
 
@@ -263,5 +290,13 @@ func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 }
 
 func (t *Transport) Upstream() io.ReadWriter {
-	return t.upstream
+	upstream := t.upstream
+	if ups, ok := upstream.(*ZSTDCompressWrapper); ok {
+		upstream = ups.Upstream()
+	}
+	return upstream
+}
+
+func (t *Transport) Close() (err error) {
+	return t.upstream.Close()
 }

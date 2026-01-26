@@ -27,6 +27,10 @@ func (m *mockReadWriter) Write(p []byte) (n int, err error) {
 	return m.writeBuf.Write(p)
 }
 
+func (m *mockReadWriter) Close() error {
+	return nil
+}
+
 func buildMessage(typ byte, data []byte) []byte {
 	// Build message with VNET magic
 	length := len(data)

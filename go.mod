@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/google/uuid v1.6.0
+	github.com/klauspost/compress v1.18.3
 	github.com/panjf2000/ants/v2 v2.11.4
 	github.com/quic-go/quic-go v0.57.1
 	github.com/sagernet/netlink v0.0.0-20240612041022-b9a21c07ac6a

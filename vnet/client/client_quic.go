@@ -127,11 +127,12 @@ func (c *quicClient) CloseDst(ctx context.Context, dst string) {
 	v, ok := c.transport.streams.LoadAndDelete(dst)
 	if ok {
 		if rw, ok := v.(protocol.ReadWriter); ok {
+			var id quic.StreamID
 			if stream, ok := rw.Upstream().(*quic.Stream); ok {
-				id := stream.StreamID()
-				_ = stream.Close()
-				c.client.logger.Infof(ctx, "[TX] close stream: id=%v,dst=%s", id, dst)
+				id = stream.StreamID()
 			}
+			_ = rw.Close()
+			c.client.logger.Infof(ctx, "[TX] close stream: id=%v,dst=%s", id, dst)
 		}
 	}
 }
@@ -156,10 +157,8 @@ func (c *quicClient) Close() (err error) {
 		c.transport.conn = nil
 	}
 	c.transport.streams.Range(func(key, value any) bool {
-		if stream, ok := value.(protocol.ReadWriter); ok {
-			if quicStream, ok := stream.Upstream().(*quic.Stream); ok {
-				_ = quicStream.Close()
-			}
+		if rw, ok := value.(protocol.ReadWriter); ok {
+			_ = rw.Close()
 		}
 		return true
 	})

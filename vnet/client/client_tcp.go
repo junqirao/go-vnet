@@ -182,10 +182,8 @@ func (c *tcpClient) CloseDst(ctx context.Context, dst string) {
 	v, ok := c.transport.conn.LoadAndDelete(dst)
 	if ok {
 		if rw, ok := v.(protocol.ReadWriter); ok {
-			if conn, ok := rw.Upstream().(net.Conn); ok {
-				_ = conn.Close()
-				c.client.logger.Infof(ctx, "[TX] close data connection: dst=%s", dst)
-			}
+			_ = rw.Close()
+			c.client.logger.Infof(ctx, "[TX] close data connection: dst=%s", dst)
 		}
 	}
 }
@@ -219,9 +217,7 @@ func (c *tcpClient) Close() (err error) {
 	// 关闭所有发送连接
 	c.transport.conn.Range(func(key, value any) bool {
 		if rw, ok := value.(protocol.ReadWriter); ok {
-			if conn, ok := rw.Upstream().(net.Conn); ok {
-				_ = conn.Close()
-			}
+			_ = rw.Close()
 		}
 		return true
 	})
