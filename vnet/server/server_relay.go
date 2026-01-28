@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -24,10 +23,6 @@ type (
 	RelayInfo struct {
 		Id        string   `json:"id"`
 		Addresses []string `json:"addresses"`
-	}
-	RelayHost struct {
-		Id            string
-		LastHeartbeat time.Time
 	}
 )
 

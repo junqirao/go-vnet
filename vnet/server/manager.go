@@ -43,12 +43,6 @@ func (manager *Manager) Close() error {
 	return nil
 }
 
-const (
-	FuncNamePing            = "ping"
-	FuncNameGetRouterData   = "get_router_data"
-	FuncNameGetP2PRelayInfo = "get_p2p_relay_info"
-)
-
 func (manager *Manager) handleFuncCall(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
 	value, ok := manager.functions.Load(req.FuncName)
 	if ok {

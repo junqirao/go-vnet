@@ -8,6 +8,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,15 +31,16 @@ var (
 
 type (
 	Server struct {
-		internals  sync.Map // name : internalServer
-		relay      *P2PRelayServer
-		relayHosts sync.Map // ip : host id
-		cfg        *Config
-		logger     logger.Logger
-		sig        chan struct{}
-		auth       *auth.Server
-		manager    *Manager
-		sessions   sync.Map // src : *serverSession
+		internals sync.Map // name : internalServer
+		cfg       *Config
+		logger    logger.Logger
+		sig       chan struct{}
+		auth      *auth.Server
+		manager   *Manager
+		sessions  sync.Map // src : *serverSession
+		// p2p
+		relay        *P2PRelayServer
+		relayVersion *atomic.Uint64
 	}
 	internalServer interface {
 		io.Closer
@@ -51,16 +53,18 @@ type (
 
 func NewServer(cfg *Config) *Server {
 	s := &Server{
-		cfg:     cfg,
-		logger:  config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
-		sig:     make(chan struct{}),
-		manager: NewManager(),
+		cfg:          cfg,
+		logger:       config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
+		sig:          make(chan struct{}),
+		manager:      NewManager(),
+		relayVersion: &atomic.Uint64{},
 	}
 
 	s.manager.RegisterHandler(
 		funcPing,
 		funcGetRouteData,
 		funcGetP2PRelayInfo,
+		funcGetP2PRelayMapping,
 	)
 
 	chainFunc := config.GetMappedConfig[[]auth.ServerAuthChainFunc](cfg,
@@ -107,7 +111,7 @@ func (s *Server) checkStatusLoop() {
 		s.sessions.Range(func(key, sess any) bool {
 			ip := key.(string)
 			ss := sess.(*serverSession)
-			v, ok := ss.storage.Load("last_ping")
+			v, ok := ss.storage.Load(sessionStorageKeyLastPing)
 			if !ok {
 				// make sure the session could be removed if no ping packet received
 				ss.storage.Store(ip, time.Now())
