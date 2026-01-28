@@ -87,3 +87,22 @@ func (c *Client) registerRelay(ctx context.Context, addr string) (err error) {
 	c.logger.Infof(ctx, "register p2p relay success: %s", c.hostId)
 	return
 }
+
+func (c *Client) dialDstRelay(ctx context.Context, dst string) (stream network.Stream, err error) {
+	relayAddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/p2p/%s/p2p-circuit/p2p/%s", c.hostId, dst))
+	if err != nil {
+		return
+	}
+
+	addrInfo, err := peer.AddrInfoFromP2pAddr(relayAddr)
+	if err != nil {
+		return
+	}
+
+	if err = c.host.Connect(ctx, *addrInfo); err != nil {
+		return
+	}
+
+	stream, err = c.host.NewStream(network.WithAllowLimitedConn(ctx, "transport"), addrInfo.ID, "/transport")
+	return
+}
