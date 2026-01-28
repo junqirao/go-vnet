@@ -41,7 +41,7 @@ type (
 		MTU                int         `yaml:"mtu" json:"mtu"`
 		InsecureSkipVerify bool        `yaml:"insecure_skip_verify" json:"insecure_skip_verify"`
 		Auth               auth.Config `yaml:"auth" json:"auth"`
-		DeviceType         string      `yaml:"device_type" json:"device_type"`
+		P2P                bool        `yaml:"p2p" json:"p2p"`
 	}
 	ConfigOption func(cfg *Config)
 )

@@ -4,6 +4,8 @@ address: "127.0.0.1"
 port: 9800
 insecure_skip_verify: true
 
+p2p: true
+
 # 认证配置
 auth:
   type: "simple_password"  # simple_password, rsa

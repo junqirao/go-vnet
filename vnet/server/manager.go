@@ -2,16 +2,14 @@ package server
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"sync"
-	"time"
 )
 
 type (
 	Manager struct {
-		sig        chan struct{}
-		pingRecord sync.Map // src -> time.Time
+		sig       chan struct{}
+		functions sync.Map // name :  FuncCallHandler
 	}
 )
 
@@ -25,6 +23,11 @@ type (
 		Data    any     `json:"data"`
 		Message string  `json:"message"`
 		Cost    float64 `json:"cost"`
+	}
+	FuncCallHandler func(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error)
+	FuncCallInfo    struct {
+		Name string
+		Fn   FuncCallHandler
 	}
 )
 
@@ -41,20 +44,17 @@ func (manager *Manager) Close() error {
 }
 
 const (
-	FuncNamePing          = "ping"
-	FuncNameGetRouterData = "get_router_data"
+	FuncNamePing            = "ping"
+	FuncNameGetRouterData   = "get_router_data"
+	FuncNameGetP2PRelayInfo = "get_p2p_relay_info"
 )
 
-func (manager *Manager) handleFuncCall(_ context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
-	switch req.FuncName {
-	case FuncNamePing:
-		manager.pingRecord.Store(session.IP, time.Now())
-		return &FuncCallResponse{Code: 0, Data: session.network.Router().MD5()}, nil
-	case FuncNameGetRouterData:
-		data := session.network.Router().Keys()
-		bs, _ := json.Marshal(data)
-		return &FuncCallResponse{Code: 0, Data: base64.StdEncoding.EncodeToString(bs)}, nil
-	default:
+func (manager *Manager) handleFuncCall(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
+	value, ok := manager.functions.Load(req.FuncName)
+	if ok {
+		if f, ok := value.(FuncCallHandler); ok {
+			return f(ctx, session, req)
+		}
 	}
 	return &FuncCallResponse{Code: -1, Message: "unknown func name"}, nil
 }
@@ -75,4 +75,10 @@ func (manager *Manager) HandleEvent(ctx context.Context, session *serverSession,
 	}
 	respBytes, _ := json.Marshal(resp)
 	return session.Send(respBytes)
+}
+
+func (manager *Manager) RegisterHandler(info ...FuncCallInfo) {
+	for _, callInfo := range info {
+		manager.functions.Store(callInfo.Name, callInfo.Fn)
+	}
 }

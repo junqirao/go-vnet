@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 
+	"github.com/multiformats/go-multiaddr"
 	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/auth"
@@ -29,9 +31,10 @@ type (
 	Type   string
 	Config struct {
 		config.MappedConfig
-		Servers []*TransportConfig `json:"servers"`
-		MTU     int                `json:"mtu"`
-		Auth    auth.Config        `json:"auth"`
+		Servers     []*TransportConfig `json:"servers"`
+		RelayServer []*RelayConfig     `json:"relay_server"`
+		MTU         int                `json:"mtu"`
+		Auth        auth.Config        `json:"auth"`
 	}
 	ConfigOption    func(cfg *Config)
 	TransportConfig struct {
@@ -41,10 +44,28 @@ type (
 		Address string `json:"address"`
 		Type    Type   `json:"type"`
 	}
+	RelayConfig struct {
+		IP        string `json:"ip"`
+		Transport string `json:"transport"`
+		Port      int    `json:"port"`
+		Version   string `json:"version"` // only for quic
+	}
 )
 
 func (t Type) String() string {
 	return string(t)
+}
+
+func (c RelayConfig) MultiAddr(network ...string) multiaddr.Multiaddr {
+	n := "ip4"
+	if network != nil {
+		n = network[0]
+	}
+	str := fmt.Sprintf("/%s/%s/%s/%d", n, c.IP, c.Transport, c.Port)
+	if c.Version != "" {
+		str += "/" + c.Version
+	}
+	return multiaddr.StringCast(str)
 }
 
 func NewConfig(opts ...ConfigOption) *Config {

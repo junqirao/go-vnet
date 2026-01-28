@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/host"
 	tun "github.com/sagernet/sing-tun"
 
 	"go-vnet/common/auth"
@@ -45,6 +46,11 @@ type (
 		session  *session.Session
 		sig      chan struct{}
 		dev      tun.Tun
+
+		// p2p
+		relayInfo *server.RelayInfo
+		host      host.Host
+		hostId    string
 	}
 	internal interface {
 		io.Closer
@@ -138,6 +144,13 @@ func (c *Client) run(ctx context.Context) (err error) {
 
 	// after hook
 	c.internal.AfterHandshake(ctx, sess)
+
+	// setup p2p
+	if c.cfg.P2P {
+		if err := c.setupP2P(ctx); err != nil {
+			c.logger.Errorf(ctx, "failed to setup p2p: %s", err.Error())
+		}
+	}
 	return
 }
 
@@ -165,7 +178,9 @@ func (c *Client) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 
 func (c *Client) syncRouter(ctx context.Context) (err error) {
 	// ping
-	resp, err := c.manager.CallFunc(ctx, server.FuncNamePing)
+	resp, err := c.manager.CallFunc(ctx, server.FuncNamePing, map[string]any{
+		"host_id": c.hostId,
+	})
 	if err != nil {
 		c.logger.Errorf(ctx, "failed to execute ping to server: %s", err.Error())
 		return

@@ -30,13 +30,15 @@ var (
 
 type (
 	Server struct {
-		internals sync.Map // name : internalServer
-		cfg       *Config
-		logger    logger.Logger
-		sig       chan struct{}
-		auth      *auth.Server
-		manager   *Manager
-		sessions  sync.Map // src : *serverSession
+		internals  sync.Map // name : internalServer
+		relay      *P2PRelayServer
+		relayHosts sync.Map // ip : host id
+		cfg        *Config
+		logger     logger.Logger
+		sig        chan struct{}
+		auth       *auth.Server
+		manager    *Manager
+		sessions   sync.Map // src : *serverSession
 	}
 	internalServer interface {
 		io.Closer
@@ -55,9 +57,16 @@ func NewServer(cfg *Config) *Server {
 		manager: NewManager(),
 	}
 
+	s.manager.RegisterHandler(
+		funcPing,
+		funcGetRouteData,
+		funcGetP2PRelayInfo,
+	)
+
 	chainFunc := config.GetMappedConfig[[]auth.ServerAuthChainFunc](cfg,
 		ConfigKeyAuthChainFunc, []auth.ServerAuthChainFunc{})
 	s.auth = auth.NewServer(cfg.Auth, chainFunc)
+	s.relay = newP2PRelayServer(cfg.RelayServer, s)
 	return s
 }
 
@@ -65,7 +74,13 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 	go s.checkStatusLoop()
 	defer func() {
 		_ = s.manager.Close()
+		_ = s.relay.CLose()
 	}()
+
+	// p2p relay
+	if err = s.relay.Run(ctx); err != nil {
+		return
+	}
 
 	for _, server := range s.cfg.Servers {
 		go func(cfg *TransportConfig) {
@@ -91,10 +106,11 @@ func (s *Server) checkStatusLoop() {
 		}
 		s.sessions.Range(func(key, sess any) bool {
 			ip := key.(string)
-			v, ok := s.manager.pingRecord.Load(ip)
+			ss := sess.(*serverSession)
+			v, ok := ss.storage.Load("last_ping")
 			if !ok {
 				// make sure the session could be removed if no ping packet received
-				s.manager.pingRecord.Store(ip, time.Now())
+				ss.storage.Store(ip, time.Now())
 				return true
 			}
 			last := v.(time.Time)
@@ -143,10 +159,12 @@ func (s *Server) serve(ctx context.Context, cfg *TransportConfig) (err error) {
 		}
 
 		var (
-			ss  *serverSession
-			id  = uuid.NewString()
-			ctx = context.WithValue(ctx, "id", id)
+			ss *serverSession
+			id = uuid.NewString()
 		)
+
+		ctx := context.WithValue(ctx, consts.CtxKeyId, id)
+		ctx = context.WithValue(ctx, consts.CtxKeyServer, s)
 
 		// accept connection
 		ss, err = internal.Accept(ctx)
@@ -349,7 +367,8 @@ func (s *Server) handshake(ctx context.Context, ss *serverSession) (err error) {
 	datagram, err := ss.Receive(ctx)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			err = fmt.Errorf("timeout while waiting for authentication data: traceid=%v", ctx.Value("id"))
+			err = fmt.Errorf("timeout while waiting for authentication data: traceid=%v",
+				ctx.Value(consts.CtxKeyId))
 			return
 		}
 		return
