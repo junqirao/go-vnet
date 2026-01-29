@@ -173,6 +173,9 @@ func (c *Client) registerRelay(ctx context.Context, addr string) (err error) {
 		return
 	}
 
+	// Add relay addresses to peerstore for future use
+	host.Peerstore().AddAddrs(addrInfo.ID, addrInfo.Addrs, time.Hour*24)
+
 	_, err = client.Reserve(ctx, host, *addrInfo)
 	if err != nil {
 		return
@@ -198,7 +201,7 @@ func (c *Client) dialDstRelay(ctx context.Context, dst string) (stream network.S
 		return nil, errors.New("destination didnt register p2p")
 	}
 	hostId := v.(string)
-	addr := fmt.Sprintf("/p2p/%s/p2p-circuit/p2p/%s", c.hostId, hostId)
+	addr := fmt.Sprintf("/p2p/%s/p2p-circuit/p2p/%s", c.relayInfo.Id, hostId)
 	c.logger.Infof(ctx, "dial peer %s p2p stream: %s", dst, addr)
 	relayAddr, err := multiaddr.NewMultiaddr(addr)
 	if err != nil {
@@ -207,6 +210,10 @@ func (c *Client) dialDstRelay(ctx context.Context, dst string) (stream network.S
 
 	addrInfo, err := peer.AddrInfoFromP2pAddr(relayAddr)
 	if err != nil {
+		return
+	}
+
+	if err = c.host.Connect(ctx, *addrInfo); err != nil {
 		return
 	}
 
@@ -224,10 +231,12 @@ func (c *Client) evaluateAndReplaceP2PTx(ctx context.Context, dst *hub.Destinati
 		_ = stream.SetWriteDeadline(time.Time{})
 		_ = stream.SetReadDeadline(time.Time{})
 	}()
-	if _, err = stream.Write([]byte(dst.Ip())); err != nil {
+	ip := net.ParseIP(c.session.IP)
+	pkg := []byte{ip[12], ip[13], ip[14], ip[15]}
+	if _, err = stream.Write(pkg); err != nil {
 		return
 	}
-	c.logger.Infof(ctx, "send handshake to dst %s, waiting for ack...", dst.Ip())
+	c.logger.Infof(ctx, "send handshake %v to dst %s, waiting for ack...", pkg, dst.Ip())
 	if _, err = stream.Read(make([]byte, 1)); err != nil {
 		return
 	}
@@ -262,13 +271,14 @@ func (c *Client) evaluateAndReplaceP2PRx(ctx context.Context, stream network.Str
 	}()
 	var (
 		n     int
-		ipBuf = make([]byte, 16)
+		ipBuf = make([]byte, 4)
 	)
 
-	dst := ipBuf[:n]
+	dst := net.IPv4(ipBuf[0], ipBuf[1], ipBuf[2], ipBuf[3])
 	if n, err = stream.Read(ipBuf); err != nil {
 		return
 	}
+	c.logger.Infof(ctx, "receive handshake %v from dst %s", ipBuf[:n], dst)
 	if _, err = stream.Write([]byte{0}); err != nil {
 		return
 	}
@@ -310,6 +320,7 @@ func (c *Client) AfterDial(ctx context.Context, dst *hub.Destination) {
 	_ = c.workerPool.Submit(func() {
 		stream, err := c.dialDstRelay(ctx, dst.Ip())
 		if err != nil {
+			c.logger.Infof(ctx, "dial p2p stream failed: %s", err.Error())
 			return
 		}
 

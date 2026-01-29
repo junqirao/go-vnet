@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
-	"sync/atomic"
+	"sync"
 
 	"github.com/google/uuid"
 	tun "github.com/sagernet/sing-tun"
@@ -203,7 +203,8 @@ type (
 		sig         chan struct{}
 		tx          protocol.ReadWriter
 		txEventChan chan *txEvent
-		fallback    *atomic.Value
+		mu          sync.RWMutex
+		fallback    protocol.ReadWriter
 		onFallback  func(rw protocol.ReadWriter, err error)
 		hook        TxHook
 	}
@@ -250,7 +251,6 @@ func NewDestination(ctx context.Context, ip string, a TxAdaptor, ref *Hub, h ...
 		ref:         ref,
 		sig:         make(chan struct{}),
 		txEventChan: make(chan *txEvent, ref.cfg.MaxTxEventBuf),
-		fallback:    &atomic.Value{},
 		hook:        hook,
 	}
 	if ref.cfg.BatchSize > 1 {
@@ -426,10 +426,9 @@ func (c *Destination) Ip() string {
 
 func (c *Destination) Close() error {
 	close(c.sig)
-	if v := c.fallback.Load(); v != nil {
-		if rw, ok := v.(protocol.ReadWriter); ok {
-			_ = rw.Close()
-		}
+	if c.fallback != nil {
+		_ = c.fallback.Close()
+
 	}
 	if c.tx != nil {
 		return c.tx.Close()
@@ -438,22 +437,23 @@ func (c *Destination) Close() error {
 }
 
 func (c *Destination) ReplaceWithFallback(rw protocol.ReadWriter, onFallback func(rw protocol.ReadWriter, err error)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	// use c.tx as fall back
-	swapped := c.fallback.CompareAndSwap(nil, c.tx)
-	if !swapped {
+	if c.fallback != nil {
 		return
 	}
+	c.fallback = c.tx
 	c.tx = rw
 	c.onFallback = onFallback
 }
 
 func (c *Destination) fallbackOrReportError(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	curr := c.tx
-	if v := c.fallback.Load(); v != nil {
-		if rw, ok := v.(protocol.ReadWriter); ok {
-			c.tx = rw
-		}
-		c.fallback.Store(nil)
+	if c.fallback != nil {
+		c.tx = c.fallback
 		if c.onFallback != nil {
 			c.onFallback(curr, err)
 			c.hook.OnFallback(c.ctx, c, curr, err)
