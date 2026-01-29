@@ -205,6 +205,7 @@ type (
 		txEventChan chan *txEvent
 		fallback    *atomic.Value
 		onFallback  func(rw protocol.ReadWriter, err error)
+		hook        TxHook
 	}
 	TxError struct {
 		dst *Destination
@@ -215,7 +216,17 @@ type (
 		CloseDst(ctx context.Context, dst string)
 		OnError(ctx context.Context, e *TxError)
 	}
+	TxHook interface {
+		AfterDial(ctx context.Context, dst *Destination)
+		OnFallback(ctx context.Context, dst *Destination, rw protocol.ReadWriter, err error)
+	}
+	nopTxHook struct{}
 )
+
+func (n nopTxHook) AfterDial(ctx context.Context, dst *Destination) {}
+
+func (n nopTxHook) OnFallback(ctx context.Context, dst *Destination, rw protocol.ReadWriter, err error) {
+}
 
 func (e *TxError) Error() string {
 	return fmt.Errorf("connection %s error caused: %w",
@@ -226,7 +237,11 @@ func (e *TxError) Dst() *Destination {
 	return e.dst
 }
 
-func NewDestination(ctx context.Context, ip string, a TxAdaptor, ref *Hub) *Destination {
+func NewDestination(ctx context.Context, ip string, a TxAdaptor, ref *Hub, h ...TxHook) *Destination {
+	var hook TxHook = &nopTxHook{}
+	if len(h) > 0 {
+		hook = h[0]
+	}
 	c := &Destination{
 		TxAdaptor:   a,
 		ip:          ip,
@@ -236,6 +251,7 @@ func NewDestination(ctx context.Context, ip string, a TxAdaptor, ref *Hub) *Dest
 		sig:         make(chan struct{}),
 		txEventChan: make(chan *txEvent, ref.cfg.MaxTxEventBuf),
 		fallback:    &atomic.Value{},
+		hook:        hook,
 	}
 	if ref.cfg.BatchSize > 1 {
 		go c.txLoopN()
@@ -283,6 +299,7 @@ func (c *Destination) negotiate() (err error) {
 	}
 	c.ref.logger.Infof(c.ctx, "[TX] negotiate success")
 	c.tx = tx
+	c.hook.AfterDial(c.ctx, c)
 	return
 }
 
@@ -439,6 +456,7 @@ func (c *Destination) fallbackOrReportError(err error) {
 		c.fallback.Store(nil)
 		if c.onFallback != nil {
 			c.onFallback(curr, err)
+			c.hook.OnFallback(c.ctx, c, curr, err)
 			c.onFallback = nil
 		}
 		return

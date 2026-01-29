@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/panjf2000/ants/v2"
 	tun "github.com/sagernet/sing-tun"
 
 	"go-vnet/common/auth"
@@ -46,6 +47,9 @@ type (
 		sig      chan struct{}
 		dev      tun.Tun
 
+		// worker
+		workerPool *ants.Pool
+
 		// p2p
 		relayInfo    *server.RelayInfo
 		relayVersion *atomic.Uint64
@@ -66,6 +70,7 @@ type (
 )
 
 func NewClient(cfg *Config) *Client {
+	workerPool, _ := ants.NewPool(runtime.NumCPU())
 	return &Client{
 		ctx:          context.Background(),
 		cfg:          cfg,
@@ -73,6 +78,7 @@ func NewClient(cfg *Config) *Client {
 		auth:         auth.NewClient(cfg.Auth),
 		sig:          make(chan struct{}),
 		relayVersion: &atomic.Uint64{},
+		workerPool:   workerPool,
 	}
 }
 
@@ -148,7 +154,7 @@ func (c *Client) run(ctx context.Context) (err error) {
 	c.internal.AfterHandshake(ctx, sess)
 
 	// setup p2p
-	if c.cfg.P2P {
+	if c.cfg.P2P.Enabled {
 		if err := c.setupP2P(ctx); err != nil {
 			c.logger.Errorf(ctx, "failed to setup p2p: %s", err.Error())
 		}

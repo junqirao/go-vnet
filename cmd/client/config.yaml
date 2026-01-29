@@ -4,7 +4,8 @@ address: "127.0.0.1"
 port: 9800
 insecure_skip_verify: true
 
-p2p: true
+p2p:
+  enabled: true
 
 # 认证配置
 auth:

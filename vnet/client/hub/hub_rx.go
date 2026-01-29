@@ -35,13 +35,11 @@ func (h *Hub) writeDeviceLinux() {
 	h.Infof("batch write device loop started")
 	dev := h.dev.(tun.LinuxTUN)
 	for event := range h.rxEventChan {
-		// fmt.Printf("rx->%v\n", event.buf[:event.n])
 		_, err := dev.BatchWrite(event.buf[:event.n], h.cfg.HeaderSize)
 		if err != nil {
 			h.Stop(err.Error())
 			return
 		}
-		// Return event to pool for reuse
 		h.putRxEvent(event)
 	}
 }

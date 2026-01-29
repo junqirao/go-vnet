@@ -139,8 +139,9 @@ func (c *Client) updateRouter(ctx context.Context) (err error) {
 					continue
 				}
 				c.logger.Infof(ctx, "add route: %s", ip)
+				var hook hub.TxHook = c
 				c.hub.Router().Register(ip,
-					hub.NewDestination(context.Background(), strings.Split(ip, "/")[0], c.internal, c.hub))
+					hub.NewDestination(context.Background(), strings.Split(ip, "/")[0], c.internal, c.hub, hook))
 			}
 		}
 
