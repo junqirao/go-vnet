@@ -274,10 +274,10 @@ func (c *Client) evaluateAndReplaceP2PRx(ctx context.Context, stream network.Str
 		ipBuf = make([]byte, 4)
 	)
 
-	dst := net.IPv4(ipBuf[0], ipBuf[1], ipBuf[2], ipBuf[3])
 	if n, err = stream.Read(ipBuf); err != nil {
 		return
 	}
+	dst := net.IPv4(ipBuf[0], ipBuf[1], ipBuf[2], ipBuf[3]).To4().String()
 	c.logger.Infof(ctx, "receive handshake %v from dst %s", ipBuf[:n], dst)
 	if _, err = stream.Write([]byte{0}); err != nil {
 		return
