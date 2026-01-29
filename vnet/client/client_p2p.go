@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/libp2p/go-libp2p"
@@ -80,7 +81,11 @@ func (c *Client) registerRelay(ctx context.Context, addr string) (err error) {
 
 	host.SetStreamHandler("/transport", func(stream network.Stream) {
 		c.logger.Infof(ctx, "accept p2p stream from %s", stream.Conn().RemotePeer())
-		c.hub.HandleRx(stream)
+		err = c.evaluateP2PRx(ctx, stream)
+		if err != nil {
+			c.logger.Infof(ctx, "evaluate p2p stream failed: %s", err.Error())
+			return
+		}
 	})
 
 	c.hostId = host.ID().String()
@@ -89,7 +94,12 @@ func (c *Client) registerRelay(ctx context.Context, addr string) (err error) {
 }
 
 func (c *Client) dialDstRelay(ctx context.Context, dst string) (stream network.Stream, err error) {
-	relayAddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/p2p/%s/p2p-circuit/p2p/%s", c.hostId, dst))
+	v, ok := c.relayMapping.Load(dst)
+	if !ok {
+		return nil, errors.New("destination didnt register p2p")
+	}
+	hostId := v.(string)
+	relayAddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/p2p/%s/p2p-circuit/p2p/%s", c.hostId, hostId))
 	if err != nil {
 		return
 	}

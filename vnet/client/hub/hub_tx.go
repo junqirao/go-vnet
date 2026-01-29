@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 	tun "github.com/sagernet/sing-tun"
@@ -202,6 +203,8 @@ type (
 		sig         chan struct{}
 		tx          protocol.ReadWriter
 		txEventChan chan *txEvent
+		fallback    *atomic.Value
+		onFallback  func(rw protocol.ReadWriter, err error)
 	}
 	TxError struct {
 		dst *Destination
@@ -232,6 +235,7 @@ func NewDestination(ctx context.Context, ip string, a TxAdaptor, ref *Hub) *Dest
 		ref:         ref,
 		sig:         make(chan struct{}),
 		txEventChan: make(chan *txEvent, ref.cfg.MaxTxEventBuf),
+		fallback:    &atomic.Value{},
 	}
 	if ref.cfg.BatchSize > 1 {
 		go c.txLoopN()
@@ -387,10 +391,7 @@ func (c *Destination) txLoopN() {
 			if totalPackets > 0 {
 				_, err = c.tx.BatchWrite(buf[:totalPackets], sizes[:totalPackets], c.ref.cfg.HeaderSize)
 				if err != nil {
-					c.OnError(c.ctx, &TxError{
-						dst: c,
-						Err: err,
-					})
+					c.fallbackOrReportError(err)
 				}
 			}
 
@@ -408,8 +409,42 @@ func (c *Destination) Ip() string {
 
 func (c *Destination) Close() error {
 	close(c.sig)
+	if v := c.fallback.Load(); v != nil {
+		if rw, ok := v.(protocol.ReadWriter); ok {
+			_ = rw.Close()
+		}
+	}
 	if c.tx != nil {
 		return c.tx.Close()
 	}
 	return nil
+}
+
+func (c *Destination) ReplaceWithFallback(rw protocol.ReadWriter, onFallback func(rw protocol.ReadWriter, err error)) {
+	// use c.tx as fall back
+	swapped := c.fallback.CompareAndSwap(nil, c.tx)
+	if !swapped {
+		return
+	}
+	c.tx = rw
+	c.onFallback = onFallback
+}
+
+func (c *Destination) fallbackOrReportError(err error) {
+	curr := c.tx
+	if v := c.fallback.Load(); v != nil {
+		if rw, ok := v.(protocol.ReadWriter); ok {
+			c.tx = rw
+		}
+		c.fallback.Store(nil)
+		if c.onFallback != nil {
+			c.onFallback(curr, err)
+			c.onFallback = nil
+		}
+		return
+	}
+	c.OnError(c.ctx, &TxError{
+		dst: c,
+		Err: err,
+	})
 }
