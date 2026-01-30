@@ -39,8 +39,8 @@ type (
 		manager   *Manager
 		sessions  sync.Map // src : *serverSession
 		// p2p
-		relay        *P2PRelayServer
-		relayVersion *atomic.Uint64
+		p2pSignalingServer *p2pSignalingServer
+		peerMappingVersion *atomic.Uint64
 	}
 	internalServer interface {
 		io.Closer
@@ -53,11 +53,11 @@ type (
 
 func NewServer(cfg *Config) *Server {
 	s := &Server{
-		cfg:          cfg,
-		logger:       config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
-		sig:          make(chan struct{}),
-		manager:      NewManager(),
-		relayVersion: &atomic.Uint64{},
+		cfg:                cfg,
+		logger:             config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
+		sig:                make(chan struct{}),
+		manager:            NewManager(),
+		peerMappingVersion: &atomic.Uint64{},
 	}
 
 	s.manager.RegisterHandler(
@@ -70,7 +70,7 @@ func NewServer(cfg *Config) *Server {
 	chainFunc := config.GetMappedConfig[[]auth.ServerAuthChainFunc](cfg,
 		ConfigKeyAuthChainFunc, []auth.ServerAuthChainFunc{})
 	s.auth = auth.NewServer(cfg.Auth, chainFunc)
-	s.relay = newP2PRelayServer(cfg.RelayServer, s)
+	s.p2pSignalingServer = newP2PSignalingServer(cfg.P2P, s)
 	return s
 }
 
@@ -78,11 +78,11 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 	go s.checkStatusLoop()
 	defer func() {
 		_ = s.manager.Close()
-		_ = s.relay.CLose()
+		_ = s.p2pSignalingServer.Close()
 	}()
 
-	// p2p relay
-	if err = s.relay.Run(ctx); err != nil {
+	// p2p signaling server
+	if err = s.p2pSignalingServer.Run(ctx); err != nil {
 		return
 	}
 

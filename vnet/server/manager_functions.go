@@ -35,12 +35,12 @@ var (
 				_, ok := session.storage.LoadOrStore(sessionStorageKeyRelayHostId, hostId)
 				if !ok {
 					server.logger.Infof(ctx, "registered p2p relay host id %s from %s", hostId, session.IP)
-					server.relayVersion.Add(1)
+					server.peerMappingVersion.Add(1)
 				}
 			}
 			return &FuncCallResponse{Code: 0, Data: fmt.Sprintf("%s,%d",
 				session.network.Router().MD5(),
-				server.relayVersion.Load())}, nil
+				server.peerMappingVersion.Load())}, nil
 		},
 	}
 	funcGetRouteData = FuncCallInfo{
@@ -62,8 +62,8 @@ var (
 			}
 
 			info := RelayInfo{
-				Id:        server.relay.ID(),
-				Addresses: server.relay.Addresses(),
+				Id:        server.p2pSignalingServer.ID(),
+				Addresses: server.p2pSignalingServer.Addresses(),
 			}
 			bs, _ := json.Marshal(info)
 			return &FuncCallResponse{Code: 0, Data: base64.StdEncoding.EncodeToString(bs)}, nil

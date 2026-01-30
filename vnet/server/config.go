@@ -31,10 +31,10 @@ type (
 	Type   string
 	Config struct {
 		config.MappedConfig
-		Servers     []*TransportConfig `json:"servers"`
-		RelayServer []*RelayConfig     `json:"relay_server"`
-		MTU         int                `json:"mtu"`
-		Auth        auth.Config        `json:"auth"`
+		Servers []*TransportConfig `json:"servers"`
+		P2P     *P2PConfig         `json:"p2p"`
+		MTU     int                `json:"mtu"`
+		Auth    auth.Config        `json:"auth"`
 	}
 	ConfigOption    func(cfg *Config)
 	TransportConfig struct {
@@ -43,6 +43,9 @@ type (
 		Port    int    `json:"port"`
 		Address string `json:"address"`
 		Type    Type   `json:"type"`
+	}
+	P2PConfig struct {
+		Addresses []SignalingServerAddress `json:"addresses"`
 	}
 	RelayConfig struct {
 		IP        string `json:"ip"`

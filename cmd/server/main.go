@@ -57,19 +57,15 @@ func main() {
 			Type:         server.TypeTCP,
 		},
 	)
-	cfg.RelayServer = append(cfg.RelayServer,
-		&server.RelayConfig{
-			IP:        "0.0.0.0",
-			Transport: "udp",
-			Port:      9900,
-			Version:   "quic-v1",
+	cfg.P2P = &server.P2PConfig{
+		Addresses: []server.SignalingServerAddress{
+			{
+				IP:        "0.0.0.0",
+				Transport: "tcp",
+				Port:      9901,
+			},
 		},
-		&server.RelayConfig{
-			IP:        "0.0.0.0",
-			Transport: "tcp",
-			Port:      9901,
-		},
-	)
+	}
 	s := server.NewServer(cfg)
 	err = s.Serve(context.Background())
 	if err != nil {
