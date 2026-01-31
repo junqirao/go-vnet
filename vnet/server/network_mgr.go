@@ -1,37 +1,37 @@
-package network
+package server
 
 import (
 	"sync"
 )
 
 var (
-	globalManager *Manager
-	once          sync.Once
+	globalNetworkManager *NetworkManager
+	once                 sync.Once
 )
 
-// GetManager 获取全局单例网络管理器
-func GetManager() *Manager {
+// GetNetworkManager 获取全局单例网络管理器
+func GetNetworkManager() *NetworkManager {
 	once.Do(func() {
-		globalManager = NewNetworkManager()
+		globalNetworkManager = NewNetworkNetworkManager()
 	})
-	return globalManager
+	return globalNetworkManager
 }
 
 type (
-	Manager struct {
+	NetworkManager struct {
 		mu       sync.RWMutex
 		networks map[string]*Network
 	}
 )
 
-func NewNetworkManager() *Manager {
-	return &Manager{
+func NewNetworkNetworkManager() *NetworkManager {
+	return &NetworkManager{
 		networks: make(map[string]*Network),
 	}
 }
 
 // RegisterNetwork 注册网络
-func (nm *Manager) RegisterNetwork(network *Network) {
+func (nm *NetworkManager) RegisterNetwork(network *Network) {
 	nm.mu.Lock()
 	defer nm.mu.Unlock()
 
@@ -41,7 +41,7 @@ func (nm *Manager) RegisterNetwork(network *Network) {
 }
 
 // RemoveNetwork 通过网络ID移除网络
-func (nm *Manager) RemoveNetwork(networkID string) {
+func (nm *NetworkManager) RemoveNetwork(networkID string) {
 	nm.mu.Lock()
 	defer nm.mu.Unlock()
 
@@ -49,7 +49,7 @@ func (nm *Manager) RemoveNetwork(networkID string) {
 }
 
 // GetNetwork 通过网络ID获取网络
-func (nm *Manager) GetNetwork(networkID string) (*Network, bool) {
+func (nm *NetworkManager) GetNetwork(networkID string) (*Network, bool) {
 	nm.mu.RLock()
 	defer nm.mu.RUnlock()
 
@@ -58,7 +58,7 @@ func (nm *Manager) GetNetwork(networkID string) (*Network, bool) {
 }
 
 // GetAllNetworks 获取所有网络（线程安全副本）
-func (nm *Manager) GetAllNetworks() map[string]*Network {
+func (nm *NetworkManager) GetAllNetworks() map[string]*Network {
 	nm.mu.RLock()
 	defer nm.mu.RUnlock()
 
@@ -70,7 +70,7 @@ func (nm *Manager) GetAllNetworks() map[string]*Network {
 }
 
 // NetworkCount 获取网络数量
-func (nm *Manager) NetworkCount() int {
+func (nm *NetworkManager) NetworkCount() int {
 	nm.mu.RLock()
 	defer nm.mu.RUnlock()
 

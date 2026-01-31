@@ -22,7 +22,7 @@ const (
 var (
 	funcPing = FuncCallInfo{
 		Name: FuncNamePing,
-		Fn: func(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
+		Fn: func(ctx context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
 			session.storage.Store(sessionStorageKeyLastPing, time.Now())
 			s := ctx.Value(consts.CtxKeyServer)
 			server, ok := s.(*Server)
@@ -37,7 +37,7 @@ var (
 	}
 	funcGetRouteData = FuncCallInfo{
 		Name: FuncNameGetRouterData,
-		Fn: func(_ context.Context, session *serverSession, _ *FuncCallRequest) (resp *FuncCallResponse, err error) {
+		Fn: func(_ context.Context, session *Session, _ *FuncCallRequest) (resp *FuncCallResponse, err error) {
 			data := session.network.Router().Keys()
 			bs, _ := json.Marshal(data)
 			return &FuncCallResponse{Code: 0, Data: base64.StdEncoding.EncodeToString(bs)}, nil
@@ -45,7 +45,7 @@ var (
 	}
 	funcGetP2PRelayInfo = FuncCallInfo{
 		Name: FuncNameGetP2PPeerInfo,
-		Fn: func(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
+		Fn: func(ctx context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
 			s := ctx.Value(consts.CtxKeyServer)
 			server, ok := s.(*Server)
 			if !ok {
@@ -63,7 +63,7 @@ var (
 	}
 	funcGetP2PRelayMapping = FuncCallInfo{
 		Name: FuncNameGetP2PPeerMapping,
-		Fn: func(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
+		Fn: func(ctx context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
 			s := ctx.Value(consts.CtxKeyServer)
 			server, ok := s.(*Server)
 			if !ok {
@@ -72,7 +72,7 @@ var (
 			}
 			res := map[string]string{}
 			server.sessions.Range(func(_, value any) bool {
-				session, ok := value.(*serverSession)
+				session, ok := value.(*Session)
 				if !ok {
 					return true
 				}
@@ -93,7 +93,7 @@ var (
 	}
 	funcRegisterP2PPeer = FuncCallInfo{
 		Name: FuncNameRegisterP2PPeer,
-		Fn: func(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
+		Fn: func(ctx context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
 			s := ctx.Value(consts.CtxKeyServer)
 			server, ok := s.(*Server)
 			if !ok {

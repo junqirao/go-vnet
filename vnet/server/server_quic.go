@@ -36,7 +36,7 @@ func (s *quicServer) Setup(ctx context.Context, cfg *TransportConfig) (err error
 		tt.GenerateTLSConfig(time.Hour*24*7, 1024))
 	quicConfig := config.GetMappedConfig[*quic.Config](s.cfg, ConfigKeyQuicConfig, config.DefaultQuicConfig)
 
-	s.logger.Infof(ctx, "use quic config %+v", quicConfig)
+	// s.logger.Infof(ctx, "use quic config %+v", quicConfig)
 
 	// listen
 	addr := fmt.Sprintf("%s:%d", s.cfg.Address, s.cfg.Port)
@@ -44,7 +44,7 @@ func (s *quicServer) Setup(ctx context.Context, cfg *TransportConfig) (err error
 	return
 }
 
-func (s *quicServer) Accept(ctx context.Context) (ss *serverSession, err error) {
+func (s *quicServer) Accept(ctx context.Context) (ss *Session, err error) {
 	c, err := s.listener.Accept(ctx)
 	if err != nil {
 		return
@@ -57,7 +57,7 @@ func (s *quicServer) Close() error {
 	return s.listener.Close()
 }
 
-func (s *quicServer) AcceptTransport(session *serverSession) (rwc io.ReadWriteCloser, err error) {
+func (s *quicServer) AcceptTransport(session *Session) (rwc io.ReadWriteCloser, err error) {
 	conn, err := session.QuicConn()
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func (s *quicServer) AcceptTransport(session *serverSession) (rwc io.ReadWriteCl
 	return
 }
 
-func (s *quicServer) GetDstTransportWriter(src *serverSession, dst *serverSession) (rwc io.ReadWriteCloser, err error) {
+func (s *quicServer) GetDstTransportWriter(src *Session, dst *Session) (rwc io.ReadWriteCloser, err error) {
 	conn, err := dst.QuicConn()
 	if err != nil {
 		s.logger.Errorf(src.Ctx, "internal error: %s", err.Error())

@@ -7,17 +7,16 @@ import (
 	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/session"
-	"go-vnet/vnet/server/network"
 )
 
 type (
-	serverSession struct {
+	Session struct {
 		*session.Session
 		session.SendReceiveCloser
 		ref     internalServer
 		sig     chan struct{}
 		cfg     *TransportConfig
-		network *network.Network
+		network *Network
 		conn    any
 		storage sync.Map
 	}
@@ -28,8 +27,8 @@ const (
 	sessionStorageKeyLastPing = "last_ping"
 )
 
-func newServerSession(sr session.SendReceiveCloser, conn any) *serverSession {
-	return &serverSession{
+func newServerSession(sr session.SendReceiveCloser, conn any) *Session {
+	return &Session{
 		SendReceiveCloser: sr,
 		conn:              conn,
 		storage:           sync.Map{},
@@ -37,7 +36,7 @@ func newServerSession(sr session.SendReceiveCloser, conn any) *serverSession {
 	}
 }
 
-func (s *serverSession) QuicConn() (c *quic.Conn, err error) {
+func (s *Session) QuicConn() (c *quic.Conn, err error) {
 	if s.Type != session.TypeQuic {
 		err = fmt.Errorf("invalid session type: %s", s.Type)
 		return
@@ -46,7 +45,7 @@ func (s *serverSession) QuicConn() (c *quic.Conn, err error) {
 	return
 }
 
-func (s *serverSession) Stop() {
+func (s *Session) Stop() {
 	select {
 	case _, ok := <-s.sig:
 		if !ok {

@@ -24,7 +24,7 @@ type (
 		Message string  `json:"message"`
 		Cost    float64 `json:"cost"`
 	}
-	FuncCallHandler func(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error)
+	FuncCallHandler func(ctx context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error)
 	FuncCallInfo    struct {
 		Name string
 		Fn   FuncCallHandler
@@ -43,7 +43,7 @@ func (manager *Manager) Close() error {
 	return nil
 }
 
-func (manager *Manager) handleFuncCall(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
+func (manager *Manager) handleFuncCall(ctx context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
 	value, ok := manager.functions.Load(req.FuncName)
 	if ok {
 		if f, ok := value.(FuncCallHandler); ok {
@@ -53,7 +53,7 @@ func (manager *Manager) handleFuncCall(ctx context.Context, session *serverSessi
 	return &FuncCallResponse{Code: -1, Message: "unknown func name"}, nil
 }
 
-func (manager *Manager) HandleEvent(ctx context.Context, session *serverSession, data []byte) (err error) {
+func (manager *Manager) HandleEvent(ctx context.Context, session *Session, data []byte) (err error) {
 	var (
 		req  FuncCallRequest
 		resp *FuncCallResponse

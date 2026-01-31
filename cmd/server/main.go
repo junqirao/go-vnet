@@ -8,12 +8,11 @@ import (
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
 	"go-vnet/vnet/server"
-	"go-vnet/vnet/server/network"
 )
 
 func main() {
 	// create test network
-	n, err := network.NewNetwork(&network.Config{
+	n, err := server.NewNetwork(&server.NetworkConfig{
 		ID:         "test",
 		CIDR:       "192.168.98.0/24",
 		RouterData: nil,
@@ -24,7 +23,7 @@ func main() {
 	}
 
 	// register network
-	network.GetManager().RegisterNetwork(n)
+	server.GetNetworkManager().RegisterNetwork(n)
 
 	l := logger.NewStdLogger(nil, "transport_server")
 	cfg := server.NewConfig(

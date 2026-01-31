@@ -136,7 +136,7 @@ func (s *tcpServer) dispatch(ctx context.Context, conn net.Conn) (err error) {
 		s.logger.Infof(ctx, "dispatch transport connection, dst=%s", dst)
 		s.transportConn.Store(dst, conn)
 
-		sess := v.(*serverSession)
+		sess := v.(*Session)
 		if src == dst {
 			// rx only
 			sess.storage.Store("rx", conn)
@@ -157,7 +157,7 @@ func (s *tcpServer) dispatch(ctx context.Context, conn net.Conn) (err error) {
 	return
 }
 
-func (s *tcpServer) Accept(ctx context.Context) (ss *serverSession, err error) {
+func (s *tcpServer) Accept(ctx context.Context) (ss *Session, err error) {
 	select {
 	case <-s.Server.sig:
 		err = errors.New("server closed")
@@ -174,7 +174,7 @@ func (s *tcpServer) Close() error {
 	return s.listener.Close()
 }
 
-func (s *tcpServer) AcceptTransport(session *serverSession) (rwc io.ReadWriteCloser, err error) {
+func (s *tcpServer) AcceptTransport(session *Session) (rwc io.ReadWriteCloser, err error) {
 	v, _ := s.txChs.LoadOrStore(session.IP, make(chan net.Conn))
 	ch, ok := v.(chan net.Conn)
 	if !ok {
@@ -196,7 +196,7 @@ func (s *tcpServer) AcceptTransport(session *serverSession) (rwc io.ReadWriteClo
 	}
 }
 
-func (s *tcpServer) GetDstTransportWriter(_ *serverSession, dst *serverSession) (rwc io.ReadWriteCloser, err error) {
+func (s *tcpServer) GetDstTransportWriter(_ *Session, dst *Session) (rwc io.ReadWriteCloser, err error) {
 	v, ok := dst.storage.Load("rx")
 	if !ok {
 		err = fmt.Errorf("transport connection not found: refer=%s", dst.IP)

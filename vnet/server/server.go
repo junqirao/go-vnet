@@ -19,7 +19,6 @@ import (
 	"go-vnet/common/protocol"
 	"go-vnet/common/session"
 	"go-vnet/vnet/server/consts"
-	"go-vnet/vnet/server/network"
 )
 
 var (
@@ -37,7 +36,7 @@ type (
 		sig       chan struct{}
 		auth      *auth.Server
 		manager   *Manager
-		sessions  sync.Map // src : *serverSession
+		sessions  sync.Map // src : *Session
 		// p2p
 		p2pSignalingServer *p2pSignalingServer
 		peerMappingVersion *atomic.Uint64
@@ -45,9 +44,9 @@ type (
 	internalServer interface {
 		io.Closer
 		Setup(ctx context.Context, cfg *TransportConfig) (err error)
-		Accept(ctx context.Context) (ss *serverSession, err error)
-		AcceptTransport(session *serverSession) (rwc io.ReadWriteCloser, err error)
-		GetDstTransportWriter(src *serverSession, dst *serverSession) (rwc io.ReadWriteCloser, err error)
+		Accept(ctx context.Context) (ss *Session, err error)
+		AcceptTransport(session *Session) (rwc io.ReadWriteCloser, err error)
+		GetDstTransportWriter(src *Session, dst *Session) (rwc io.ReadWriteCloser, err error)
 	}
 )
 
@@ -111,7 +110,7 @@ func (s *Server) checkStatusLoop() {
 		}
 		s.sessions.Range(func(key, sess any) bool {
 			ip := key.(string)
-			ss := sess.(*serverSession)
+			ss := sess.(*Session)
 			v, ok := ss.storage.Load(sessionStorageKeyLastPing)
 			if !ok {
 				// make sure the session could be removed if no ping packet received
@@ -120,8 +119,8 @@ func (s *Server) checkStatusLoop() {
 			}
 			last := v.(time.Time)
 			if time.Since(last) > time.Second*10 {
-				s.logger.Infof(sess.(*serverSession).Ctx, "remove session %s, last ping time: %s", ip, last.String())
-				sess.(*serverSession).Stop()
+				s.logger.Infof(sess.(*Session).Ctx, "remove session %s, last ping time: %s", ip, last.String())
+				sess.(*Session).Stop()
 				// must delete the session
 				s.sessions.Delete(ip)
 			}
@@ -164,7 +163,7 @@ func (s *Server) serve(ctx context.Context, cfg *TransportConfig) (err error) {
 		}
 
 		var (
-			ss *serverSession
+			ss *Session
 			id = uuid.NewString()
 		)
 
@@ -189,7 +188,7 @@ func (s *Server) serve(ctx context.Context, cfg *TransportConfig) (err error) {
 	}
 }
 
-func (s *Server) handleSession(ss *serverSession) {
+func (s *Server) handleSession(ss *Session) {
 	var (
 		err         error
 		ctx, cancel = context.WithCancel(ss.Ctx)
@@ -267,7 +266,7 @@ func (s *Server) handleSession(ss *serverSession) {
 	}
 }
 
-func (s *Server) handleTransport(ss *serverSession, srcRwc io.ReadWriteCloser) {
+func (s *Server) handleTransport(ss *Session, srcRwc io.ReadWriteCloser) {
 	src := ss.IP
 	dstSession, dst, err := s.negotiation(ss.Ctx, ss, srcRwc)
 	if err != nil {
@@ -296,7 +295,7 @@ func (s *Server) handleTransport(ss *serverSession, srcRwc io.ReadWriteCloser) {
 	}
 }
 
-func (s *Server) handleFuncCallLoop(ss *serverSession) {
+func (s *Server) handleFuncCallLoop(ss *Session) {
 	var (
 		err      error
 		datagram []byte
@@ -365,7 +364,7 @@ func (s *Server) proxy(ctx context.Context, name string, dst io.WriteCloser, src
 	return written, err
 }
 
-func (s *Server) handshake(ctx context.Context, ss *serverSession) (err error) {
+func (s *Server) handshake(ctx context.Context, ss *Session) (err error) {
 	// Set a context with a 10-second timeout
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer func() {
@@ -409,13 +408,13 @@ func (s *Server) handshake(ctx context.Context, ss *serverSession) (err error) {
 		return
 	}
 
-	ss.network, ok = network.GetManager().GetNetwork(networkId)
+	ss.network, ok = GetNetworkManager().GetNetwork(networkId)
 	if !ok {
 		err = ErrResourceNotFound.WithCause(fmt.Errorf("network not found: id=%s", networkId))
 		return
 	}
 
-	dev, err := ss.network.AcquireDevice(ctx, request)
+	dev, err := ss.network.AcquireDevice(ctx, ss, request)
 	if err != nil {
 		err = ErrResourceError.WithCause(fmt.Errorf("acquire device error: %s", err.Error()))
 		return
@@ -447,7 +446,7 @@ func (s *Server) handshake(ctx context.Context, ss *serverSession) (err error) {
 	return
 }
 
-func (s *Server) negotiation(_ context.Context, sess *serverSession, src io.ReadWriter) (dstSession *serverSession, dst string, err error) {
+func (s *Server) negotiation(_ context.Context, sess *Session, src io.ReadWriter) (dstSession *Session, dst string, err error) {
 	// get dst ip by first packet, 10s timeout
 	var (
 		buf   = make([]byte, 15)
@@ -481,7 +480,7 @@ func (s *Server) negotiation(_ context.Context, sess *serverSession, src io.Read
 
 	// send ack (byte 1) to client
 	_, _ = src.Write([]byte{1})
-	dstSession, ok = v.(*serverSession)
+	dstSession, ok = v.(*Session)
 	if !ok {
 		err = fmt.Errorf("error session type: dst=%v", dst)
 		return
