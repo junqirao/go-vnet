@@ -471,5 +471,8 @@ func (c *Destination) fallbackOrReportError(err error) {
 }
 
 func (c *Destination) Type() string {
+	if c.tx == nil {
+		return ""
+	}
 	return c.tx.Type()
 }

@@ -146,6 +146,21 @@ func (c *Client) getPeerInfo(ctx context.Context) (info *server.AddressInfo, err
 
 func (c *Client) handleP2PStreamRx(stream network.Stream) {
 	ctx := c.ctx
+	exist := false
+	c.peerMapping.Range(func(key, value any) bool {
+		pi := value.(*peer.AddrInfo)
+		if pi.ID == stream.Conn().RemotePeer() {
+			exist = true
+		}
+		return true
+	})
+
+	if !exist {
+		_ = stream.Close()
+		c.logger.Infof(ctx, "p2p stream from unknown peer: %s", stream.Conn().RemotePeer())
+		return
+	}
+
 	c.logger.Infof(ctx, "accept p2p stream from %s", stream.Conn().RemotePeer())
 	err := c.evaluateAndReplaceP2PRx(ctx, stream)
 	if err != nil {
@@ -159,11 +174,7 @@ func (c *Client) dialDstRelay(ctx context.Context, dst string) (stream network.S
 	if !ok {
 		return nil, errors.New("destination didnt register p2p")
 	}
-	targetPeer := &peer.AddrInfo{}
-	if err = json.Unmarshal([]byte(v.(string)), targetPeer); err != nil {
-		err = fmt.Errorf("failed to parse p2p address: %v", err)
-		return
-	}
+	targetPeer := v.(*peer.AddrInfo)
 	c.logger.Infof(ctx, "dialing p2p stream to %s: %s", dst, targetPeer.String())
 	if err = c.host.Connect(c.ctx, *targetPeer); err != nil {
 		err = fmt.Errorf("failed to connect to peer: %v", err)
@@ -303,17 +314,25 @@ func (c *Client) backgroundTryDialP2P() {
 	}
 	c.logger.Infof(c.ctx, "background try dial p2p started")
 	go func() {
-		c.hub.Router().Range(func(addr string, val any) {
-			dst, ok := val.(*hub.Destination)
-			if !ok {
+		for {
+			select {
+			case <-c.ctx.Done():
 				return
+			case <-c.sig:
+			default:
 			}
-			err := c.tryP2P(c.ctx, dst)
-			if err != nil {
-				c.logger.Infof(c.ctx, "dst %s try p2p failed: %s", dst.Ip(), err.Error())
-			}
-		})
-		time.Sleep(time.Duration(c.cfg.P2P.TryInterval) * time.Second)
+			c.hub.Router().Range(func(addr string, val any) {
+				dst, ok := val.(*hub.Destination)
+				if !ok {
+					return
+				}
+				err := c.tryP2P(c.ctx, dst)
+				if err != nil {
+					c.logger.Infof(c.ctx, "dst %s try p2p failed: %s", dst.Ip(), err.Error())
+				}
+			})
+			time.Sleep(time.Duration(c.cfg.P2P.TryInterval) * time.Second)
+		}
 	}()
 }
 

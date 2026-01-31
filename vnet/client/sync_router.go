@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/peer"
+
 	"go-vnet/vnet/client/hub"
 	"go-vnet/vnet/server"
 )
@@ -68,7 +70,12 @@ func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 		upsert := 0
 		del := 0
 		for k, v := range mapping {
-			c.peerMapping.Store(k, v)
+			pi := &peer.AddrInfo{}
+			if err = json.Unmarshal([]byte(v), pi); err != nil {
+				c.logger.Infof(ctx, "failed to parse p2p address: %v", err)
+				continue
+			}
+			c.peerMapping.Store(k, pi)
 			upsert++
 		}
 		c.peerMapping.Range(func(key, value any) bool {
