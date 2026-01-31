@@ -23,6 +23,7 @@ type (
 		BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int, err error)
 		ParseBatch(data []byte, buf [][]byte, sizes []int, offset int) (n int, err error)
 		Upstream() io.ReadWriter
+		Type() string
 	}
 )
 
@@ -47,6 +48,7 @@ type (
 	}
 	TransportOptions struct {
 		magic [4]byte
+		typ   string
 	}
 	TransportOpt func(o *TransportOptions)
 )
@@ -58,9 +60,14 @@ var (
 		}
 		return options
 	}
-	SetMagic = func(m [4]byte) TransportOpt {
+	WithMagic = func(m [4]byte) TransportOpt {
 		return func(o *TransportOptions) {
 			o.magic = m
+		}
+	}
+	WithType = func(typ string) TransportOpt {
+		return func(o *TransportOptions) {
+			o.typ = typ
 		}
 	}
 )
@@ -288,4 +295,8 @@ func (t *Transport) Upstream() io.ReadWriter {
 
 func (t *Transport) Close() (err error) {
 	return t.upstream.Close()
+}
+
+func (t *Transport) Type() string {
+	return t.typ
 }

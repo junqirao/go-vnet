@@ -76,6 +76,10 @@ func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 				c.peerMapping.Delete(key)
 				del++
 				c.logger.Infof(ctx, "remove peer: %s", key)
+				conn, ok := c.p2pConnections.Load(key)
+				if ok && conn != nil {
+					conn.(*p2pConnInfo).cancel()
+				}
 			}
 			return true
 		})

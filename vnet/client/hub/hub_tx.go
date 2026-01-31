@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 	"sync"
@@ -10,6 +11,10 @@ import (
 	tun "github.com/sagernet/sing-tun"
 
 	"go-vnet/common/protocol"
+)
+
+var (
+	ErrCancel = errors.New("cancel")
 )
 
 func (h *Hub) txLoop() {
@@ -196,6 +201,7 @@ func (h *Hub) readDeviceLinux() (err error) {
 type (
 	Destination struct {
 		TxAdaptor
+		mu          sync.RWMutex
 		ip          string
 		id          string
 		ctx         context.Context
@@ -203,9 +209,7 @@ type (
 		sig         chan struct{}
 		tx          protocol.ReadWriter
 		txEventChan chan *txEvent
-		mu          sync.RWMutex
 		fallback    protocol.ReadWriter
-		onFallback  func(rw protocol.ReadWriter, err error)
 		hook        TxHook
 	}
 	TxError struct {
@@ -436,16 +440,19 @@ func (c *Destination) Close() error {
 	return nil
 }
 
-func (c *Destination) ReplaceWithFallback(rw protocol.ReadWriter, onFallback func(rw protocol.ReadWriter, err error)) {
+func (c *Destination) ReplaceTx(fn func(old protocol.ReadWriter) (new protocol.ReadWriter, replaced bool)) (replaced bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// use c.tx as fall back
 	if c.fallback != nil {
 		return
 	}
-	c.fallback = c.tx
-	c.tx = rw
-	c.onFallback = onFallback
+	newOne, replaced := fn(c.tx)
+	if replaced {
+		c.fallback = c.tx
+		c.tx = newOne
+	}
+	return
 }
 
 func (c *Destination) fallbackOrReportError(err error) {
@@ -454,15 +461,15 @@ func (c *Destination) fallbackOrReportError(err error) {
 	curr := c.tx
 	if c.fallback != nil {
 		c.tx = c.fallback
-		if c.onFallback != nil {
-			c.onFallback(curr, err)
-			c.hook.OnFallback(c.ctx, c, curr, err)
-			c.onFallback = nil
-		}
+		c.hook.OnFallback(c.ctx, c, curr, err)
 		return
 	}
 	c.OnError(c.ctx, &TxError{
 		dst: c,
 		Err: err,
 	})
+}
+
+func (c *Destination) Type() string {
+	return c.tx.Type()
 }

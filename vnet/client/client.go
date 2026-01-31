@@ -52,6 +52,7 @@ type (
 
 		// p2p
 		p2pSignalingServerAddress *server.AddressInfo
+		p2pConnections            sync.Map // dst:*p2pConnInfo
 		peerMappingVersion        *atomic.Uint64
 		peerMapping               sync.Map
 		host                      host.Host

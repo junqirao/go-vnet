@@ -13,6 +13,10 @@ import (
 	"go-vnet/vnet/client/hub"
 )
 
+const (
+	transportTypeTcp = "tcp"
+)
+
 type (
 	tcpClient struct {
 		client    *Client
@@ -162,13 +166,13 @@ func (c *tcpClient) Dial(ctx context.Context, dst string) (rw protocol.ReadWrite
 
 	// rx
 	if dst == c.client.session.IP {
-		c.client.hub.HandleRx(conn, newTcpRxHook(ctx, c, conn))
+		c.client.hub.HandleRx(conn, []protocol.TransportOpt{protocol.WithType(transportTypeTcp)}, newTcpRxHook(ctx, c, conn))
 		c.transport.rx = conn
 		c.client.logger.Infof(ctx, "rx connection established: remote=%v", conn.RemoteAddr())
 		return
 	}
 
-	rw = protocol.NewTransport(conn)
+	rw = protocol.NewTransport(conn, protocol.WithType(transportTypeTcp))
 	c.transport.conn.Store(dst, rw)
 	c.client.logger.Infof(ctx, "[TX] open data connection: dst=%s, remote=%v", dst, conn.RemoteAddr())
 	return

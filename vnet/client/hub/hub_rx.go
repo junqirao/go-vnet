@@ -60,7 +60,7 @@ func (h *Hub) writeDevice() {
 	}
 }
 
-func (h *Hub) HandleRx(rwc io.ReadWriteCloser, hook ...RxHook) (cancel func()) {
+func (h *Hub) HandleRx(rwc io.ReadWriteCloser, opt []protocol.TransportOpt, hook ...RxHook) (cancel func()) {
 	var (
 		sig = make(chan struct{})
 	)
@@ -78,7 +78,7 @@ func (h *Hub) HandleRx(rwc io.ReadWriteCloser, hook ...RxHook) (cancel func()) {
 
 	go func() {
 		var (
-			rw     = protocol.NewTransport(rwc)
+			rw     = protocol.NewTransport(rwc, opt...)
 			offset = h.cfg.HeaderSize
 			nn     int
 			err    error

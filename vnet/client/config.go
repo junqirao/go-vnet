@@ -19,6 +19,11 @@ var (
 			MappedConfig: config.NewMappedConfig(),
 			Type:         TypeQuic,
 			MTU:          1400,
+			P2P: P2PConfig{
+				Enabled:     true,
+				ListenAddr:  []string{},
+				TryInterval: 30,
+			},
 		}
 	}
 )
@@ -44,8 +49,9 @@ type (
 		P2P                P2PConfig   `yaml:"p2p" json:"p2p"`
 	}
 	P2PConfig struct {
-		Enabled    bool     `yaml:"enabled" json:"enabled"`
-		ListenAddr []string `yaml:"listen_addr" json:"listen_addr"`
+		Enabled     bool     `yaml:"enabled" json:"enabled"`
+		ListenAddr  []string `yaml:"listen_addr" json:"listen_addr"`
+		TryInterval int      `yaml:"try_interval" json:"try_interval"`
 	}
 	ConfigOption func(cfg *Config)
 )
