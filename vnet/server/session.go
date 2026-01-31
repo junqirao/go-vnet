@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/quic-go/quic-go"
 
@@ -12,13 +13,14 @@ import (
 type (
 	Session struct {
 		*session.Session
-		session.SendReceiveCloser
-		ref     internalServer
-		sig     chan struct{}
-		cfg     *TransportConfig
-		network *Network
-		conn    any
-		storage sync.Map
+		session.SendReceiveCloser `json:"-"`
+		CreatedAt                 time.Time `json:"created_at"`
+		ref                       internalServer
+		sig                       chan struct{}
+		cfg                       *TransportConfig
+		network                   *Network
+		conn                      any
+		storage                   sync.Map
 	}
 )
 
@@ -33,6 +35,7 @@ func newServerSession(sr session.SendReceiveCloser, conn any) *Session {
 		conn:              conn,
 		storage:           sync.Map{},
 		sig:               make(chan struct{}),
+		CreatedAt:         time.Now(),
 	}
 }
 

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"sort"
 	"sync"
 
 	"golang.zx2c4.com/wireguard/device"
@@ -79,4 +80,15 @@ func (n *Network) Control() *flow.Control {
 
 func (n *Network) SetControl(control *flow.Control) {
 	n.control = control
+}
+
+func (n *Network) ListSessions() (sessions []*Session) {
+	n.sessions.Range(func(key, value any) bool {
+		sessions = append(sessions, value.(*Session))
+		return true
+	})
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].CreatedAt.Unix() < sessions[j].CreatedAt.Unix()
+	})
+	return
 }

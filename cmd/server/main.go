@@ -7,6 +7,7 @@ import (
 	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
+	web "go-vnet/manager/server"
 	"go-vnet/vnet/server"
 )
 
@@ -65,9 +66,16 @@ func main() {
 			},
 		},
 	}
+
+	// run server
 	s := server.NewServer(cfg)
-	err = s.Serve(context.Background())
-	if err != nil {
-		panic(err)
-	}
+	go func() {
+		err = s.Serve(context.Background())
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	// run web server
+	web.RunServer()
 }
