@@ -6,17 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/client"
 	"github.com/multiformats/go-multiaddr"
-	manet "github.com/multiformats/go-multiaddr/net"
 
 	"go-vnet/common/protocol"
 	"go-vnet/vnet/client/hub"
@@ -25,6 +21,7 @@ import (
 
 const (
 	acceptableLatency = 1000
+	p2pProtocolID     = "/p2p/transport/1.0.0"
 )
 
 var (
@@ -32,112 +29,93 @@ var (
 	evaluatePass = [1]byte{2}
 )
 
-func (c *Client) setupP2P(ctx context.Context) (err error) {
-	c.relayInfo, err = c.getRelayInfo(ctx)
+func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
+	c.p2pSignalingServerAddress, err = c.getPeerInfo(ctx)
 	if err != nil {
 		return
 	}
 
-	if len(c.relayInfo.Addresses) == 0 {
+	if len(c.p2pSignalingServerAddress.Addresses) == 0 {
+		c.logger.Infof(ctx, "no p2p signaling server address available")
 		return
 	}
 
+	if c.p2pSignalingServerAddress == nil || c.p2pSignalingServerAddress.Id == "" {
+		return
+	}
 	var (
-		addresses = sync.Map{}
-		address   string
-		wg        = sync.WaitGroup{}
-	)
-	wg.Add(len(c.relayInfo.Addresses))
-
-	for _, addr := range c.relayInfo.Addresses {
-		_ = c.workerPool.Submit(func() {
-			defer wg.Done()
-			c.logger.Infof(ctx, "test p2p relay address: %s", addr)
-			ok, cost, err := checkMultiAddrConnectivity(addr, time.Second*1)
-			if err != nil || !ok {
-				c.logger.Infof(ctx, "test p2p relay address failed: %s, reason:%v", addr, err)
-				return
-			}
-			c.logger.Infof(ctx, "test p2p relay address success: %s, cost: %dms", addr, cost)
-			addresses.Store(addr, cost)
-		})
-	}
-
-	wg.Wait()
-	minCost := int64(math.MaxInt64)
-	addresses.Range(func(key, value any) bool {
-		addr := key.(string)
-		cost := value.(int64)
-		if cost < minCost {
-			address = addr
-			minCost = cost
+		address []multiaddr.Multiaddr
+		opts    = []libp2p.Option{
+			libp2p.EnableNATService(),
+			libp2p.EnableRelay(),
+			libp2p.EnableHolePunching(),
 		}
-		return true
+		localListenAddr []string
+	)
+
+	localListenAddr = append(localListenAddr, c.cfg.P2P.ListenAddr...)
+	if len(localListenAddr) == 0 {
+		localListenAddr = append(localListenAddr, "/ip4/0.0.0.0/tcp/0")
+	}
+
+	for _, s := range localListenAddr {
+		ma, err := multiaddr.NewMultiaddr(s)
+		if err != nil {
+			c.logger.Errorf(ctx, "invalid p2p listen address: %s, reason: %v", s, err)
+			continue
+		}
+		address = append(address, ma)
+	}
+
+	opts = append(opts, libp2p.ListenAddrs(address...))
+
+	c.host, err = libp2p.New(opts...)
+	if err != nil {
+		return
+	}
+	c.host.SetStreamHandler(p2pProtocolID, c.handleP2PStreamRx)
+
+	serverAddrInfo := &peer.AddrInfo{}
+	serverAddrInfo.ID, _ = peer.Decode(c.p2pSignalingServerAddress.Id)
+	for _, s := range c.p2pSignalingServerAddress.Addresses {
+		ma, err := multiaddr.NewMultiaddr(fmt.Sprintf("%s/p2p/%s", s, c.p2pSignalingServerAddress.Id))
+		if err != nil {
+			c.logger.Errorf(ctx, "invalid p2p signaling server address: %s, reason: %v", s, err)
+			continue
+		}
+		serverAddrInfo.Addrs = append(serverAddrInfo.Addrs, ma)
+	}
+
+	c.logger.Infof(ctx, "connecting to p2p signaling server: %s/p2p/%s", serverAddrInfo.String(), serverAddrInfo.ID)
+
+	err = c.host.Connect(c.ctx, *serverAddrInfo)
+	if err != nil {
+		return fmt.Errorf("failed to connect to server: %v", err)
+	}
+
+	c.hostId = c.host.ID().String()
+	peerInfo := peer.AddrInfo{
+		ID:    c.host.ID(),
+		Addrs: c.host.Addrs(),
+	}
+	peerInfoStr, _ := peerInfo.MarshalJSON()
+	// register p2p peer
+	_, err = c.manager.CallFunc(ctx, server.FuncNameRegisterP2PPeer, map[string]any{
+		"peer": string(peerInfoStr),
 	})
-
-	if address == "" {
-		c.logger.Infof(ctx, "no p2p relay address available")
-		return
+	if err != nil {
+		return fmt.Errorf("failed to register p2p peer: %v", err)
 	}
-
-	c.logger.Infof(ctx, "selected p2p relay address: %s, cost: %dms", address, minCost)
-	if err = c.registerRelay(ctx, address); err != nil {
-		return
-	}
+	c.logger.Infof(ctx, "connected to p2p signaling server, local peer info: %s", peerInfoStr)
 	return
 }
 
-func checkMultiAddrConnectivity(addrStr string, timeout time.Duration) (ok bool, cost int64, err error) {
-	start := time.Now()
-	defer func() {
-		cost = time.Since(start).Milliseconds()
-	}()
-	// 解析 Multiaddr
-	addr, err := multiaddr.NewMultiaddr(addrStr)
-	if err != nil {
-		err = fmt.Errorf("invalid multiaddr: %w", err)
-		return
-	}
-
-	// 转换为标准网络地址
-	naddr, err := manet.ToNetAddr(addr)
-	if err != nil {
-		err = fmt.Errorf("unsupported protocol: %w", err)
-		return
-	}
-
-	// 创建带超时的上下文
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	// 尝试建立连接
-	done := make(chan bool, 1)
-	go func() {
-		conn, err := net.Dial(naddr.Network(), naddr.String())
-		if err == nil {
-			conn.Close()
-			done <- true
-			return
-		}
-		done <- false
-	}()
-
-	select {
-	case success := <-done:
-		ok = success
-		return
-	case <-ctx.Done():
-		err = ctx.Err()
-		return
-	}
-}
-
-func (c *Client) getRelayInfo(ctx context.Context) (info *server.RelayInfo, err error) {
-	resp, err := c.manager.CallFunc(ctx, server.FuncNameGetP2PRelayInfo)
+func (c *Client) getPeerInfo(ctx context.Context) (info *server.AddressInfo, err error) {
+	resp, err := c.manager.CallFunc(ctx, server.FuncNameGetP2PPeerInfo)
 	if err != nil {
 		return
 	}
-	info = new(server.RelayInfo)
+	info = new(server.AddressInfo)
 	data, err := base64.StdEncoding.DecodeString(resp.Data.(string))
 	if err != nil {
 		return
@@ -146,79 +124,33 @@ func (c *Client) getRelayInfo(ctx context.Context) (info *server.RelayInfo, err 
 	return
 }
 
-func (c *Client) registerRelay(ctx context.Context, addr string) (err error) {
-	if c.relayInfo == nil || c.relayInfo.Id == "" {
-		return
-	}
-	host, err := libp2p.New(
-		libp2p.NoListenAddrs,
-		libp2p.EnableRelay(),
-	)
+func (c *Client) handleP2PStreamRx(stream network.Stream) {
+	ctx := c.ctx
+	c.logger.Infof(ctx, "accept p2p stream from %s", stream.Conn().RemotePeer())
+	err := c.evaluateAndReplaceP2PRx(ctx, stream)
 	if err != nil {
+		c.logger.Infof(ctx, "evaluate p2p stream failed: %s", err.Error())
 		return
 	}
-	c.host = host
-
-	relayAddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("%s/p2p/%s", addr, c.relayInfo.Id))
-	if err != nil {
-		return
-	}
-
-	addrInfo, err := peer.AddrInfoFromP2pAddr(relayAddr)
-	if err != nil {
-		return
-	}
-
-	if err = host.Connect(ctx, *addrInfo); err != nil {
-		return
-	}
-
-	// Add relay addresses to peerstore for future use
-	host.Peerstore().AddAddrs(addrInfo.ID, addrInfo.Addrs, time.Hour*24)
-
-	_, err = client.Reserve(ctx, host, *addrInfo)
-	if err != nil {
-		return
-	}
-
-	host.SetStreamHandler("/transport", func(stream network.Stream) {
-		c.logger.Infof(ctx, "accept p2p stream from %s", stream.Conn().RemotePeer())
-		err = c.evaluateAndReplaceP2PRx(ctx, stream)
-		if err != nil {
-			c.logger.Infof(ctx, "evaluate p2p stream failed: %s", err.Error())
-			return
-		}
-	})
-
-	c.hostId = host.ID().String()
-	c.logger.Infof(ctx, "register p2p relay success: %s", c.hostId)
-	return
 }
 
 func (c *Client) dialDstRelay(ctx context.Context, dst string) (stream network.Stream, err error) {
-	v, ok := c.relayMapping.Load(dst)
+	v, ok := c.peerMapping.Load(dst)
 	if !ok {
 		return nil, errors.New("destination didnt register p2p")
 	}
-	hostId := v.(string)
-	addr := fmt.Sprintf("/p2p/%s/p2p-circuit/p2p/%s", c.relayInfo.Id, hostId)
-	c.logger.Infof(ctx, "dial peer %s p2p stream: %s", dst, addr)
-	relayAddr, err := multiaddr.NewMultiaddr(addr)
-	if err != nil {
+	targetPeer := &peer.AddrInfo{}
+	if err = json.Unmarshal([]byte(v.(string)), targetPeer); err != nil {
+		err = fmt.Errorf("failed to parse p2p address: %v", err)
 		return
 	}
-
-	addrInfo, err := peer.AddrInfoFromP2pAddr(relayAddr)
-	if err != nil {
+	c.logger.Infof(ctx, "dialing p2p stream to %s: %s", dst, targetPeer.String())
+	if err = c.host.Connect(c.ctx, *targetPeer); err != nil {
+		err = fmt.Errorf("failed to connect to peer: %v", err)
 		return
 	}
-
-	if err = c.host.Connect(ctx, *addrInfo); err != nil {
-		return
-	}
-
-	c.logger.Infof(ctx, "dial peer %s p2p stream success", dst)
-	stream, err = c.host.NewStream(network.WithAllowLimitedConn(ctx, "transport"), addrInfo.ID, "/transport")
+	c.logger.Infof(ctx, "successfully connected to peer: %s", targetPeer.ID.ShortString())
+	stream, err = c.host.NewStream(c.ctx, targetPeer.ID, p2pProtocolID)
 	return
 }
 
@@ -297,7 +229,7 @@ func (c *Client) evaluateAndReplaceP2PRx(ctx context.Context, stream network.Str
 	}
 
 	c.logger.Infof(ctx, "evaluation success %s, try replace", dst)
-	v, ok := c.hub.Router().RouteString(string(dst))
+	v, ok := c.hub.Router().RouteString(dst)
 	if ok {
 		if d, ok := v.(*hub.Destination); ok {
 			c.logger.Infof(ctx, "replace dst %s to p2p connection", dst)
@@ -312,15 +244,12 @@ func (c *Client) evaluateAndReplaceP2PRx(ctx context.Context, stream network.Str
 	return
 }
 
-func (c *Client) AfterDial(ctx context.Context, dst *hub.Destination) {
-	if !c.cfg.P2P.Enabled {
-		return
-	}
+func (c *Client) tryP2P(ctx context.Context, dst *hub.Destination) {
 	c.logger.Infof(ctx, "try connect and evaluate p2p tx: %s", dst.Ip())
 	_ = c.workerPool.Submit(func() {
 		stream, err := c.dialDstRelay(ctx, dst.Ip())
 		if err != nil {
-			c.logger.Infof(ctx, "dial p2p stream failed: %s", err.Error())
+			c.logger.Infof(ctx, "dial p2p peer stream failed: %s", err.Error())
 			return
 		}
 
@@ -334,5 +263,22 @@ func (c *Client) AfterDial(ctx context.Context, dst *hub.Destination) {
 	})
 }
 
+func (c *Client) AfterDial(ctx context.Context, dst *hub.Destination) {
+	if !c.cfg.P2P.Enabled {
+		return
+	}
+	c.tryP2P(ctx, dst)
+}
+
 func (c *Client) OnFallback(ctx context.Context, dst *hub.Destination, rw protocol.ReadWriter, err error) {
+	c.logger.Infof(ctx, "dst %s connection fallback to proxy: %s", dst.Ip(), err.Error())
+	_ = rw.Close()
+	if !c.cfg.P2P.Enabled {
+		return
+	}
+	c.logger.Infof(ctx, "try connect and evaluate p2p in 30s: %s", dst.Ip())
+	_ = c.workerPool.Submit(func() {
+		time.Sleep(time.Second * 30)
+		c.tryP2P(ctx, dst)
+	})
 }

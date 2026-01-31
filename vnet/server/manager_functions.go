@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	FuncNamePing               = "ping"
-	FuncNameGetRouterData      = "get_router_data"
-	FuncNameGetP2PRelayInfo    = "get_p2p_relay_info"
-	FuncNameGetP2PRelayMapping = "get_p2p_relay_mapping"
+	FuncNamePing              = "ping"
+	FuncNameGetRouterData     = "get_router_data"
+	FuncNameRegisterP2PPeer   = "register_p2p_peer"
+	FuncNameGetP2PPeerInfo    = "get_p2p_peer_info"
+	FuncNameGetP2PPeerMapping = "get_p2p_relay_mapping"
 )
 
 var (
@@ -28,15 +29,6 @@ var (
 			if !ok {
 				err = errors.New("internal type error of value 'server'")
 				return
-			}
-			v, ok := req.Args["host_id"]
-			if ok && v != "" {
-				hostId := v.(string)
-				_, ok := session.storage.LoadOrStore(sessionStorageKeyRelayHostId, hostId)
-				if !ok {
-					server.logger.Infof(ctx, "registered p2p relay host id %s from %s", hostId, session.IP)
-					server.peerMappingVersion.Add(1)
-				}
 			}
 			return &FuncCallResponse{Code: 0, Data: fmt.Sprintf("%s,%d",
 				session.network.Router().MD5(),
@@ -52,7 +44,7 @@ var (
 		},
 	}
 	funcGetP2PRelayInfo = FuncCallInfo{
-		Name: FuncNameGetP2PRelayInfo,
+		Name: FuncNameGetP2PPeerInfo,
 		Fn: func(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
 			s := ctx.Value(consts.CtxKeyServer)
 			server, ok := s.(*Server)
@@ -61,7 +53,7 @@ var (
 				return
 			}
 
-			info := RelayInfo{
+			info := AddressInfo{
 				Id:        server.p2pSignalingServer.ID(),
 				Addresses: server.p2pSignalingServer.Addresses(),
 			}
@@ -70,7 +62,7 @@ var (
 		},
 	}
 	funcGetP2PRelayMapping = FuncCallInfo{
-		Name: FuncNameGetP2PRelayMapping,
+		Name: FuncNameGetP2PPeerMapping,
 		Fn: func(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
 			s := ctx.Value(consts.CtxKeyServer)
 			server, ok := s.(*Server)
@@ -84,7 +76,7 @@ var (
 				if !ok {
 					return true
 				}
-				v, ok := session.storage.Load(sessionStorageKeyRelayHostId)
+				v, ok := session.storage.Load(sessionStorageKeyP2PPeer)
 				if !ok {
 					return true
 				}
@@ -97,6 +89,27 @@ var (
 			})
 			bs, _ := json.Marshal(res)
 			return &FuncCallResponse{Code: 0, Data: base64.StdEncoding.EncodeToString(bs)}, nil
+		},
+	}
+	funcRegisterP2PPeer = FuncCallInfo{
+		Name: FuncNameRegisterP2PPeer,
+		Fn: func(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
+			s := ctx.Value(consts.CtxKeyServer)
+			server, ok := s.(*Server)
+			if !ok {
+				err = errors.New("internal type error of value 'server'")
+				return
+			}
+			v, ok := req.Args["peer"]
+			if ok && v != "" {
+				peer := v.(string)
+				_, ok := session.storage.LoadOrStore(sessionStorageKeyP2PPeer, peer)
+				if !ok {
+					server.logger.Infof(ctx, "registered p2p peer from %s: %s", session.IP, peer)
+					server.peerMappingVersion.Add(1)
+				}
+			}
+			return &FuncCallResponse{Code: 0, Data: nil}, nil
 		},
 	}
 )

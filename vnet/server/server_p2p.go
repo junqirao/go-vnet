@@ -28,6 +28,10 @@ type (
 		addresses []string
 		hostId    string
 	}
+	AddressInfo struct {
+		Id        string   `json:"id"`
+		Addresses []string `json:"addresses"`
+	}
 )
 
 func (c SignalingServerAddress) MultiAddr(network ...string) multiaddr.Multiaddr {

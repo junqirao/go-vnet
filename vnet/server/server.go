@@ -65,6 +65,7 @@ func NewServer(cfg *Config) *Server {
 		funcGetRouteData,
 		funcGetP2PRelayInfo,
 		funcGetP2PRelayMapping,
+		funcRegisterP2PPeer,
 	)
 
 	chainFunc := config.GetMappedConfig[[]auth.ServerAuthChainFunc](cfg,
@@ -238,6 +239,9 @@ func (s *Server) handleSession(ss *serverSession) {
 		ss.network.Router().UnRegister(routeAddress)
 		// close connection
 		ss.CloseWithError(ep)
+		// delete p2p peer mapping
+		// add version make client re-sync
+		s.peerMappingVersion.Add(1)
 		s.logger.Infof(ss.Ctx, "%s session closed: %s", ss.IP, ss.SessionId)
 	}()
 

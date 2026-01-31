@@ -51,11 +51,11 @@ type (
 		workerPool *ants.Pool
 
 		// p2p
-		relayInfo    *server.RelayInfo
-		relayVersion *atomic.Uint64
-		relayMapping sync.Map
-		host         host.Host
-		hostId       string
+		p2pSignalingServerAddress *server.AddressInfo
+		peerMappingVersion        *atomic.Uint64
+		peerMapping               sync.Map
+		host                      host.Host
+		hostId                    string
 	}
 	internal interface {
 		io.Closer
@@ -72,13 +72,13 @@ type (
 func NewClient(cfg *Config) *Client {
 	workerPool, _ := ants.NewPool(runtime.NumCPU())
 	return &Client{
-		ctx:          context.Background(),
-		cfg:          cfg,
-		logger:       config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
-		auth:         auth.NewClient(cfg.Auth),
-		sig:          make(chan struct{}),
-		relayVersion: &atomic.Uint64{},
-		workerPool:   workerPool,
+		ctx:                context.Background(),
+		cfg:                cfg,
+		logger:             config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
+		auth:               auth.NewClient(cfg.Auth),
+		sig:                make(chan struct{}),
+		peerMappingVersion: &atomic.Uint64{},
+		workerPool:         workerPool,
 	}
 }
 
@@ -155,7 +155,7 @@ func (c *Client) run(ctx context.Context) (err error) {
 
 	// setup p2p
 	if c.cfg.P2P.Enabled {
-		if err := c.setupP2P(ctx); err != nil {
+		if err := c.connectP2PSignalingServer(ctx); err != nil {
 			c.logger.Errorf(ctx, "failed to setup p2p: %s", err.Error())
 		}
 	}

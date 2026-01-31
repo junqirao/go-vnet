@@ -24,8 +24,8 @@ type (
 )
 
 const (
-	sessionStorageKeyRelayHostId = "relay_host_id"
-	sessionStorageKeyLastPing    = "last_ping"
+	sessionStorageKeyP2PPeer  = "p2p_peer"
+	sessionStorageKeyLastPing = "last_ping"
 )
 
 func newServerSession(sr session.SendReceiveCloser, conn any) *serverSession {

@@ -14,9 +14,7 @@ import (
 
 func (c *Client) syncRouter(ctx context.Context) (err error) {
 	// ping
-	resp, err := c.manager.CallFunc(ctx, server.FuncNamePing, map[string]any{
-		"host_id": c.hostId,
-	})
+	resp, err := c.manager.CallFunc(ctx, server.FuncNamePing)
 	if err != nil {
 		c.logger.Errorf(ctx, "failed to execute ping to server: %s", err.Error())
 		return
@@ -28,7 +26,7 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 	current := c.hub.Router().MD5()
 	remote := data[0]
 	v, _ := strconv.Atoi(data[1])
-	version := uint64(v)
+	latestVer := uint64(v)
 	// sync router
 	if remote != current {
 		c.logger.Infof(ctx, "router hash changed, current: %s, server: %s", current, remote)
@@ -36,51 +34,53 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 			c.logger.Errorf(ctx, "failed to update router: %s", err.Error())
 		}
 	}
-	// sync relay
-	if c.relayVersion.Load() != version {
-		if err := c.syncRelay(ctx); err != nil {
-			c.logger.Errorf(ctx, "failed to sync relay: %s", err.Error())
+	// sync p2p peers
+	currentVer := c.peerMappingVersion.Load()
+	if currentVer != latestVer {
+		if err := c.syncP2PPeerMapping(ctx); err != nil {
+			c.logger.Errorf(ctx, "failed to sync peer mapping: %s", err.Error())
 		}
-		c.relayVersion.Store(version)
+		c.peerMappingVersion.CompareAndSwap(currentVer, latestVer)
 	}
 	return
 }
 
-func (c *Client) syncRelay(ctx context.Context) (err error) {
-	resp, err := c.manager.CallFunc(ctx, server.FuncNameGetP2PRelayMapping)
+func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
+	resp, err := c.manager.CallFunc(ctx, server.FuncNameGetP2PPeerMapping)
 	if err != nil {
-		c.logger.Errorf(ctx, "failed to execute get relay data from server: %s", err.Error())
+		c.logger.Errorf(ctx, "failed to execute get peer mapping data from server: %s", err.Error())
 		return
 	}
 	if data, ok := resp.Data.(string); ok && len(data) > 0 {
 		var bs []byte
 		bs, err = base64.StdEncoding.DecodeString(data)
 		if err != nil {
-			c.logger.Errorf(ctx, "failed to decode relay data from server: %s", err.Error())
+			c.logger.Errorf(ctx, "failed to decode peer mapping data from server: %s", err.Error())
 			return
 		}
 		var mapping map[string]string
 		err = json.Unmarshal(bs, &mapping)
 		if err != nil {
-			c.logger.Errorf(ctx, "failed to unmarshal relay data from server: %s", err.Error())
+			c.logger.Errorf(ctx, "failed to unmarshal peer mapping data from server: %s", err.Error())
 			return
 		}
 
 		upsert := 0
 		del := 0
 		for k, v := range mapping {
-			c.relayMapping.Store(k, v)
+			c.peerMapping.Store(k, v)
 			upsert++
 		}
-		c.relayMapping.Range(func(key, value any) bool {
+		c.peerMapping.Range(func(key, value any) bool {
 			if _, ok := mapping[key.(string)]; !ok {
-				c.relayMapping.Delete(key)
+				c.peerMapping.Delete(key)
 				del++
-				c.logger.Infof(ctx, "remove relay: %s", key)
+				c.logger.Infof(ctx, "remove peer: %s", key)
 			}
 			return true
 		})
-		c.logger.Infof(ctx, "relay synced from server, upsert: %d, delete: %d", upsert, del)
+		c.logger.Infof(ctx, "synced p2p peer mapping from server, version: %d, upsert: %d, delete: %d",
+			c.peerMappingVersion.Load(), upsert, del)
 	}
 	return
 }
