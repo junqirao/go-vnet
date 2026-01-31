@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/panjf2000/ants/v2"
 	tun "github.com/sagernet/sing-tun"
 
 	"go-vnet/common/auth"
@@ -47,9 +46,6 @@ type (
 		sig      chan struct{}
 		dev      tun.Tun
 
-		// worker
-		workerPool *ants.Pool
-
 		// p2p
 		p2pSignalingServerAddress *server.AddressInfo
 		p2pConnections            sync.Map // dst:*p2pConnInfo
@@ -71,7 +67,6 @@ type (
 )
 
 func NewClient(cfg *Config) *Client {
-	workerPool, _ := ants.NewPool(runtime.NumCPU())
 	return &Client{
 		ctx:                context.Background(),
 		cfg:                cfg,
@@ -79,7 +74,6 @@ func NewClient(cfg *Config) *Client {
 		auth:               auth.NewClient(cfg.Auth),
 		sig:                make(chan struct{}),
 		peerMappingVersion: &atomic.Uint64{},
-		workerPool:         workerPool,
 	}
 }
 
