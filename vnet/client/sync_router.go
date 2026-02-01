@@ -38,7 +38,7 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 	}
 	// sync p2p peers
 	currentVer := c.peerMappingVersion.Load()
-	if currentVer != latestVer {
+	if currentVer != latestVer && c.cfg.P2P.Enabled {
 		if err := c.syncP2PPeerMapping(ctx); err != nil {
 			c.logger.Errorf(ctx, "failed to sync peer mapping: %s", err.Error())
 		}

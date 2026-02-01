@@ -169,12 +169,7 @@ func (c *Client) handleP2PStreamRx(stream network.Stream) {
 	}
 }
 
-func (c *Client) dialDstRelay(ctx context.Context, dst string) (stream network.Stream, err error) {
-	v, ok := c.peerMapping.Load(dst)
-	if !ok {
-		return nil, errors.New("destination didnt register p2p")
-	}
-	targetPeer := v.(*peer.AddrInfo)
+func (c *Client) dialDstRelay(ctx context.Context, targetPeer *peer.AddrInfo, dst string) (stream network.Stream, err error) {
 	c.logger.Infof(ctx, "dialing p2p stream to %s: %s", dst, targetPeer.String())
 	if err = c.host.Connect(c.ctx, *targetPeer); err != nil {
 		err = fmt.Errorf("failed to connect to peer: %v", err)
@@ -293,7 +288,11 @@ func (c *Client) tryP2P(ctx context.Context, dst *hub.Destination) (err error) {
 	}
 
 	c.logger.Infof(ctx, "try connect and evaluate p2p tx: %s", dst.Ip())
-	stream, err := c.dialDstRelay(ctx, dst.Ip())
+	v, ok := c.peerMapping.Load(dst)
+	if !ok {
+		return
+	}
+	stream, err := c.dialDstRelay(ctx, v.(*peer.AddrInfo), dst.Ip())
 	if err != nil {
 		c.logger.Infof(ctx, "dial p2p peer stream failed: %s", err.Error())
 		return
