@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/gogf/gf/v2 v2.10.0
 	github.com/google/uuid v1.6.0
+	github.com/junqirao/gocomponents v0.3.1
 	github.com/libp2p/go-libp2p v0.47.0
 	github.com/multiformats/go-multiaddr v0.16.0
 	github.com/panjf2000/ants/v2 v2.11.4
@@ -100,7 +101,7 @@ require (
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/webtransport-go v0.10.0 // indirect
-	github.com/rivo/uniseg v0.2.0 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sagernet/fswatch v0.1.1 // indirect
 	github.com/sagernet/gvisor v0.0.0-20241123041152-536d05261cff // indirect
 	github.com/sagernet/nftables v0.3.0-beta.4 // indirect
