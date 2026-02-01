@@ -287,11 +287,11 @@ func (c *Client) tryP2P(ctx context.Context, dst *hub.Destination) (err error) {
 		return
 	}
 
-	c.logger.Infof(ctx, "try connect and evaluate p2p tx: %s", dst.Ip())
 	v, ok := c.peerMapping.Load(dst)
 	if !ok {
 		return
 	}
+	c.logger.Infof(ctx, "try connect and evaluate p2p tx: %s", dst.Ip())
 	stream, err := c.dialDstRelay(ctx, v.(*peer.AddrInfo), dst.Ip())
 	if err != nil {
 		c.logger.Infof(ctx, "dial p2p peer stream failed: %s", err.Error())

@@ -5,7 +5,7 @@ import (
 )
 
 func (s *Server) backgroundUpdateMetricsLoop() {
-	ticker := time.NewTicker(time.Second * 5)
+	ticker := time.NewTicker(time.Second * 1)
 	go func() {
 		for {
 			select {

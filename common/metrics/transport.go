@@ -69,6 +69,8 @@ func (c *BytesCounter) UpdateStats() {
 	// 更新速度和上次值
 	if delta > 0 {
 		c.Speed.Store(delta)
+	} else {
+		c.Speed.Store(0)
 	}
 	c.Last.Store(total)
 }
@@ -97,6 +99,8 @@ func (c *PacketCounter) UpdateStats() {
 	// 更新速度和上次值
 	if delta > 0 {
 		c.Speed.Store(delta)
+	} else {
+		c.Speed.Store(0)
 	}
 	c.Last.Store(total)
 }
