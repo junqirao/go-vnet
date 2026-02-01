@@ -7,6 +7,7 @@ import (
 
 	"github.com/quic-go/quic-go"
 
+	"go-vnet/common/metrics"
 	"go-vnet/common/session"
 )
 
@@ -14,13 +15,16 @@ type (
 	Session struct {
 		*session.Session
 		session.SendReceiveCloser `json:"-"`
-		CreatedAt                 time.Time `json:"created_at"`
-		ref                       internalServer
-		sig                       chan struct{}
-		cfg                       *TransportConfig
-		network                   *Network
-		conn                      any
-		storage                   sync.Map
+
+		ref     internalServer
+		sig     chan struct{}
+		cfg     *TransportConfig
+		network *Network
+		conn    any
+		storage sync.Map
+
+		Metrics   *metrics.TransportMetrics `json:"metrics"`
+		CreatedAt time.Time                 `json:"created_at"`
 	}
 )
 
@@ -36,6 +40,7 @@ func newServerSession(sr session.SendReceiveCloser, conn any) *Session {
 		storage:           sync.Map{},
 		sig:               make(chan struct{}),
 		CreatedAt:         time.Now(),
+		Metrics:           metrics.NewTransportMetrics(),
 	}
 }
 

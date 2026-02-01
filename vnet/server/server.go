@@ -76,6 +76,7 @@ func NewServer(cfg *Config) *Server {
 
 func (s *Server) Serve(ctx context.Context) (err error) {
 	go s.checkStatusLoop()
+	go s.backgroundUpdateMetricsLoop()
 	defer func() {
 		_ = s.manager.Close()
 		_ = s.p2pSignalingServer.Close()
@@ -289,7 +290,7 @@ func (s *Server) handleTransport(ss *Session, srcRwc io.ReadWriteCloser) {
 	}()
 
 	s.logger.Infof(ss.Ctx, "handle proxy start: %s", name)
-	written, err = s.proxy(ss.Ctx, name, dstRwc, srcRwc)
+	written, err = s.proxy(ss.Ctx, name, dstSession, ss, dstRwc, srcRwc)
 	if err != nil {
 		s.logger.Errorf(ss.Ctx, "proxy error: %s ,err=%v", name, err.Error())
 	}
@@ -323,7 +324,7 @@ func (s *Server) handleFuncCallLoop(ss *Session) {
 	}
 }
 
-func (s *Server) proxy(ctx context.Context, name string, dst io.WriteCloser, src io.ReadCloser) (written int64, err error) {
+func (s *Server) proxy(ctx context.Context, name string, dstSess, srcSess *Session, dst io.WriteCloser, src io.ReadCloser) (written int64, err error) {
 	var (
 		buf = make([]byte, protocol.MaxTransportByteSize)
 		nr  int
@@ -341,9 +342,13 @@ func (s *Server) proxy(ctx context.Context, name string, dst io.WriteCloser, src
 		}
 
 		nr, er = src.Read(buf)
+		srcSess.Metrics.TxBytes.Add(uint64(nr))
+		srcSess.Metrics.TxPackets.Add(1)
 		if nr > 0 {
 			// equals dst.Write(buf[0:nr]) when control not set
 			nw, ew := dst.Write(buf[0:nr])
+			dstSess.Metrics.RxBytes.Add(uint64(nw))
+			dstSess.Metrics.RxPackets.Add(1)
 			// fmt.Printf("proxy %d->%d \n", nr, nw)
 			if ew != nil {
 				_ = dst.Close()
