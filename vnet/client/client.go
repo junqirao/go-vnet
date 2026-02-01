@@ -203,6 +203,21 @@ func (c *Client) ReleaseAll() {
 		_ = c.dev.Close()
 		c.dev = nil
 	}
+	c.p2pSignalingServerAddress = nil
+	c.p2pConnections.Range(func(key, value any) bool {
+		if conn, ok := value.(*p2pConnInfo); ok {
+			conn.cancel()
+		}
+		return true
+	})
+	c.p2pConnections.Clear()
+	c.peerMappingVersion.Store(0)
+	c.peerMapping.Clear()
+	if c.host != nil {
+		_ = c.host.Close()
+		c.host = nil
+	}
+	c.hostId = ""
 	c.manager = nil
 	c.session = nil
 	c.ctx = nil
