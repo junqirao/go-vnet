@@ -18,7 +18,6 @@ var (
 		return &Config{
 			MappedConfig: config.NewMappedConfig(),
 			Type:         TypeQuic,
-			MTU:          1400,
 			P2P: P2PConfig{
 				Enabled:     true,
 				ListenAddr:  []string{},
@@ -43,7 +42,6 @@ type (
 		Port               int         `yaml:"port" json:"port"`
 		Address            string      `yaml:"address" json:"address"`
 		Type               Type        `yaml:"type" json:"type"`
-		MTU                int         `yaml:"mtu" json:"mtu"`
 		InsecureSkipVerify bool        `yaml:"insecure_skip_verify" json:"insecure_skip_verify"`
 		Auth               auth.Config `yaml:"auth" json:"auth"`
 		P2P                P2PConfig   `yaml:"p2p" json:"p2p"`

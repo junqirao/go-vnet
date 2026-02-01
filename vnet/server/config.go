@@ -17,7 +17,6 @@ var (
 	defaultServerConfig = func() *Config {
 		return &Config{
 			MappedConfig: config.NewMappedConfig(),
-			MTU:          1400,
 		}
 	}
 )
@@ -33,7 +32,6 @@ type (
 		config.MappedConfig
 		Servers []*TransportConfig `json:"servers"`
 		P2P     *P2PConfig         `json:"p2p"`
-		MTU     int                `json:"mtu"`
 		Auth    auth.Config        `json:"auth"`
 	}
 	ConfigOption    func(cfg *Config)
@@ -97,7 +95,6 @@ func WithConfig(config *Config) ConfigOption {
 	return func(cfg *Config) {
 		cfg.MappedConfig = config.MappedConfig
 		cfg.Servers = config.Servers
-		cfg.MTU = config.MTU
 	}
 }
 
