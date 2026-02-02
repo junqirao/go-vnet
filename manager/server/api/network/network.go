@@ -11,5 +11,6 @@ import (
 )
 
 type INetworkV1 interface {
+	GetNetworkDetails(ctx context.Context, req *v1.GetNetworkDetailsReq) (res *v1.GetNetworkDetailsRes, err error)
 	ListSession(ctx context.Context, req *v1.ListSessionReq) (res *v1.ListSessionRes, err error)
 }

@@ -64,3 +64,7 @@ func (s *Session) Stop() {
 	}
 	return
 }
+
+func (s *Session) Network() *Network {
+	return s.network
+}

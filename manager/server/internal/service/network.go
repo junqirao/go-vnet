@@ -7,12 +7,13 @@ package service
 
 import (
 	"context"
-	"go-vnet/vnet/server"
+	"go-vnet/manager/server/internal/model"
 )
 
 type (
 	INetwork interface {
-		ListSessionByNetwork(ctx context.Context, networkId string) (sessions []*server.Session, err error)
+		GetNetworkDetails(_ context.Context, networkId string) (details *model.NetworkDetails, err error)
+		ListSessionByNetwork(_ context.Context, networkId string) (sessions []*model.Session, err error)
 	}
 )
 

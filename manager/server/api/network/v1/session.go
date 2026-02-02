@@ -3,7 +3,7 @@ package v1
 import (
 	"github.com/gogf/gf/v2/frame/g"
 
-	"go-vnet/vnet/server"
+	"go-vnet/manager/server/internal/model"
 )
 
 type ListSessionReq struct {
@@ -12,5 +12,5 @@ type ListSessionReq struct {
 }
 
 type ListSessionRes struct {
-	Sessions []*server.Session `json:"sessions"`
+	Sessions []*model.Session `json:"sessions"`
 }
