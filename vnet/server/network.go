@@ -9,6 +9,7 @@ import (
 
 	"go-vnet/common/addresses"
 	"go-vnet/common/flow"
+	"go-vnet/common/metrics"
 	"go-vnet/common/router"
 	"go-vnet/common/session"
 )
@@ -16,7 +17,8 @@ import (
 type (
 	Network struct {
 		NetworkConfig   `json:"config"`
-		sessions        sync.Map // cidr : *Session
+		Metrics         *metrics.TransportMetrics `json:"metrics"`
+		sessions        sync.Map                  // cidr : *Session
 		router          *router.Router
 		pool            *addresses.IPAllocator
 		control         *flow.Control
@@ -38,6 +40,7 @@ func NewNetwork(cfg *NetworkConfig) (n *Network, err error) {
 	}
 	n = &Network{
 		NetworkConfig: *cfg,
+		Metrics:       metrics.NewTransportMetrics(),
 		router:        router.NewRouter(),
 		pool:          allocator,
 	}
