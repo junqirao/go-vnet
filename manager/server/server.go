@@ -36,6 +36,6 @@ func StartAllNetworks() {
 			continue
 		}
 		mgr.RegisterNetwork(n)
-		logger.DefaultLogger.Errorf(ctx, "network %s started", info.Id)
+		logger.DefaultLogger.Infof(ctx, "network %s started", info.Id)
 	}
 }
