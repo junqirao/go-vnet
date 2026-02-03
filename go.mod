@@ -3,6 +3,7 @@ module go-vnet
 go 1.25.0
 
 require (
+	github.com/gogf/gf/contrib/drivers/mysql/v2 v2.8.3
 	github.com/gogf/gf/v2 v2.10.0
 	github.com/google/uuid v1.6.0
 	github.com/junqirao/gocomponents v0.3.1
@@ -32,6 +33,7 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/go-sql-driver/mysql v1.7.1 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect

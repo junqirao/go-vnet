@@ -21,7 +21,6 @@ var (
 			s := g.Server()
 			s.Group("/", func(group *ghttp.RouterGroup) {
 				group.Middleware(middleware.CheckSignature, ghttp.MiddlewareCORS, response.Middleware)
-				group.Middleware(ghttp.MiddlewareHandlerResponse)
 				group.Group("/v1", func(group *ghttp.RouterGroup) {
 					group.Bind(
 						network.NewV1(),

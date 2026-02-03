@@ -13,18 +13,18 @@ import (
 
 func main() {
 	// create test network
-	n, err := server.NewNetwork(&server.NetworkConfig{
-		ID:         "test",
-		CIDR:       "192.168.98.0/24",
-		RouterData: nil,
-		MTU:        1392,
-	})
-	if err != nil {
-		panic(err)
-	}
+	// n, err := server.NewNetwork(&server.NetworkConfig{
+	// 	ID:         "test",
+	// 	CIDR:       "192.168.98.0/24",
+	// 	RouterData: nil,
+	// 	MTU:        1392,
+	// })
+	// if err != nil {
+	// 	panic(err)
+	// }
 
 	// register network
-	server.GetNetworkManager().RegisterNetwork(n)
+	// server.GetNetworkManager().RegisterNetwork(n)
 
 	l := logger.NewStdLogger(nil, "transport_server")
 	cfg := server.NewConfig(
@@ -70,7 +70,7 @@ func main() {
 	// run server
 	s := server.NewServer(cfg)
 	go func() {
-		err = s.Serve(context.Background())
+		err := s.Serve(context.Background())
 		if err != nil {
 			panic(err)
 		}

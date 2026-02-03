@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 
 	"golang.zx2c4.com/wireguard/device"
 
@@ -23,6 +24,7 @@ type (
 		pool            *addresses.IPAllocator
 		control         *flow.Control
 		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *session.Device, err error)
+		StartedAt       time.Time
 	}
 	NetworkConfig struct {
 		ID              string `json:"id"`
@@ -43,6 +45,7 @@ func NewNetwork(cfg *NetworkConfig) (n *Network, err error) {
 		Metrics:       metrics.NewTransportMetrics(),
 		router:        router.NewRouter(),
 		pool:          allocator,
+		StartedAt:     time.Now(),
 	}
 	return
 }
@@ -94,4 +97,13 @@ func (n *Network) ListSessions() (sessions []*Session) {
 		return sessions[i].CreatedAt.Unix() < sessions[j].CreatedAt.Unix()
 	})
 	return
+}
+
+func (n *Network) Stop() {
+	// stop all sessions
+	n.sessions.Range(func(key, value any) bool {
+		sess := value.(*Session)
+		sess.Stop()
+		return true
+	})
 }

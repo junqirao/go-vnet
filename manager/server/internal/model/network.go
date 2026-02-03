@@ -1,0 +1,22 @@
+package model
+
+import (
+	"time"
+
+	"go-vnet/common/metrics"
+	"go-vnet/manager/server/internal/model/entity"
+)
+
+type (
+	NetworkRuntime struct {
+		Running      bool                      `json:"running"`
+		StartedAt    time.Time                 `json:"started_at"`
+		Sessions     []*Session                `json:"sessions"`
+		SessionCount int                       `json:"session_count"`
+		Metrics      *metrics.TransportMetrics `json:"metrics"`
+	}
+	NetworkDetails struct {
+		Info    *entity.Network `json:"info"`
+		Runtime *NetworkRuntime `json:"runtime"`
+	}
+)
