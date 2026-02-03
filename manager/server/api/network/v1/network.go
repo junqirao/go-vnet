@@ -3,18 +3,23 @@ package v1
 import (
 	"github.com/gogf/gf/v2/frame/g"
 
+	"go-vnet/manager/server/internal/controller/middleware"
 	"go-vnet/manager/server/internal/model"
 )
 
 type GetNetworkDetailsReq struct {
-	g.Meta    `path:"/network/:network_id" tags:"Network" method:"get" summary:"Get network details"`
-	NetworkId string `json:"network_id"`
+	g.Meta `path:"/network/:network_id" tags:"Network" method:"get" summary:"Get network details"`
+	middleware.RequiredAuthHeader
+
+	NetworkId string `json:"network_id" v:"required" in:"path"`
 }
 
 type GetNetworkDetailsRes model.NetworkDetails
 
 type CreateNetworkReq struct {
-	g.Meta      `path:"/network" tags:"Network" method:"post" summary:"Create network"`
+	g.Meta `path:"/network" tags:"Network" method:"post" summary:"Create network"`
+	middleware.RequiredAuthHeader
+
 	Name        string         `json:"name"`
 	CIDR        string         `json:"cidr"`
 	Description string         `json:"description"`
@@ -26,31 +31,39 @@ type CreateNetworkRes struct {
 }
 
 type StopNetworkReq struct {
-	g.Meta    `path:"/network/:network_id/stop" tags:"Network" method:"post" summary:"Stop network"`
-	NetworkId string `json:"network_id"`
+	g.Meta `path:"/network/:network_id/stop" tags:"Network" method:"post" summary:"Stop network"`
+	middleware.RequiredAuthHeader
+
+	NetworkId string `json:"network_id" v:"required" in:"path"`
 }
 
 type StopNetworkRes struct{}
 
 type StartNetworkReq struct {
-	g.Meta    `path:"/network/:network_id/start" tags:"Network" method:"post" summary:"Start network"`
-	NetworkId string `json:"network_id"`
+	g.Meta `path:"/network/:network_id/start" tags:"Network" method:"post" summary:"Start network"`
+	middleware.RequiredAuthHeader
+
+	NetworkId string `json:"network_id" v:"required" in:"path"`
 }
 
 type StartNetworkRes struct {
 }
 
 type RemoveNetworkReq struct {
-	g.Meta    `path:"/network/:network_id" tags:"Network" method:"delete" summary:"Remove network"`
-	NetworkId string `json:"network_id"`
+	g.Meta `path:"/network/:network_id" tags:"Network" method:"delete" summary:"Remove network"`
+	middleware.RequiredAuthHeader
+
+	NetworkId string `json:"network_id" v:"required" in:"path"`
 }
 
 type RemoveNetworkRes struct {
 }
 
 type UpdateNetworkReq struct {
-	g.Meta    `path:"/network/:network_id" tags:"Network" method:"post" summary:"Update network"`
-	NetworkId string         `json:"network_id"`
+	g.Meta `path:"/network/:network_id" tags:"Network" method:"post" summary:"Update network"`
+	middleware.RequiredAuthHeader
+
+	NetworkId string         `json:"network_id" v:"required" in:"path"`
 	Fields    map[string]any `json:"fields"`
 }
 

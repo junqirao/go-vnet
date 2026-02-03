@@ -6,7 +6,7 @@ require (
 	github.com/gogf/gf/contrib/drivers/mysql/v2 v2.8.3
 	github.com/gogf/gf/v2 v2.10.0
 	github.com/google/uuid v1.6.0
-	github.com/junqirao/gocomponents v0.3.1
+	github.com/junqirao/gocomponents v0.3.2
 	github.com/libp2p/go-libp2p v0.47.0
 	github.com/multiformats/go-multiaddr v0.16.0
 	github.com/panjf2000/ants/v2 v2.11.4

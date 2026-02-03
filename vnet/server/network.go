@@ -6,8 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.zx2c4.com/wireguard/device"
-
 	"go-vnet/common/addresses"
 	"go-vnet/common/flow"
 	"go-vnet/common/metrics"
@@ -17,22 +15,22 @@ import (
 
 type (
 	Network struct {
-		NetworkConfig   `json:"config"`
-		Metrics         *metrics.TransportMetrics `json:"metrics"`
-		sessions        sync.Map                  // cidr : *Session
-		router          *router.Router
-		pool            *addresses.IPAllocator
-		control         *flow.Control
-		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *session.Device, err error)
-		StartedAt       time.Time
+		NetworkConfig `json:"config"`
+		Metrics       *metrics.TransportMetrics `json:"metrics"`
+		sessions      sync.Map                  // cidr : *Session
+		router        *router.Router
+		pool          *addresses.IPAllocator
+		control       *flow.Control
+		StartedAt     time.Time
 	}
 	NetworkConfig struct {
-		ID              string `json:"id"`
-		CIDR            string `json:"cidr"`
-		MTU             int    `json:"mtu"`
-		RouterData      []byte `json:"-"`
-		allocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *device.Device, err error)
+		ID              string          `json:"id"`
+		CIDR            string          `json:"cidr"`
+		MTU             int             `json:"mtu"`
+		RouterData      []byte          `json:"-"`
+		AllocDeviceFunc AllocDeviceFunc `json:"-"`
 	}
+	AllocDeviceFunc func(ctx context.Context, n *Network, payload map[string]any) (dev *session.Device, err error)
 )
 
 func NewNetwork(cfg *NetworkConfig) (n *Network, err error) {
@@ -56,9 +54,13 @@ func (n *Network) Router() *router.Router {
 
 func (n *Network) AcquireDevice(ctx context.Context, sess *Session, request map[string]any) (dev *session.Device, err error) {
 	dev = &session.Device{}
-	if n.allocDeviceFunc != nil {
-		if dev, err = n.allocDeviceFunc(ctx, request); err != nil {
+	if n.NetworkConfig.AllocDeviceFunc != nil {
+		var d *session.Device
+		if d, err = n.NetworkConfig.AllocDeviceFunc(ctx, n, request); err != nil {
 			return
+		}
+		if d != nil {
+			dev = d
 		}
 	}
 

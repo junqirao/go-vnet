@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/junqirao/gocomponents/response"
 
+	"go-vnet/common/session"
 	"go-vnet/manager/server/internal/dao"
 	"go-vnet/manager/server/internal/model"
 	"go-vnet/manager/server/internal/model/entity"
@@ -57,9 +58,10 @@ func (s *sNetwork) CreateNetwork(ctx context.Context, network *entity.Network) (
 		return
 	}
 	n, err := server.NewNetwork(&server.NetworkConfig{
-		ID:   id,
-		CIDR: network.Cidr,
-		MTU:  network.Mtu,
+		ID:              id,
+		CIDR:            network.Cidr,
+		MTU:             network.Mtu,
+		AllocDeviceFunc: s.AcquireDevice,
 	})
 	if err != nil {
 		return
@@ -93,9 +95,10 @@ func (s *sNetwork) StartNetwork(ctx context.Context, networkId string) (err erro
 		return
 	}
 	n, err := server.NewNetwork(&server.NetworkConfig{
-		ID:   en.Id,
-		CIDR: en.Cidr,
-		MTU:  en.Mtu,
+		ID:              en.Id,
+		CIDR:            en.Cidr,
+		MTU:             en.Mtu,
+		AllocDeviceFunc: s.AcquireDevice,
 	})
 	if err != nil {
 		return
@@ -185,5 +188,11 @@ func (s *sNetwork) ListNetworkInfos(ctx context.Context) (ns []*entity.Network, 
 		_ = record.Struct(&n)
 		ns = append(ns, n)
 	}
+	return
+}
+
+func (s *sNetwork) AcquireDevice(ctx context.Context, n *server.Network, payload map[string]any) (dev *session.Device, err error) {
+	// todo
+	g.Log().Infof(ctx, "AcquireDevice: %+v", payload)
 	return
 }

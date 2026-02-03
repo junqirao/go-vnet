@@ -15,6 +15,7 @@ database:
     link: "mysql:root:12345678@tcp(127.0.0.1:3306)/test"
 
 auth:
+  skip_verify_local: true
   allowed_timestamp_diff: 0
   apps:
     - appid: "test"

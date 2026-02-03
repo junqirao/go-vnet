@@ -13,7 +13,6 @@ import (
 )
 
 func RunServer() {
-	StartAllNetworks()
 	cmd.WebServer.Run(gctx.GetInitCtx())
 }
 
@@ -27,9 +26,10 @@ func StartAllNetworks() {
 	mgr := server.GetNetworkManager()
 	for _, info := range infos {
 		n, err := server.NewNetwork(&server.NetworkConfig{
-			ID:   info.Id,
-			CIDR: info.Cidr,
-			MTU:  info.Mtu,
+			ID:              info.Id,
+			CIDR:            info.Cidr,
+			MTU:             info.Mtu,
+			AllocDeviceFunc: service.Network().AcquireDevice,
 		})
 		if err != nil {
 			logger.DefaultLogger.Errorf(ctx, "failed to start network %s: %s", info.Id, err.Error())

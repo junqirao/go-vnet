@@ -62,6 +62,12 @@ github.com/josharian/native v1.1.0 h1:uuaP0hAbW7Y4l0ZRQ6C9zfb7Mg1mbFKry/xzDAfmtL
 github.com/josharian/native v1.1.0/go.mod h1:7X/raswPFr05uY3HiLlYeyQntB6OO7E/d2Cu7qoaN2w=
 github.com/junqirao/gocomponents v0.3.1 h1:YN2GWuK9LOrTEWVPG3PjhvxMas/cj5AJyuzWPq2V5LM=
 github.com/junqirao/gocomponents v0.3.1/go.mod h1:seAjPRDf9HxrHFGMf/IzBsidO7E+XUF3MGrPHuw1vyQ=
+github.com/junqirao/gocomponents v0.3.2-0.20260203141613-62306947ddeb h1:agGfnMOf3kPlz5Pb8/sdkWD2n9umUTtxjqSpZItPGzk=
+github.com/junqirao/gocomponents v0.3.2-0.20260203141613-62306947ddeb/go.mod h1:seAjPRDf9HxrHFGMf/IzBsidO7E+XUF3MGrPHuw1vyQ=
+github.com/junqirao/gocomponents v0.3.2-0.20260203141849-45bab0ebe5ed h1:W3tyUpQBif608YSRc09FryPQ8I6ce91iLf/PvQKF7xQ=
+github.com/junqirao/gocomponents v0.3.2-0.20260203141849-45bab0ebe5ed/go.mod h1:seAjPRDf9HxrHFGMf/IzBsidO7E+XUF3MGrPHuw1vyQ=
+github.com/junqirao/gocomponents v0.3.2 h1:Gy3jusGGAB56fenfzlYLq9TtGA+ehHIk8TJE6eEDxZc=
+github.com/junqirao/gocomponents v0.3.2/go.mod h1:seAjPRDf9HxrHFGMf/IzBsidO7E+XUF3MGrPHuw1vyQ=
 github.com/klauspost/cpuid/v2 v2.2.10 h1:tBs3QSyvjDyFTq3uoc/9xFpCuOsJQFNPiAhYdw2skhE=
 github.com/klauspost/cpuid/v2 v2.2.10/go.mod h1:hqwkgyIinND0mEev00jJYCxPNVRVXFQeu1XKlok6oO0=
 github.com/koron/go-ssdp v0.0.6 h1:Jb0h04599eq/CY7rB5YEqPS83HmRfHP2azkxMN2rFtU=

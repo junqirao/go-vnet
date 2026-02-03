@@ -76,6 +76,8 @@ func main() {
 		}
 	}()
 
+	// start all networks
+	web.StartAllNetworks()
 	// run web server
 	web.RunServer()
 }

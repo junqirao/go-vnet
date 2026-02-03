@@ -7,8 +7,10 @@ package service
 
 import (
 	"context"
+	"go-vnet/common/session"
 	"go-vnet/manager/server/internal/model"
 	"go-vnet/manager/server/internal/model/entity"
+	"go-vnet/vnet/server"
 )
 
 type (
@@ -20,6 +22,7 @@ type (
 		DeleteNetwork(ctx context.Context, networkId string) (err error)
 		UpdateNetwork(ctx context.Context, networkId string, fields map[string]any) (err error)
 		ListNetworkInfos(ctx context.Context) (ns []*entity.Network, err error)
+		AcquireDevice(ctx context.Context, n *server.Network, payload map[string]any) (dev *session.Device, err error)
 		ListSessionByNetwork(_ context.Context, networkId string) (sessions []*model.Session, err error)
 	}
 )

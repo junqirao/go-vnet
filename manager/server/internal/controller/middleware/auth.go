@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gogf/gf/v2/crypto/gmd5"
@@ -17,7 +18,17 @@ const (
 	salt = "go_v_net_web_server"
 )
 
+type RequiredAuthHeader struct {
+	Appid     string `json:"X-Appid" in:"header"`
+	Timestamp string `json:"X-Timestamp" in:"header"`
+	Signature string `json:"X-Signature" in:"header"`
+}
+
 func CheckSignature(r *ghttp.Request) {
+	if strings.HasPrefix(r.RemoteAddr, "127.0.0.1") && g.Cfg().MustGet(r.Context(), "auth.skip_verify_local", false).Bool() {
+		r.Middleware.Next()
+		return
+	}
 	var (
 		appid     = r.GetHeader("X-Appid")
 		timestamp = r.GetHeader("X-Timestamp")
