@@ -40,6 +40,11 @@ type (
 		// p2p
 		p2pSignalingServer *p2pSignalingServer
 		peerMappingVersion *atomic.Uint64
+		// manager server
+		ms ManagerServer
+	}
+	ManagerServer interface {
+		AcquireDevice(ctx context.Context, ss *Session, payload map[string]any) (dev *session.Device, err error)
 	}
 	internalServer interface {
 		io.Closer
@@ -100,6 +105,10 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 		s.logger.Info(ctx, "quic server closed")
 		return
 	}
+}
+
+func (s *Server) RegisterManager(ms ManagerServer) {
+	s.ms = ms
 }
 
 func (s *Server) checkStatusLoop() {
@@ -406,24 +415,41 @@ func (s *Server) handshake(ctx context.Context, ss *Session) (err error) {
 		_ = ss.Send(bs)
 	}()
 
-	// get network_id from request
-	networkId, ok := request["network_id"].(string)
-	if !ok {
-		err = ErrInvalidParameter.WithCause(errors.New("network_id field from request not found"))
+	if s.ms == nil {
+		err = ErrUnauthorized.WithCause(errors.New("manager server not registered"))
 		return
 	}
-
-	ss.network, ok = GetNetworkManager().GetNetwork(networkId)
-	if !ok {
-		err = ErrResourceNotFound.WithCause(fmt.Errorf("network not found: id=%s", networkId))
-		return
-	}
-
-	dev, err := ss.network.AcquireDevice(ctx, ss, request)
+	var dev *session.Device
+	dev, err = s.ms.AcquireDevice(ctx, ss, request)
 	if err != nil {
 		err = ErrResourceError.WithCause(fmt.Errorf("acquire device error: %s", err.Error()))
 		return
 	}
+	if ss.network == nil {
+		err = ErrResourceError.WithCause(errors.New("internal error network not set"))
+		return
+	}
+
+	networkId := ss.network.ID
+
+	// // get network_id from request
+	// networkId, ok := request["network_id"].(string)
+	// if !ok {
+	// 	err = ErrInvalidParameter.WithCause(errors.New("network_id field from request not found"))
+	// 	return
+	// }
+	//
+	// ss.network, ok = GetNetworkManager().GetNetwork(networkId)
+	// if !ok {
+	// 	err = ErrResourceNotFound.WithCause(fmt.Errorf("network not found: id=%s", networkId))
+	// 	return
+	// }
+	//
+	// dev, err := ss.network.AcquireDevice(ctx, ss, request)
+	// if err != nil {
+	// 	err = ErrResourceError.WithCause(fmt.Errorf("acquire device error: %s", err.Error()))
+	// 	return
+	// }
 	s.logger.Infof(ctx, "dispatch device: id=%v cidr=%v", dev.Id, dev.CIDR)
 
 	ip, _, _ := net.ParseCIDR(dev.CIDR)

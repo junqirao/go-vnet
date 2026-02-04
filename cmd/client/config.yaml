@@ -1,8 +1,10 @@
 # 客户端配置文件
 network_id: "37ed08c1-44f0-427e-94d2-bc537ca33fc2"
+link: "eyJzdWJfZGV2aWNlX2lkIjoxLCJrZXkiOiJ0ZXN0In0="
 address: "127.0.0.1"
 port: 9800
 insecure_skip_verify: true
+public_key: public_key.pem
 
 p2p:
   enabled: true

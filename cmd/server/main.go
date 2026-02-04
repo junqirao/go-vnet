@@ -75,6 +75,8 @@ func main() {
 			panic(err)
 		}
 	}()
+	// register manager server
+	s.RegisterManager(web.ManagerServer())
 
 	// start all networks
 	web.StartAllNetworks()

@@ -43,6 +43,12 @@ type (
 	P2PConfig struct {
 		Addresses []SignalingServerAddress `json:"addresses"`
 	}
+	NetworkLink struct {
+		SubDeviceId uint64 `json:"sub_device_id"`
+		Key         string `json:"key"`
+		Signature   string `json:"signature"`
+		Nonce       string `json:"nonce"`
+	}
 )
 
 func (t Type) String() string {

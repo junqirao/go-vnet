@@ -36,9 +36,10 @@ type (
 	Type   string
 	Config struct {
 		config.MappedConfig
-		authPayload map[string]any
 
 		NetworkId          string      `yaml:"network_id" json:"network_id"`
+		Link               string      `yaml:"link" json:"link"`
+		PublicKey          string      `yaml:"public_key" json:"public_key"`
 		Port               int         `yaml:"port" json:"port"`
 		Address            string      `yaml:"address" json:"address"`
 		Type               Type        `yaml:"type" json:"type"`
@@ -84,12 +85,6 @@ func WithAddress(s string) ConfigOption {
 		} else {
 			cfg.Address = s
 		}
-	}
-}
-
-func WithAuthenticationPayload(payload map[string]any) ConfigOption {
-	return func(cfg *Config) {
-		cfg.authPayload = payload
 	}
 }
 

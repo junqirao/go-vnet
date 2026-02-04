@@ -12,7 +12,7 @@ logger:
 # https://goframe.org/docs/core/gdb-config-file
 database:
   default:
-    link: "mysql:root:12345678@tcp(127.0.0.1:3306)/test"
+    link: "mysql:go_vnet_webserver:xD7xZmk64Hh6FG38@tcp(106.53.182.150:3306)/go_vnet_webserver"
 
 auth:
   skip_verify_local: true

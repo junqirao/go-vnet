@@ -24,13 +24,12 @@ type (
 		StartedAt     time.Time
 	}
 	NetworkConfig struct {
-		ID              string          `json:"id"`
-		CIDR            string          `json:"cidr"`
-		MTU             int             `json:"mtu"`
-		RouterData      []byte          `json:"-"`
-		AllocDeviceFunc AllocDeviceFunc `json:"-"`
+		ID         string `json:"id"`
+		CIDR       string `json:"cidr"`
+		MTU        int    `json:"mtu"`
+		RouterData []byte `json:"-"`
 	}
-	AllocDeviceFunc func(ctx context.Context, n *Network, payload map[string]any) (dev *session.Device, err error)
+	AllocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *session.Device, err error)
 )
 
 func NewNetwork(cfg *NetworkConfig) (n *Network, err error) {
@@ -50,31 +49,6 @@ func NewNetwork(cfg *NetworkConfig) (n *Network, err error) {
 
 func (n *Network) Router() *router.Router {
 	return n.router
-}
-
-func (n *Network) AcquireDevice(ctx context.Context, sess *Session, request map[string]any) (dev *session.Device, err error) {
-	dev = &session.Device{}
-	if n.NetworkConfig.AllocDeviceFunc != nil {
-		var d *session.Device
-		if d, err = n.NetworkConfig.AllocDeviceFunc(ctx, n, request); err != nil {
-			return
-		}
-		if d != nil {
-			dev = d
-		}
-	}
-
-	if dev.CIDR != "" {
-		err = n.pool.AssignSpecific(dev.CIDR)
-	} else {
-		dev.CIDR, err = n.pool.AssignRandom()
-	}
-	if dev.MTU == 0 {
-		dev.MTU = n.MTU
-	}
-
-	n.sessions.Store(dev.CIDR, sess)
-	return
 }
 
 func (n *Network) ReleaseDevice(cidr string) (err error) {
@@ -108,4 +82,12 @@ func (n *Network) Stop() {
 		sess.Stop()
 		return true
 	})
+}
+
+func (n *Network) RegisterSession(cidr string, s *Session) {
+	n.sessions.Store(cidr, s)
+}
+
+func (n *Network) AddressPool() *addresses.IPAllocator {
+	return n.pool
 }

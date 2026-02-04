@@ -13,7 +13,6 @@ require (
 	github.com/quic-go/quic-go v0.59.0
 	github.com/sagernet/netlink v0.0.0-20240612041022-b9a21c07ac6a
 	github.com/sagernet/sing-tun v0.7.3
-	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -132,7 +131,6 @@ require (
 	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.38.0 // indirect
-	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )

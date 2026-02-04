@@ -68,3 +68,7 @@ func (s *Session) Stop() {
 func (s *Session) Network() *Network {
 	return s.network
 }
+
+func (s *Session) SetNetwork(n *Network) {
+	s.network = n
+}

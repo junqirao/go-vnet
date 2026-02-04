@@ -57,10 +57,9 @@ func (s *sNetwork) CreateNetwork(ctx context.Context, network *entity.Network) (
 		return
 	}
 	n, err := server.NewNetwork(&server.NetworkConfig{
-		ID:              id,
-		CIDR:            network.Cidr,
-		MTU:             network.Mtu,
-		AllocDeviceFunc: s.AcquireDevice,
+		ID:   id,
+		CIDR: network.Cidr,
+		MTU:  network.Mtu,
 	})
 	if err != nil {
 		return
@@ -94,10 +93,9 @@ func (s *sNetwork) StartNetwork(ctx context.Context, networkId string) (err erro
 		return
 	}
 	n, err := server.NewNetwork(&server.NetworkConfig{
-		ID:              en.Id,
-		CIDR:            en.Cidr,
-		MTU:             en.Mtu,
-		AllocDeviceFunc: s.AcquireDevice,
+		ID:   en.Id,
+		CIDR: en.Cidr,
+		MTU:  en.Mtu,
 	})
 	if err != nil {
 		return

@@ -13,6 +13,13 @@ import (
 	"go-vnet/vnet/server"
 )
 
+type (
+	managerServer struct {
+		service.INetwork
+		service.IDevice
+	}
+)
+
 func RunServer() {
 	cmd.WebServer.Run(gctx.GetInitCtx())
 }
@@ -27,10 +34,9 @@ func StartAllNetworks() {
 	mgr := server.GetNetworkManager()
 	for _, info := range infos {
 		n, err := server.NewNetwork(&server.NetworkConfig{
-			ID:              info.Id,
-			CIDR:            info.Cidr,
-			MTU:             info.Mtu,
-			AllocDeviceFunc: service.Network().AcquireDevice,
+			ID:   info.Id,
+			CIDR: info.Cidr,
+			MTU:  info.Mtu,
 		})
 		if err != nil {
 			logger.DefaultLogger.Errorf(ctx, "failed to start network %s: %s", info.Id, err.Error())
@@ -38,5 +44,12 @@ func StartAllNetworks() {
 		}
 		mgr.RegisterNetwork(n)
 		logger.DefaultLogger.Infof(ctx, "network %s started", info.Id)
+	}
+}
+
+func ManagerServer() server.ManagerServer {
+	return &managerServer{
+		INetwork: service.Network(),
+		IDevice:  service.Device(),
 	}
 }

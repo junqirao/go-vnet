@@ -15,7 +15,7 @@ import (
 
 type (
 	INetwork interface {
-		AcquireDevice(ctx context.Context, n *server.Network, payload map[string]any) (dev *session.Device, err error)
+		AcquireDevice(ctx context.Context, ss *server.Session, payload map[string]any) (dev *session.Device, err error)
 		GetNetworkDetails(ctx context.Context, networkId string) (details *model.NetworkDetails, err error)
 		CreateNetwork(ctx context.Context, network *entity.Network) (id string, err error)
 		StopNetwork(ctx context.Context, networkId string) (err error)

@@ -181,8 +181,13 @@ func (d *sDevice) verify(_ context.Context, dev *entity.Device, key string, nonc
 		err = response.CodeDefaultFailure.WithDetail("failed to parse private key")
 		return
 	}
+	sign, err := gbase64.DecodeString(signature)
+	if err != nil {
+		err = response.CodeDefaultFailure.WithDetail(fmt.Sprintf("invalid signature format: %s", err.Error()))
+		return
+	}
 	// decode signature -> nonce
-	bs, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, pk, []byte(signature), []byte("device"))
+	bs, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, pk, sign, []byte("device"))
 	if err != nil {
 		err = response.CodePermissionDeny.WithDetail("invalid signature")
 		return
