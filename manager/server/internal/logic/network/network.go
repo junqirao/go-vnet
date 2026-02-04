@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/junqirao/gocomponents/response"
 
-	"go-vnet/common/session"
 	"go-vnet/manager/server/internal/dao"
 	"go-vnet/manager/server/internal/model"
 	"go-vnet/manager/server/internal/model/entity"
@@ -188,11 +187,5 @@ func (s *sNetwork) ListNetworkInfos(ctx context.Context) (ns []*entity.Network, 
 		_ = record.Struct(&n)
 		ns = append(ns, n)
 	}
-	return
-}
-
-func (s *sNetwork) AcquireDevice(ctx context.Context, n *server.Network, payload map[string]any) (dev *session.Device, err error) {
-	// todo
-	g.Log().Infof(ctx, "AcquireDevice: %+v", payload)
 	return
 }

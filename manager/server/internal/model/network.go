@@ -23,4 +23,10 @@ type (
 		AllowAnonymousDevice bool `json:"allow_anonymous_device"`
 		AutoCreateSubDevice  bool `json:"auto_create_sub_device"`
 	}
+	NetworkLink struct {
+		SubDeviceId uint64 `json:"sub_device_id"`
+		Key         string `json:"key"`
+		Signature   string `json:"signature"`
+		Nonce       string `json:"nonce"`
+	}
 )

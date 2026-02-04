@@ -20,6 +20,7 @@ type (
 		VerifyByName(ctx context.Context, name string, key string, nonce string, signature string) (dev *entity.Device, err error)
 		VerifyById(ctx context.Context, id string, key string, nonce string, signature string) (dev *entity.Device, err error)
 		CreateSubDevice(ctx context.Context, deviceId string, networkId string, quota int, settings *model.SubDeviceSettings) (err error)
+		GetSubDeviceById(ctx context.Context, id uint64) (sub *model.SubDevice, err error)
 	}
 )
 

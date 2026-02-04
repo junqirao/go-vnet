@@ -201,37 +201,3 @@ func (d *sDevice) buildEncryptKey(key string) []byte {
 	}
 	return res[:16]
 }
-
-func (d *sDevice) CreateSubDevice(ctx context.Context,
-	deviceId, networkId string, quota int,
-	settings *model.SubDeviceSettings) (err error) {
-	network, err := service.Network().GetNetworkById(ctx, networkId)
-	if err != nil {
-		return
-	}
-	device, err := service.Device().GetDeviceById(ctx, deviceId)
-	if err != nil {
-		return
-	}
-	exist, err := dao.NetworkDevice.Ctx(ctx).Where(g.Map{
-		dao.NetworkDevice.Columns().NetworkId: network.Id,
-		dao.NetworkDevice.Columns().DeviceId:  device.Id,
-	}).Exist()
-	if err != nil {
-		return
-	}
-	if exist {
-		err = response.CodeConflict.WithDetail("sub device already exists")
-		return
-	}
-	if settings == nil {
-		settings = model.DefaultSubDeviceSettings
-	}
-	_, err = dao.NetworkDevice.Ctx(ctx).Insert(&entity.NetworkDevice{
-		DeviceId:  device.Id,
-		NetworkId: network.Id,
-		Quota:     quota,
-		Settings:  gconv.String(settings),
-	})
-	return
-}
