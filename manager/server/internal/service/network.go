@@ -19,6 +19,7 @@ type (
 		CreateNetwork(ctx context.Context, network *entity.Network) (id string, err error)
 		StopNetwork(ctx context.Context, networkId string) (err error)
 		StartNetwork(ctx context.Context, networkId string) (err error)
+		GetNetworkById(ctx context.Context, networkId string) (en *entity.Network, err error)
 		DeleteNetwork(ctx context.Context, networkId string) (err error)
 		UpdateNetwork(ctx context.Context, networkId string, fields map[string]any) (err error)
 		ListNetworkInfos(ctx context.Context) (ns []*entity.Network, err error)

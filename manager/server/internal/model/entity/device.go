@@ -12,7 +12,6 @@ import (
 type Device struct {
 	Id         string      `json:"id"         orm:"id"          ` //
 	Name       string      `json:"name"       orm:"name"        ` //
-	Key        string      `json:"key"        orm:"key"         ` //
 	Enabled    int         `json:"enabled"    orm:"enabled"     ` //
 	PublicKey  string      `json:"publicKey"  orm:"public_key"  ` //
 	PrivateKey string      `json:"privateKey" orm:"private_key" ` //

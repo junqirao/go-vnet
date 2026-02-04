@@ -8,6 +8,7 @@ import (
 	"github.com/gogf/gf/v2/os/gcmd"
 	"github.com/junqirao/gocomponents/response"
 
+	"go-vnet/manager/server/internal/controller/device"
 	"go-vnet/manager/server/internal/controller/middleware"
 	"go-vnet/manager/server/internal/controller/network"
 )
@@ -24,6 +25,7 @@ var (
 				group.Group("/v1", func(group *ghttp.RouterGroup) {
 					group.Bind(
 						network.NewV1(),
+						device.NewV1(),
 					)
 				})
 			})

@@ -8,6 +8,7 @@ import (
 	"go-vnet/common/logger"
 	"go-vnet/manager/server/internal/cmd"
 	_ "go-vnet/manager/server/internal/logic"
+	_ "go-vnet/manager/server/internal/packed"
 	"go-vnet/manager/server/internal/service"
 	"go-vnet/vnet/server"
 )

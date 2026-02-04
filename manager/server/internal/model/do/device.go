@@ -14,7 +14,6 @@ type Device struct {
 	g.Meta     `orm:"table:device, do:true"`
 	Id         any         //
 	Name       any         //
-	Key        any         //
 	Enabled    any         //
 	PublicKey  any         //
 	PrivateKey any         //

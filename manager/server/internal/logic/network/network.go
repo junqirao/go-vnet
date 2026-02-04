@@ -28,7 +28,7 @@ type sNetwork struct {
 }
 
 func (s *sNetwork) GetNetworkDetails(ctx context.Context, networkId string) (details *model.NetworkDetails, err error) {
-	info, err := s.getNetworkById(ctx, networkId)
+	info, err := s.GetNetworkById(ctx, networkId)
 	if err != nil {
 		return
 	}
@@ -90,7 +90,7 @@ func (s *sNetwork) StartNetwork(ctx context.Context, networkId string) (err erro
 		return
 	}
 
-	en, err := s.getNetworkById(ctx, networkId)
+	en, err := s.GetNetworkById(ctx, networkId)
 	if err != nil {
 		return
 	}
@@ -107,7 +107,7 @@ func (s *sNetwork) StartNetwork(ctx context.Context, networkId string) (err erro
 	return
 }
 
-func (s *sNetwork) getNetworkById(ctx context.Context, networkId string) (en *entity.Network, err error) {
+func (s *sNetwork) GetNetworkById(ctx context.Context, networkId string) (en *entity.Network, err error) {
 	v, err := dao.Network.Ctx(ctx).One(dao.Network.Columns().Id, networkId)
 	if err != nil {
 		err = response.CodeFromHttpStatus(http.StatusInternalServerError).WithDetail(fmt.Sprintf("database error: %s", err.Error()))
@@ -126,7 +126,7 @@ func (s *sNetwork) getNetworkById(ctx context.Context, networkId string) (en *en
 
 func (s *sNetwork) DeleteNetwork(ctx context.Context, networkId string) (err error) {
 	// check
-	_, err = s.getNetworkById(ctx, networkId)
+	_, err = s.GetNetworkById(ctx, networkId)
 	if err != nil {
 		return
 	}
@@ -147,7 +147,7 @@ func (s *sNetwork) DeleteNetwork(ctx context.Context, networkId string) (err err
 
 func (s *sNetwork) UpdateNetwork(ctx context.Context, networkId string, fields map[string]any) (err error) {
 	// must stop all sessions
-	_, err = s.getNetworkById(ctx, networkId)
+	_, err = s.GetNetworkById(ctx, networkId)
 	if err != nil {
 		return
 	}

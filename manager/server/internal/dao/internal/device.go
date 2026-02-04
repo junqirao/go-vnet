@@ -23,7 +23,6 @@ type DeviceDao struct {
 type DeviceColumns struct {
 	Id         string //
 	Name       string //
-	Key        string //
 	Enabled    string //
 	PublicKey  string //
 	PrivateKey string //
@@ -34,7 +33,6 @@ type DeviceColumns struct {
 var deviceColumns = DeviceColumns{
 	Id:         "id",
 	Name:       "name",
-	Key:        "key",
 	Enabled:    "enabled",
 	PublicKey:  "public_key",
 	PrivateKey: "private_key",

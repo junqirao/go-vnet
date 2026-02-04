@@ -19,4 +19,8 @@ type (
 		Info    *entity.Network `json:"info"`
 		Runtime *NetworkRuntime `json:"runtime"`
 	}
+	NetworkConfig struct {
+		AllowAnonymousDevice bool `json:"allow_anonymous_device"`
+		AutoCreateSubDevice  bool `json:"auto_create_sub_device"`
+	}
 )

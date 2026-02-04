@@ -5,5 +5,6 @@
 package logic
 
 import (
+	_ "go-vnet/manager/server/internal/logic/device"
 	_ "go-vnet/manager/server/internal/logic/network"
 )
