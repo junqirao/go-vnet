@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/config"
@@ -47,12 +48,12 @@ func newQuicRxHook(ctx context.Context, c *quicClient, stream *quic.Stream) hub.
 }
 
 func (q *quicRxHook) OnStart() {
-	q.c.client.logger.Infof(q.ctx, "[RX] quic accept stream: id=%v,from=%v",
+	g.Log().Infof(q.ctx, "[RX] quic accept stream: id=%v,from=%v",
 		q.streamId, q.remote)
 }
 
 func (q *quicRxHook) OnClose(err error) {
-	q.c.client.logger.Infof(q.ctx, "[RX] quic close stream: id=%v,from=%v,err=%v",
+	g.Log().Infof(q.ctx, "[RX] quic close stream: id=%v,from=%v,err=%v",
 		q.streamId, q.remote, err)
 }
 
@@ -75,7 +76,7 @@ func (c *quicClient) Setup(ctx context.Context) (control session.SendReceiveClos
 		tlsConfig.InsecureSkipVerify = true
 	}
 	server := fmt.Sprintf("%s:%d", c.client.cfg.Address, c.client.cfg.Port)
-	c.client.logger.Infof(ctx, "dial quic server: %s", server)
+	g.Log().Infof(ctx, "dial quic server: %s", server)
 	c.transport.conn, err = quic.DialAddr(ctx,
 		server, tlsConfig, quicConfig)
 	if err != nil {
@@ -103,7 +104,7 @@ func (c *quicClient) rxLoop(ctx context.Context) {
 		}
 		stream, err := c.transport.conn.AcceptStream(ctx)
 		if err != nil {
-			c.client.logger.Errorf(ctx, "accept stream error: %v", err.Error())
+			g.Log().Errorf(ctx, "accept stream error: %v", err.Error())
 			return
 		}
 		hook := newQuicRxHook(ctx, c, stream)
@@ -123,7 +124,7 @@ func (c *quicClient) Dial(ctx context.Context, dst string) (rw protocol.ReadWrit
 	}
 	rw = protocol.NewTransport(stream, protocol.WithType(transportTypeQuic))
 	c.transport.streams.Store(dst, rw)
-	c.client.logger.Infof(ctx, "[TX] open stream: id=%v,dst=%s", stream.StreamID(), dst)
+	g.Log().Infof(ctx, "[TX] open stream: id=%v,dst=%s", stream.StreamID(), dst)
 	return
 }
 
@@ -136,13 +137,13 @@ func (c *quicClient) CloseDst(ctx context.Context, dst string) {
 				id = stream.StreamID()
 			}
 			_ = rw.Close()
-			c.client.logger.Infof(ctx, "[TX] close stream: id=%v,dst=%s", id, dst)
+			g.Log().Infof(ctx, "[TX] close stream: id=%v,dst=%s", id, dst)
 		}
 	}
 }
 
 func (c *quicClient) OnError(ctx context.Context, e *hub.TxError) {
-	c.client.logger.Error(ctx, e.Error())
+	g.Log().Error(ctx, e.Error())
 	c.CloseDst(ctx, e.Dst().Ip())
 }
 

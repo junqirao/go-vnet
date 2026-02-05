@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/google/uuid"
 	tun "github.com/sagernet/sing-tun"
 
@@ -141,7 +142,7 @@ func (h *Hub) txLoop() {
 }
 
 func (h *Hub) readDevice() (err error) {
-	h.Infof("read device loop started")
+	g.Log().Infof(h.ctx, "read device loop started")
 	var (
 		n int
 	)
@@ -175,7 +176,7 @@ func (h *Hub) readDeviceLinux() (err error) {
 		offset = dev.FrontHeadroom()
 	)
 
-	h.Infof("batch read device loop started, batch size: %d, header size: %d",
+	g.Log().Infof(h.ctx, "batch read device loop started, batch size: %d, header size: %d",
 		dev.BatchSize(), offset)
 	for {
 		select {
@@ -288,7 +289,7 @@ func (c *Destination) negotiate() (err error) {
 		return
 	}
 	ups := tx.Upstream()
-	c.ref.logger.Infof(c.ctx, "[TX] send negotiate packet: %s", c.ip)
+	g.Log().Infof(c.ctx, "[TX] send negotiate packet: %s", c.ip)
 	_, err = ups.Write([]byte(c.ip))
 	if err != nil {
 		return
@@ -298,10 +299,10 @@ func (c *Destination) negotiate() (err error) {
 		return
 	}
 	if buf[0] != 1 {
-		c.ref.logger.Infof(c.ctx, "[TX] negotiate failed: %d", buf[0])
+		g.Log().Infof(c.ctx, "[TX] negotiate failed: %d", buf[0])
 		return fmt.Errorf("negotiate failed: %d", buf[0])
 	}
-	c.ref.logger.Infof(c.ctx, "[TX] negotiate success")
+	g.Log().Infof(c.ctx, "[TX] negotiate success")
 	c.tx = tx
 	c.hook.AfterDial(c.ctx, c)
 	return
@@ -316,9 +317,9 @@ func (c *Destination) txLoop() {
 	)
 
 	defer func() {
-		c.ref.logger.Infof(c.ctx, "[TX] txLoop exit: dst=%s,err=%v", c.ip, err)
+		g.Log().Infof(c.ctx, "[TX] txLoop exit: dst=%s,err=%v", c.ip, err)
 	}()
-	c.ref.logger.Infof(c.ctx, "[TX] txLoop start: dst=%s", c.ip)
+	g.Log().Infof(c.ctx, "[TX] txLoop start: dst=%s", c.ip)
 
 	for {
 		select {
@@ -365,9 +366,9 @@ func (c *Destination) txLoopN() {
 	maxBuf := c.ref.cfg.MaxTxEventBuf
 
 	defer func() {
-		c.ref.logger.Infof(c.ctx, "[TX] txLoopN exit: dst=%s,err=%v", c.ip, err)
+		g.Log().Infof(c.ctx, "[TX] txLoopN exit: dst=%s,err=%v", c.ip, err)
 	}()
-	c.ref.logger.Infof(c.ctx, "[TX] txLoopN start: dst=%s", c.ip)
+	g.Log().Infof(c.ctx, "[TX] txLoopN start: dst=%s", c.ip)
 
 	for {
 		select {

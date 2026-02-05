@@ -9,7 +9,7 @@ import (
 	"sync"
 	"syscall"
 
-	"go-vnet/common/logger"
+	"github.com/gogf/gf/v2/frame/g"
 )
 
 type Handler func()
@@ -45,7 +45,7 @@ func (h handlers) append(handler ...*handlerWithPriority) handlers {
 var m = sync.Map{}
 
 func Register(ctx context.Context, name string, handler Handler, priority ...int) {
-	logger.DefaultLogger.Infof(ctx, "grace register handler: %s", name)
+	g.Log().Infof(ctx, "grace register handler: %s", name)
 	p := 0
 	if len(priority) > 0 {
 		p = priority[0]
@@ -58,7 +58,7 @@ func Register(ctx context.Context, name string, handler Handler, priority ...int
 }
 
 func UnRegister(ctx context.Context, name string) {
-	logger.DefaultLogger.Infof(ctx, "grace unregister handler: %s", name)
+	g.Log().Infof(ctx, "grace unregister handler: %s", name)
 	m.Delete(name)
 }
 
@@ -71,10 +71,10 @@ func ExecAndExit(ctx context.Context) {
 	sort.Sort(hp)
 	for _, handler := range hp {
 		handler.Handler()
-		logger.DefaultLogger.Infof(ctx, "exec grace handler %s done.", handler.Name)
+		g.Log().Infof(ctx, "exec grace handler %s done.", handler.Name)
 	}
-	logger.DefaultLogger.Infof(ctx, "grace handler all executed: %d", len(hp))
-	logger.DefaultLogger.Info(ctx, "shutdown.")
+	g.Log().Infof(ctx, "grace handler all executed: %d", len(hp))
+	g.Log().Info(ctx, "shutdown.")
 	os.Exit(0)
 }
 
@@ -84,6 +84,6 @@ func GracefulExit(ctx context.Context) {
 
 	// block and wait for signal
 	s := <-osc
-	logger.DefaultLogger.Infof(ctx, "receive stop sig: %s", s)
+	g.Log().Infof(ctx, "receive stop sig: %s", s)
 	ExecAndExit(ctx)
 }

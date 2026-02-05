@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/netip"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/sagernet/netlink"
 	tun "github.com/sagernet/sing-tun"
 
@@ -15,14 +16,14 @@ func (c *Client) setupDevice(ctx context.Context, sess *session.Session) (dev tu
 		if err != nil {
 			return
 		}
-		c.logger.Infof(ctx, "setup device success")
+		g.Log().Infof(ctx, "setup device success")
 	}()
 
 	if sess.DispatchedDevice.Name == "" {
 		sess.DispatchedDevice.Name = "tun0"
 	}
 
-	c.logger.Infof(ctx, "setup device: name=%s, cidr=%s, mtu=%d, id=%s",
+	g.Log().Infof(ctx, "setup device: name=%s, cidr=%s, mtu=%d, id=%s",
 		sess.DispatchedDevice.Name,
 		sess.DispatchedDevice.CIDR,
 		sess.DispatchedDevice.MTU,
@@ -36,18 +37,18 @@ func (c *Client) setupDevice(ctx context.Context, sess *session.Session) (dev tu
 		GSO:          true,
 	})
 	if err != nil {
-		c.logger.Errorf(ctx, "create tun device error: %v", err.Error())
+		g.Log().Errorf(ctx, "create tun device error: %v", err.Error())
 		return
 	}
 
 	var link netlink.Link
 	link, err = netlink.LinkByName(sess.DispatchedDevice.Name)
 	if err != nil {
-		c.logger.Errorf(ctx, "get tun device error: %v", err.Error())
+		g.Log().Errorf(ctx, "get tun device error: %v", err.Error())
 		return
 	}
 	if err = netlink.LinkSetUp(link); err != nil {
-		c.logger.Errorf(ctx, "set tun device up error: %v", err.Error())
+		g.Log().Errorf(ctx, "set tun device up error: %v", err.Error())
 		return
 	}
 	return

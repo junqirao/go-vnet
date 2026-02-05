@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"go-vnet/vnet/client/hub"
@@ -18,10 +19,10 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 	// ping
 	resp, err := c.manager.CallFunc(ctx, server.FuncNamePing)
 	if err != nil {
-		c.logger.Errorf(ctx, "failed to execute ping to server: %s", err.Error())
+		g.Log().Errorf(ctx, "failed to execute ping to server: %s", err.Error())
 		return
 	}
-	// c.logger.Infof(ctx, "ping latency: %.2fms", resp.Cost)
+	// g.Log().Infof(ctx, "ping latency: %.2fms", resp.Cost)
 
 	// update router if hash changed
 	data := strings.Split(resp.Data.(string), ",")
@@ -31,16 +32,16 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 	latestVer := uint64(v)
 	// sync router
 	if remote != current {
-		c.logger.Infof(ctx, "router hash changed, current: %s, server: %s", current, remote)
+		g.Log().Infof(ctx, "router hash changed, current: %s, server: %s", current, remote)
 		if err := c.updateRouter(ctx); err != nil {
-			c.logger.Errorf(ctx, "failed to update router: %s", err.Error())
+			g.Log().Errorf(ctx, "failed to update router: %s", err.Error())
 		}
 	}
 	// sync p2p peers
 	currentVer := c.peerMappingVersion.Load()
 	if currentVer != latestVer && c.cfg.P2P.Enabled {
 		if err := c.syncP2PPeerMapping(ctx); err != nil {
-			c.logger.Errorf(ctx, "failed to sync peer mapping: %s", err.Error())
+			g.Log().Errorf(ctx, "failed to sync peer mapping: %s", err.Error())
 		}
 		c.peerMappingVersion.CompareAndSwap(currentVer, latestVer)
 	}
@@ -50,20 +51,20 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 	resp, err := c.manager.CallFunc(ctx, server.FuncNameGetP2PPeerMapping)
 	if err != nil {
-		c.logger.Errorf(ctx, "failed to execute get peer mapping data from server: %s", err.Error())
+		g.Log().Errorf(ctx, "failed to execute get peer mapping data from server: %s", err.Error())
 		return
 	}
 	if data, ok := resp.Data.(string); ok && len(data) > 0 {
 		var bs []byte
 		bs, err = base64.StdEncoding.DecodeString(data)
 		if err != nil {
-			c.logger.Errorf(ctx, "failed to decode peer mapping data from server: %s", err.Error())
+			g.Log().Errorf(ctx, "failed to decode peer mapping data from server: %s", err.Error())
 			return
 		}
 		var mapping map[string]string
 		err = json.Unmarshal(bs, &mapping)
 		if err != nil {
-			c.logger.Errorf(ctx, "failed to unmarshal peer mapping data from server: %s", err.Error())
+			g.Log().Errorf(ctx, "failed to unmarshal peer mapping data from server: %s", err.Error())
 			return
 		}
 
@@ -72,7 +73,7 @@ func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 		for k, v := range mapping {
 			pi := &peer.AddrInfo{}
 			if err = json.Unmarshal([]byte(v), pi); err != nil {
-				c.logger.Infof(ctx, "failed to parse p2p address: %v", err)
+				g.Log().Infof(ctx, "failed to parse p2p address: %v", err)
 				continue
 			}
 			c.peerMapping.Store(k, pi)
@@ -82,7 +83,7 @@ func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 			if _, ok := mapping[key.(string)]; !ok {
 				c.peerMapping.Delete(key)
 				del++
-				c.logger.Infof(ctx, "remove peer: %s", key)
+				g.Log().Infof(ctx, "remove peer: %s", key)
 				conn, ok := c.p2pConnections.Load(key)
 				if ok && conn != nil {
 					conn.(*p2pConnInfo).cancel()
@@ -90,7 +91,7 @@ func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 			}
 			return true
 		})
-		c.logger.Infof(ctx, "synced p2p peer mapping from server, version: %d, upsert: %d, delete: %d",
+		g.Log().Infof(ctx, "synced p2p peer mapping from server, version: %d, upsert: %d, delete: %d",
 			c.peerMappingVersion.Load(), upsert, del)
 	}
 	return
@@ -99,7 +100,7 @@ func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 func (c *Client) updateRouter(ctx context.Context) (err error) {
 	resp, err := c.manager.CallFunc(ctx, server.FuncNameGetRouterData)
 	if err != nil {
-		c.logger.Errorf(ctx, "failed to execute get router data from server: %s", err.Error())
+		g.Log().Errorf(ctx, "failed to execute get router data from server: %s", err.Error())
 		return
 	}
 
@@ -108,14 +109,14 @@ func (c *Client) updateRouter(ctx context.Context) (err error) {
 		var bs []byte
 		bs, err = base64.StdEncoding.DecodeString(data)
 		if err != nil {
-			c.logger.Errorf(ctx, "failed to decode router data from server: %s", err.Error())
+			g.Log().Errorf(ctx, "failed to decode router data from server: %s", err.Error())
 			return
 		}
 
 		var ips []string
 		err = json.Unmarshal(bs, &ips)
 		if err != nil {
-			c.logger.Errorf(ctx, "failed to unmarshal router data from server: %s", err.Error())
+			g.Log().Errorf(ctx, "failed to unmarshal router data from server: %s", err.Error())
 			return
 		}
 		mip := map[string]struct{}{}
@@ -130,7 +131,7 @@ func (c *Client) updateRouter(ctx context.Context) (err error) {
 		for cidr := range cip {
 			_, ok = mip[cidr]
 			if !ok {
-				c.logger.Infof(ctx, "remove route: %s", cidr)
+				g.Log().Infof(ctx, "remove route: %s", cidr)
 				ip := strings.Split(cidr, "/")[0]
 				v, ok := c.hub.Router().RouteString(ip)
 				if ok {
@@ -149,14 +150,14 @@ func (c *Client) updateRouter(ctx context.Context) (err error) {
 					c.hub.Router().Register(ip, nil)
 					continue
 				}
-				c.logger.Infof(ctx, "add route: %s", ip)
+				g.Log().Infof(ctx, "add route: %s", ip)
 				var hook hub.TxHook = c
 				c.hub.Router().Register(ip,
 					hub.NewDestination(context.Background(), strings.Split(ip, "/")[0], c.internal, c.hub, hook))
 			}
 		}
 
-		c.logger.Infof(c.ctx, "router synced from server, data: %d bytes, length: %d",
+		g.Log().Infof(c.ctx, "router synced from server, data: %d bytes, length: %d",
 			len(data), len(c.hub.Router().Keys()))
 	}
 	return
@@ -165,8 +166,8 @@ func (c *Client) updateRouter(ctx context.Context) (err error) {
 func (c *Client) syncRouterLoop() {
 	c.state = StateRunning
 
-	c.logger.Infof(c.ctx, "sync router loop started")
-	defer c.logger.Infof(c.ctx, "sync router loop stopped")
+	g.Log().Infof(c.ctx, "sync router loop started")
+	defer g.Log().Infof(c.ctx, "sync router loop stopped")
 
 	ticker := time.NewTicker(SyncRouterInterval)
 	defer ticker.Stop()
@@ -179,19 +180,19 @@ func (c *Client) syncRouterLoop() {
 	for {
 		select {
 		case <-c.sig:
-			c.logger.Infof(c.ctx, "received shutdown signal")
+			g.Log().Infof(c.ctx, "received shutdown signal")
 			return
 		case <-c.ctx.Done():
-			c.logger.Infof(c.ctx, "context cancelled")
+			g.Log().Infof(c.ctx, "context cancelled")
 			return
 		case <-ticker.C:
 			// sync router with client context instead of Background
 			if err := c.syncRouter(c.ctx); err != nil {
-				c.logger.Errorf(c.ctx, "failed to sync router: %s", err.Error())
+				g.Log().Errorf(c.ctx, "failed to sync router: %s", err.Error())
 				errCount++
 				if errCount >= MaxErrorToReconnect {
 					ticker.Stop()
-					c.logger.Infof(c.ctx, "max errors reached (%d), attempting reconnect", errCount)
+					g.Log().Infof(c.ctx, "max errors reached (%d), attempting reconnect", errCount)
 					go c.reconnectLoop()
 					return
 				}
@@ -223,7 +224,7 @@ func (c *Client) reconnectLoop() {
 	}
 
 	for {
-		c.logger.Infof(c.ctx, "trying to reconnect in %d seconds, tries: %d", interval, tries+1)
+		g.Log().Infof(c.ctx, "trying to reconnect in %d seconds, tries: %d", interval, tries+1)
 
 		// delay before reconnect to avoid busy loop
 		time.Sleep(time.Duration(interval) * time.Second)
@@ -231,11 +232,11 @@ func (c *Client) reconnectLoop() {
 		// reconnect
 		err := c.Reconnect()
 		if err == nil {
-			c.logger.Infof(c.ctx, "reconnected successfully")
+			g.Log().Infof(c.ctx, "reconnected successfully")
 			return
 		}
 
-		c.logger.Errorf(c.ctx, "failed to reconnect: %s", err.Error())
+		g.Log().Errorf(c.ctx, "failed to reconnect: %s", err.Error())
 		tries++
 		interval = fib(tries + 1)
 		if interval > MaxReconnectInterval {

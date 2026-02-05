@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gogf/gf/v2/frame/g"
+
 	"go-vnet/common/protocol"
 	"go-vnet/common/session"
 	"go-vnet/vnet/client/hub"
@@ -50,11 +52,11 @@ func newTcpRxHook(ctx context.Context, c *tcpClient, conn net.Conn) hub.RxHook {
 }
 
 func (t *tcpRxHook) OnStart() {
-	t.c.client.logger.Infof(t.ctx, "[RX] tcp accept connection: from=%v", t.remote)
+	g.Log().Infof(t.ctx, "[RX] tcp accept connection: from=%v", t.remote)
 }
 
 func (t *tcpRxHook) OnClose(err error) {
-	t.c.client.logger.Infof(t.ctx, "[RX] tcp close connection: from=%v, err=%v", t.remote, err)
+	g.Log().Infof(t.ctx, "[RX] tcp close connection: from=%v, err=%v", t.remote, err)
 }
 
 func newTcpClient(client *Client) *tcpClient {
@@ -68,7 +70,7 @@ func (c *tcpClient) Setup(ctx context.Context) (control session.SendReceiveClose
 
 	// 建立控制连接
 	server := fmt.Sprintf("%s:%d", c.client.cfg.Address, c.client.cfg.Port)
-	c.client.logger.Infof(ctx, "dial tcp server (control): %s", server)
+	g.Log().Infof(ctx, "dial tcp server (control): %s", server)
 
 	c.transport.control, err = net.DialTimeout("tcp", server, 10*time.Second)
 	if err != nil {
@@ -80,7 +82,7 @@ func (c *tcpClient) Setup(ctx context.Context) (control session.SendReceiveClose
 		_ = c.transport.control.Close()
 	}
 
-	c.client.logger.Infof(ctx, "control connection established: remote=%v", c.transport.control.RemoteAddr())
+	g.Log().Infof(ctx, "control connection established: remote=%v", c.transport.control.RemoteAddr())
 
 	control = session.SendReceiverFromNetConn(c.transport.control)
 	return
@@ -106,17 +108,17 @@ func (c *tcpClient) dispatch(ctx context.Context, conn net.Conn, typ uint8, from
 		return
 	}
 
-	c.client.logger.Infof(ctx, "tcp dispatch: typ=%d, data=%v, length=%d", typ, buf[:length], length)
+	g.Log().Infof(ctx, "tcp dispatch: typ=%d, data=%v, length=%d", typ, buf[:length], length)
 	if _, err = conn.Write(buf); err != nil {
 		return
 	}
 
-	c.client.logger.Infof(ctx, "waiting for dispatch ack")
+	g.Log().Infof(ctx, "waiting for dispatch ack")
 	defer func() {
 		if err != nil {
-			c.client.logger.Infof(ctx, "dispatch ack error: %v", err)
+			g.Log().Infof(ctx, "dispatch ack error: %v", err)
 		} else {
-			c.client.logger.Infof(ctx, "dispatch ack success")
+			g.Log().Infof(ctx, "dispatch ack success")
 		}
 	}()
 	ack := make([]byte, 1)
@@ -150,7 +152,7 @@ func (c *tcpClient) Dial(ctx context.Context, dst string) (rw protocol.ReadWrite
 	defer c.transport.connMutex.Unlock()
 
 	server := fmt.Sprintf("%s:%d", c.client.cfg.Address, c.client.cfg.Port)
-	c.client.logger.Infof(ctx, "dial tcp server (data): %s, dst=%s", server, dst)
+	g.Log().Infof(ctx, "dial tcp server (data): %s, dst=%s", server, dst)
 
 	conn, err := net.DialTimeout("tcp", server, 10*time.Second)
 	if err != nil {
@@ -168,13 +170,13 @@ func (c *tcpClient) Dial(ctx context.Context, dst string) (rw protocol.ReadWrite
 	if dst == c.client.session.IP {
 		c.client.hub.HandleRx(conn, []protocol.TransportOpt{protocol.WithType(transportTypeTcp)}, newTcpRxHook(ctx, c, conn))
 		c.transport.rx = conn
-		c.client.logger.Infof(ctx, "rx connection established: remote=%v", conn.RemoteAddr())
+		g.Log().Infof(ctx, "rx connection established: remote=%v", conn.RemoteAddr())
 		return
 	}
 
 	rw = protocol.NewTransport(conn, protocol.WithType(transportTypeTcp))
 	c.transport.conn.Store(dst, rw)
-	c.client.logger.Infof(ctx, "[TX] open data connection: dst=%s, remote=%v", dst, conn.RemoteAddr())
+	g.Log().Infof(ctx, "[TX] open data connection: dst=%s, remote=%v", dst, conn.RemoteAddr())
 	return
 }
 
@@ -187,13 +189,13 @@ func (c *tcpClient) CloseDst(ctx context.Context, dst string) {
 	if ok {
 		if rw, ok := v.(protocol.ReadWriter); ok {
 			_ = rw.Close()
-			c.client.logger.Infof(ctx, "[TX] close data connection: dst=%s", dst)
+			g.Log().Infof(ctx, "[TX] close data connection: dst=%s", dst)
 		}
 	}
 }
 
 func (c *tcpClient) OnError(ctx context.Context, e *hub.TxError) {
-	c.client.logger.Error(ctx, e.Error())
+	g.Log().Error(ctx, e.Error())
 	c.CloseDst(ctx, e.Dst().Ip())
 }
 
@@ -231,6 +233,6 @@ func (c *tcpClient) Close() (err error) {
 }
 
 func (c *tcpClient) AfterHandshake(ctx context.Context, _ *session.Session) {
-	c.client.logger.Info(ctx, "after handshake dial rx")
+	g.Log().Info(ctx, "after handshake dial rx")
 	c.dialRx(ctx)
 }

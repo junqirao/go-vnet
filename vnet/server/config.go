@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/tls"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/config"
-	"go-vnet/common/logger"
 )
 
 var (
@@ -62,8 +62,7 @@ func NewConfig(opts ...ConfigOption) *Config {
 // -------------------- OPTIONS --------------------
 
 const (
-	ConfigKeyTLS    = "tls"
-	ConfigKeyLogger = "logger"
+	ConfigKeyTLS = "tls"
 )
 
 func WithConfig(config *Config) ConfigOption {
@@ -79,12 +78,6 @@ func WithTLSConfig(t *tls.Config) ConfigOption {
 	}
 }
 
-func WithLogger(l logger.Logger) ConfigOption {
-	return func(cfg *Config) {
-		cfg.Set(ConfigKeyLogger, l)
-	}
-}
-
 // -------------------- QUIC OPTIONS --------------------
 
 const (
@@ -93,9 +86,7 @@ const (
 
 func (t *TransportConfig) WithQuicConfig(c *quic.Config) *TransportConfig {
 	if t.Type != TypeQuic {
-		config.GetMappedConfig[logger.Logger](t, ConfigKeyLogger,
-			logger.DefaultLogger).
-			Errorf(context.Background(), "WithQuicConfig is not working for non-quic transportServer")
+		g.Log().Errorf(context.Background(), "WithQuicConfig is not working for non-quic transportServer")
 		return t
 	}
 	t.Set(ConfigKeyQuicConfig, c)

@@ -12,12 +12,11 @@ import (
 	"time"
 
 	"github.com/gogf/gf/v2/encoding/gbase64"
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/libp2p/go-libp2p/core/host"
 	tun "github.com/sagernet/sing-tun"
 
-	"go-vnet/common/config"
 	"go-vnet/common/grace"
-	"go-vnet/common/logger"
 	"go-vnet/common/session"
 	"go-vnet/vnet/client/hub"
 	"go-vnet/vnet/server"
@@ -42,7 +41,6 @@ type (
 		cfg      *Config
 		rc       *session.RequestClient
 		internal internal
-		logger   logger.Logger
 		manager  *Manager
 		session  *session.Session
 		sig      chan struct{}
@@ -82,7 +80,6 @@ func NewClient(cfg *Config) *Client {
 	return &Client{
 		ctx:                context.Background(),
 		cfg:                cfg,
-		logger:             config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
 		rc:                 rc,
 		sig:                make(chan struct{}),
 		peerMappingVersion: &atomic.Uint64{},
@@ -91,7 +88,7 @@ func NewClient(cfg *Config) *Client {
 
 func (c *Client) Run(ctx context.Context) {
 	if err := c.run(ctx); err != nil {
-		c.logger.Errorf(ctx, "run client error: %v", err.Error())
+		g.Log().Errorf(ctx, "run client error: %v", err.Error())
 		return
 	}
 
@@ -120,14 +117,14 @@ func (c *Client) run(ctx context.Context) (err error) {
 
 	// run internal client
 	if control, err = c.internal.Setup(ctx); err != nil {
-		c.logger.Errorf(ctx, "run %s client error: %v", c.cfg.Type, err.Error())
+		g.Log().Errorf(ctx, "run %s client error: %v", c.cfg.Type, err.Error())
 		return
 	}
 
 	// handshake
 	sess, err := c.handshake(ctx, control)
 	if err != nil {
-		c.logger.Errorf(ctx, "handshake error: %v", err.Error())
+		g.Log().Errorf(ctx, "handshake error: %v", err.Error())
 		return
 	}
 	c.session = sess
@@ -163,7 +160,7 @@ func (c *Client) run(ctx context.Context) (err error) {
 	// setup p2p
 	if c.cfg.P2P.Enabled {
 		if err := c.connectP2PSignalingServer(ctx); err != nil {
-			c.logger.Errorf(ctx, "failed to setup p2p: %s", err.Error())
+			g.Log().Errorf(ctx, "failed to setup p2p: %s", err.Error())
 		}
 	}
 	return
@@ -186,12 +183,12 @@ func (c *Client) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 		return
 	}
 	ss = resp.Session
-	c.logger.Infof(ctx, "handshake success: id=%v,ip=%v", ss.SessionId, ss.IP)
+	g.Log().Infof(ctx, "handshake success: id=%v,ip=%v", ss.SessionId, ss.IP)
 	return
 }
 
 func (c *Client) Reconnect() (err error) {
-	c.logger.Infof(c.ctx, "reconnecting...")
+	g.Log().Infof(c.ctx, "reconnecting...")
 	c.ReleaseAll()
 	return c.run(context.Background())
 }

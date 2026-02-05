@@ -12,10 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/google/uuid"
 
-	"go-vnet/common/config"
-	"go-vnet/common/logger"
 	"go-vnet/common/protocol"
 	"go-vnet/common/session"
 	"go-vnet/vnet/server/consts"
@@ -32,7 +31,6 @@ type (
 	Server struct {
 		internals sync.Map // name : internalServer
 		cfg       *Config
-		logger    logger.Logger
 		sig       chan struct{}
 		manager   *Manager
 		sessions  sync.Map // src : *Session
@@ -58,7 +56,6 @@ type (
 func NewServer(cfg *Config) *Server {
 	s := &Server{
 		cfg:                cfg,
-		logger:             config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
 		sig:                make(chan struct{}),
 		manager:            NewManager(),
 		peerMappingVersion: &atomic.Uint64{},
@@ -95,14 +92,14 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 	for _, server := range s.cfg.Servers {
 		go func(cfg *TransportConfig) {
 			if err := s.serve(ctx, cfg); err != nil {
-				s.logger.Errorf(ctx, "transport server stopped with error: %s", err.Error())
+				g.Log().Errorf(ctx, "transport server stopped with error: %s", err.Error())
 			}
 		}(server)
 	}
 
 	select {
 	case <-s.sig:
-		s.logger.Info(ctx, "quic server closed")
+		g.Log().Info(ctx, "quic server closed")
 		return
 	}
 }
@@ -129,7 +126,7 @@ func (s *Server) checkStatusLoop() {
 			}
 			last := v.(time.Time)
 			if time.Since(last) > time.Second*10 {
-				s.logger.Infof(sess.(*Session).Ctx, "remove session %s, last ping time: %s", ip, last.String())
+				g.Log().Infof(sess.(*Session).Ctx, "remove session %s, last ping time: %s", ip, last.String())
 				sess.(*Session).Stop()
 				// must delete the session
 				s.sessions.Delete(ip)
@@ -158,7 +155,7 @@ func (s *Server) serve(ctx context.Context, cfg *TransportConfig) (err error) {
 		return
 	}
 
-	s.logger.Infof(ctx, "%s server %s started at %s:%d", cfg.Type, cfg.Name, cfg.Address, cfg.Port)
+	g.Log().Infof(ctx, "%s server %s started at %s:%d", cfg.Type, cfg.Name, cfg.Address, cfg.Port)
 
 	if err = internal.Setup(ctx, cfg); err != nil {
 		return err
@@ -167,7 +164,7 @@ func (s *Server) serve(ctx context.Context, cfg *TransportConfig) (err error) {
 	for {
 		select {
 		case <-s.sig:
-			s.logger.Info(ctx, fmt.Sprintf("%s server closed: %s", cfg.Type, cfg.Name))
+			g.Log().Info(ctx, fmt.Sprintf("%s server closed: %s", cfg.Type, cfg.Name))
 			return
 		default:
 		}
@@ -183,7 +180,7 @@ func (s *Server) serve(ctx context.Context, cfg *TransportConfig) (err error) {
 		// accept connection
 		ss, err = internal.Accept(ctx)
 		if err != nil {
-			s.logger.Errorf(ctx, "accept connection error: %s", err.Error())
+			g.Log().Errorf(ctx, "accept connection error: %s", err.Error())
 			continue
 		}
 		ss.cfg = cfg
@@ -212,7 +209,7 @@ func (s *Server) handleSession(ss *Session) {
 	// handshake
 	err = s.handshake(ctx, ss)
 	if err != nil {
-		s.logger.Errorf(ctx, "handshake error: %s", err.Error())
+		g.Log().Errorf(ctx, "handshake error: %s", err.Error())
 		ss.CloseWithError(err)
 		return
 	}
@@ -240,7 +237,7 @@ func (s *Server) handleSession(ss *Session) {
 		// release device
 		err := ss.network.ReleaseDevice(ss.DispatchedDevice.CIDR)
 		if err != nil {
-			s.logger.Errorf(ss.Ctx, "release device error: %s", err.Error())
+			g.Log().Errorf(ss.Ctx, "release device error: %s", err.Error())
 		}
 		// unregister session
 		s.sessions.Delete(ss.IP)
@@ -251,7 +248,7 @@ func (s *Server) handleSession(ss *Session) {
 		// delete p2p peer mapping
 		// add version make client re-sync
 		s.peerMappingVersion.Add(1)
-		s.logger.Infof(ss.Ctx, "%s session closed: %s", ss.IP, ss.SessionId)
+		g.Log().Infof(ss.Ctx, "%s session closed: %s", ss.IP, ss.SessionId)
 	}()
 
 	for {
@@ -268,7 +265,7 @@ func (s *Server) handleSession(ss *Session) {
 		default:
 			rwc, err := ss.ref.AcceptTransport(ss)
 			if err != nil {
-				s.logger.Errorf(ss.Ctx, "accept transport error: %s", err.Error())
+				g.Log().Errorf(ss.Ctx, "accept transport error: %s", err.Error())
 				return
 			}
 			go s.handleTransport(ss, rwc)
@@ -281,7 +278,7 @@ func (s *Server) handleTransport(ss *Session, srcRwc io.ReadWriteCloser) {
 	dstSession, dst, err := s.negotiation(ss.Ctx, ss, srcRwc)
 	if err != nil {
 		_ = srcRwc.Close()
-		s.logger.Errorf(ss.Ctx, "error during negotiation: %s", err.Error())
+		g.Log().Errorf(ss.Ctx, "error during negotiation: %s", err.Error())
 		return
 	}
 	dstRwc, err := dstSession.ref.GetDstTransportWriter(ss, dstSession)
@@ -295,13 +292,13 @@ func (s *Server) handleTransport(ss *Session, srcRwc io.ReadWriteCloser) {
 	)
 
 	defer func() {
-		s.logger.Infof(ss.Ctx, "proxy stopped: %s,written=%v", name, written)
+		g.Log().Infof(ss.Ctx, "proxy stopped: %s,written=%v", name, written)
 	}()
 
-	s.logger.Infof(ss.Ctx, "handle proxy start: %s", name)
+	g.Log().Infof(ss.Ctx, "handle proxy start: %s", name)
 	written, err = s.proxy(ss.Ctx, name, dstSession, ss, dstRwc, srcRwc)
 	if err != nil {
-		s.logger.Errorf(ss.Ctx, "proxy error: %s ,err=%v", name, err.Error())
+		g.Log().Errorf(ss.Ctx, "proxy error: %s ,err=%v", name, err.Error())
 	}
 }
 
@@ -312,7 +309,7 @@ func (s *Server) handleFuncCallLoop(ss *Session) {
 	)
 
 	defer func() {
-		s.logger.Infof(ss.Ctx, "handle func call loop stopped: %s, reason=%v", ss.IP, err)
+		g.Log().Infof(ss.Ctx, "handle func call loop stopped: %s, reason=%v", ss.IP, err)
 	}()
 
 	for {
@@ -345,7 +342,7 @@ func (s *Server) proxy(ctx context.Context, name string, dstSess, srcSess *Sessi
 		case <-ctx.Done():
 			return written, ctx.Err()
 		case <-s.sig:
-			s.logger.Infof(ctx, "proxy tunnel closed: %s", name)
+			g.Log().Infof(ctx, "proxy tunnel closed: %s", name)
 			return
 		default:
 		}
@@ -433,7 +430,7 @@ func (s *Server) handshake(ctx context.Context, ss *Session) (err error) {
 
 			networkId := ss.network.ID
 
-			s.logger.Infof(ctx, "dispatch device: id=%v cidr=%v", dev.Id, dev.CIDR)
+			g.Log().Infof(ctx, "dispatch device: id=%v cidr=%v", dev.Id, dev.CIDR)
 
 			ip, _, _ := net.ParseCIDR(dev.CIDR)
 
@@ -455,7 +452,7 @@ func (s *Server) handshake(ctx context.Context, ss *Session) (err error) {
 			resp["session"] = ss.Session
 			// all these registration will be unregistered in acceptStreamLoop
 			// when the connection is closed (can not accept new stream)
-			s.logger.Infof(ctx, "handle connection, route=%s", ss.IP)
+			g.Log().Infof(ctx, "handle connection, route=%s", ss.IP)
 			return
 		},
 	)

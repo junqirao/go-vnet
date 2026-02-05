@@ -1,11 +1,11 @@
 package server
 
 import (
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gctx"
 
 	_ "github.com/gogf/gf/contrib/drivers/mysql/v2"
 
-	"go-vnet/common/logger"
 	"go-vnet/manager/server/internal/cmd"
 	_ "go-vnet/manager/server/internal/logic"
 	_ "go-vnet/manager/server/internal/packed"
@@ -28,7 +28,7 @@ func StartAllNetworks() {
 	ctx := gctx.GetInitCtx()
 	infos, err := service.Network().ListNetworkInfos(ctx)
 	if err != nil {
-		logger.DefaultLogger.Errorf(ctx, "failed to get network infos: %s", err.Error())
+		g.Log().Errorf(ctx, "failed to get network infos: %s", err.Error())
 		return
 	}
 	mgr := server.GetNetworkManager()
@@ -39,11 +39,11 @@ func StartAllNetworks() {
 			MTU:  info.Mtu,
 		})
 		if err != nil {
-			logger.DefaultLogger.Errorf(ctx, "failed to start network %s: %s", info.Id, err.Error())
+			g.Log().Errorf(ctx, "failed to start network %s: %s", info.Id, err.Error())
 			continue
 		}
 		mgr.RegisterNetwork(n)
-		logger.DefaultLogger.Infof(ctx, "network %s started", info.Id)
+		g.Log().Infof(ctx, "network %s started", info.Id)
 	}
 }
 

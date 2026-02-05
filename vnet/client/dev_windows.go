@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/netip"
 
+	"github.com/gogf/gf/v2/frame/g"
 	tun "github.com/sagernet/sing-tun"
 
 	"go-vnet/common/session"
@@ -14,14 +15,14 @@ func (c *Client) setupDevice(ctx context.Context, sess *session.Session) (dev tu
 		if err != nil {
 			return
 		}
-		c.logger.Infof(ctx, "setup device success")
+		g.Log().Infof(ctx, "setup device success")
 	}()
 
 	if sess.DispatchedDevice.Name == "" {
 		sess.DispatchedDevice.Name = "tun0"
 	}
 
-	c.logger.Infof(ctx, "setup device: name=%s, cidr=%s, mtu=%d, id=%s",
+	g.Log().Infof(ctx, "setup device: name=%s, cidr=%s, mtu=%d, id=%s",
 		sess.DispatchedDevice.Name,
 		sess.DispatchedDevice.CIDR,
 		sess.DispatchedDevice.MTU,
@@ -34,7 +35,7 @@ func (c *Client) setupDevice(ctx context.Context, sess *session.Session) (dev tu
 		MTU:          uint32(sess.DispatchedDevice.MTU),
 	})
 	if err != nil {
-		c.logger.Errorf(ctx, "create tun device error: %v", err.Error())
+		g.Log().Errorf(ctx, "create tun device error: %v", err.Error())
 		return
 	}
 	return

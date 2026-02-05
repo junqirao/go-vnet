@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gogf/gf/v2/frame/g"
+
 	"go-vnet/vnet/server/consts"
 )
 
@@ -105,7 +107,7 @@ var (
 				peer := v.(string)
 				_, ok := session.storage.LoadOrStore(sessionStorageKeyP2PPeer, peer)
 				if !ok {
-					server.logger.Infof(ctx, "registered p2p peer from %s: %s", session.IP, peer)
+					g.Log().Infof(ctx, "registered p2p peer from %s: %s", session.IP, peer)
 					server.peerMappingVersion.Add(1)
 				}
 			}

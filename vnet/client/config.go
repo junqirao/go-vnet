@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/config"
-	"go-vnet/common/logger"
 )
 
 var (
@@ -101,8 +101,7 @@ const (
 func WithQuicClientConfig(c *quic.Config) ConfigOption {
 	return func(cfg *Config) {
 		if cfg.Type != TypeQuic {
-			config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger).
-				Errorf(context.Background(), "WithQuicClientConfig is not working for non-quic client")
+			g.Log().Errorf(context.Background(), "WithQuicClientConfig is not working for non-quic client")
 			return
 		}
 		cfg.Set(ConfigKeyQuicConfig, c)
@@ -114,8 +113,7 @@ func WithQuicClientConfig(c *quic.Config) ConfigOption {
 func WithQuicClientBufferSize(size int) ConfigOption {
 	return func(cfg *Config) {
 		if cfg.Type != TypeQuic {
-			config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger).
-				Errorf(context.Background(), "WithQuicClientBufferSize is not working for non-quic client")
+			g.Log().Errorf(context.Background(), "WithQuicClientBufferSize is not working for non-quic client")
 			return
 		}
 		cfg.Set(ConfigKeyQuicClientBufferSize, size)

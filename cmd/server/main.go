@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"go-vnet/common/config"
-	"go-vnet/common/logger"
 	web "go-vnet/manager/server"
 	"go-vnet/vnet/server"
 )
@@ -24,10 +23,7 @@ func main() {
 	// register network
 	// server.GetNetworkManager().RegisterNetwork(n)
 
-	l := logger.NewStdLogger(nil, "transport_server")
-	cfg := server.NewConfig(
-		server.WithLogger(l),
-	)
+	cfg := server.NewConfig()
 	cfg.Servers = append(cfg.Servers,
 		&server.TransportConfig{
 			MappedConfig: config.NewMappedConfig(),
