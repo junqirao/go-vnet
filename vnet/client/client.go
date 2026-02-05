@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	tun "github.com/sagernet/sing-tun"
 
 	"go-vnet/common/grace"
+	"go-vnet/common/protocol"
 	"go-vnet/common/session"
 	"go-vnet/vnet/client/hub"
 	"go-vnet/vnet/server"
@@ -53,6 +55,11 @@ type (
 		peerMapping               sync.Map
 		host                      host.Host
 		hostId                    string
+
+		// for test
+		test struct {
+			encryptor protocol.Encryptor
+		}
 	}
 	internal interface {
 		io.Closer
@@ -77,12 +84,18 @@ func NewClient(cfg *Config) *Client {
 		panic(err)
 	}
 
+	encryptor, err := protocol.NewChacha20Poly1305Encryptor(bytes.Repeat([]byte{0}, 32))
+	if err != nil {
+		panic(err)
+	}
+
 	return &Client{
 		ctx:                context.Background(),
 		cfg:                cfg,
 		rc:                 rc,
 		sig:                make(chan struct{}),
 		peerMappingVersion: &atomic.Uint64{},
+		test:               struct{ encryptor protocol.Encryptor }{encryptor: encryptor},
 	}
 }
 

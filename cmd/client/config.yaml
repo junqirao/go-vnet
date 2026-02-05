@@ -1,5 +1,6 @@
 # 客户端配置文件
 link: "eyJzdWJfZGV2aWNlX2lkIjoxLCJrZXkiOiJ0ZXN0In0="
+#link: "eyJzdWJfZGV2aWNlX2lkIjoyLCJrZXkiOiJ0ZXN0In0="
 address: "127.0.0.1"
 port: 9800
 insecure_skip_verify: true

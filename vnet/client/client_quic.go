@@ -108,7 +108,7 @@ func (c *quicClient) rxLoop(ctx context.Context) {
 			return
 		}
 		hook := newQuicRxHook(ctx, c, stream)
-		cancels = append(cancels, c.client.hub.HandleRx(stream, []protocol.TransportOpt{protocol.WithType(transportTypeQuic)}, hook))
+		cancels = append(cancels, c.client.hub.HandleRx(stream, []protocol.TransportOpt{protocol.WithType(transportTypeQuic), protocol.WithEncryptor(c.client.test.encryptor)}, hook))
 	}
 }
 
@@ -122,7 +122,7 @@ func (c *quicClient) Dial(ctx context.Context, dst string) (rw protocol.ReadWrit
 	if err != nil {
 		return
 	}
-	rw = protocol.NewTransport(stream, protocol.WithType(transportTypeQuic))
+	rw = protocol.NewTransport(stream, protocol.WithType(transportTypeQuic), protocol.WithEncryptor(c.client.test.encryptor))
 	c.transport.streams.Store(dst, rw)
 	g.Log().Infof(ctx, "[TX] open stream: id=%v,dst=%s", stream.StreamID(), dst)
 	return
