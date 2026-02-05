@@ -126,6 +126,32 @@ func (alloc *IPAllocator) AssignRandom() (string, error) {
 	return "", fmt.Errorf("failed to find available IP address, check IP pool status")
 }
 
+// AssignByOffset assigns an IP address based on offset from network start
+func (alloc *IPAllocator) AssignByOffset(offset uint32) (string, error) {
+	alloc.mutex.Lock()
+	defer alloc.mutex.Unlock()
+
+	// Calculate target IP
+	start := ipToUint32(alloc.startIP)
+	targetIP := start + offset
+
+	// Check if target IP is within range
+	end := ipToUint32(alloc.endIP)
+	if targetIP > end {
+		return "", fmt.Errorf("offset %d is out of range. Maximum offset is %d", offset, end-start)
+	}
+
+	ipStr := uint32ToIP(targetIP).String()
+
+	// Check if IP is already allocated
+	if alloc.allocated[ipStr] {
+		return "", fmt.Errorf("IP address %s is already allocated", ipStr)
+	}
+
+	alloc.allocated[ipStr] = true
+	return fmt.Sprintf("%s/%d", ipStr, alloc.subnetMaskBits), nil
+}
+
 // AssignSpecific assigns the specified IP address
 func (alloc *IPAllocator) AssignSpecific(ip string) error {
 	alloc.mutex.Lock()

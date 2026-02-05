@@ -28,6 +28,7 @@ func (s *sNetwork) listSession(n *server.Network) (sessions []*model.Session) {
 			Network:          ss.Network().NetworkConfig.CIDR,
 			IP:               ss.IP,
 			Type:             ss.Type,
+			ClientInfo:       ss.ClientInfo,
 			DispatchedDevice: ss.DispatchedDevice,
 			Metrics:          ss.Metrics,
 			CreatedAt:        ss.CreatedAt,

@@ -23,8 +23,12 @@ type (
 		conn    any
 		storage sync.Map
 
-		Metrics   *metrics.TransportMetrics `json:"metrics"`
-		CreatedAt time.Time                 `json:"created_at"`
+		ClientInfo ClientInfo                `json:"client_info"`
+		Metrics    *metrics.TransportMetrics `json:"metrics"`
+		CreatedAt  time.Time                 `json:"created_at"`
+	}
+	ClientInfo struct {
+		Hostname any `json:"hostname"`
 	}
 )
 
