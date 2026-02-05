@@ -6,7 +6,6 @@ import (
 
 	"github.com/quic-go/quic-go"
 
-	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
 )
@@ -30,7 +29,6 @@ type (
 		config.MappedConfig
 		Servers []*TransportConfig `json:"servers"`
 		P2P     *P2PConfig         `json:"p2p"`
-		Auth    auth.Config        `json:"auth"`
 	}
 	ConfigOption    func(cfg *Config)
 	TransportConfig struct {
@@ -46,8 +44,6 @@ type (
 	NetworkLink struct {
 		SubDeviceId uint64 `json:"sub_device_id"`
 		Key         string `json:"key"`
-		Signature   string `json:"signature"`
-		Nonce       string `json:"nonce"`
 	}
 )
 
@@ -66,16 +62,9 @@ func NewConfig(opts ...ConfigOption) *Config {
 // -------------------- OPTIONS --------------------
 
 const (
-	ConfigKeyTLS           = "tls"
-	ConfigKeyLogger        = "logger"
-	ConfigKeyAuthChainFunc = "auth_chain_func"
+	ConfigKeyTLS    = "tls"
+	ConfigKeyLogger = "logger"
 )
-
-func WithAuthConfig(a auth.Config) ConfigOption {
-	return func(cfg *Config) {
-		cfg.Auth = a
-	}
-}
 
 func WithConfig(config *Config) ConfigOption {
 	return func(cfg *Config) {
@@ -93,12 +82,6 @@ func WithTLSConfig(t *tls.Config) ConfigOption {
 func WithLogger(l logger.Logger) ConfigOption {
 	return func(cfg *Config) {
 		cfg.Set(ConfigKeyLogger, l)
-	}
-}
-
-func WithAuthenticationChainFunc(f ...auth.ServerAuthChainFunc) ConfigOption {
-	return func(cfg *Config) {
-		cfg.Set(ConfigKeyAuthChainFunc, f)
 	}
 }
 

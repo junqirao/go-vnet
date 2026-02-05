@@ -2,12 +2,7 @@ package client
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"os"
@@ -17,12 +12,9 @@ import (
 	"time"
 
 	"github.com/gogf/gf/v2/encoding/gbase64"
-	"github.com/gogf/gf/v2/encoding/gjson"
-	"github.com/gogf/gf/v2/util/grand"
 	"github.com/libp2p/go-libp2p/core/host"
 	tun "github.com/sagernet/sing-tun"
 
-	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/grace"
 	"go-vnet/common/logger"
@@ -48,7 +40,7 @@ type (
 		hub      *hub.Hub
 		ctx      context.Context
 		cfg      *Config
-		auth     *auth.Client
+		rc       *session.RequestClient
 		internal internal
 		logger   logger.Logger
 		manager  *Manager
@@ -77,11 +69,21 @@ type (
 )
 
 func NewClient(cfg *Config) *Client {
+	pk, err := os.ReadFile(cfg.PublicKey)
+	if err != nil {
+		panic(err)
+	}
+
+	rc, err := session.NewRequestClient(string(pk))
+	if err != nil {
+		panic(err)
+	}
+
 	return &Client{
 		ctx:                context.Background(),
 		cfg:                cfg,
 		logger:             config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger),
-		auth:               auth.NewClient(cfg.Auth),
+		rc:                 rc,
 		sig:                make(chan struct{}),
 		peerMappingVersion: &atomic.Uint64{},
 	}
@@ -167,9 +169,8 @@ func (c *Client) run(ctx context.Context) (err error) {
 	return
 }
 
-func (c *Client) handshake(ctx context.Context, sr session.SendReceiveCloser) (session *session.Session, err error) {
+func (c *Client) handshake(ctx context.Context, sr session.SendReceiveCloser) (ss *session.Session, err error) {
 	payload := make(map[string]any)
-
 	bs, err := gbase64.DecodeString(c.cfg.Link)
 	if err != nil {
 		return
@@ -179,45 +180,13 @@ func (c *Client) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 		err = fmt.Errorf("invalid link: %w", err)
 		return
 	}
-	link.Nonce = grand.S(8)
-
-	file, err := os.ReadFile(c.cfg.PublicKey)
-	if err != nil {
-		return
-	}
-	block, _ := pem.Decode(file)
-	if block == nil {
-		err = fmt.Errorf("invalid public key")
-		return
-	}
-	publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		err = fmt.Errorf("invalid public key: %w", err)
-		return
-	}
-	bs, err = rsa.EncryptOAEP(sha256.New(), rand.Reader,
-		publicKey.(*rsa.PublicKey), []byte(link.Nonce), []byte("device"))
-	if err != nil {
-		return
-	}
-	link.Signature = gbase64.EncodeToString(bs)
-	payload["link"] = gbase64.EncodeToString(gjson.MustEncode(link))
-
+	payload["hostname"], _ = os.Hostname()
 	resp := &handshakeResponse{}
-	err = c.auth.AuthPtr(ctx, payload,
-		func(ctx context.Context, in []byte) (out []byte, err error) {
-			if err = sr.Send(in); err != nil {
-				return
-			}
-			return sr.Receive(ctx)
-		},
-		resp,
-	)
-	if err != nil {
+	if err = c.rc.Do(ctx, sr, session.NewHeader(link.SubDeviceId, link.Key), payload, resp); err != nil {
 		return
 	}
-	session = resp.Session
-	c.logger.Infof(ctx, "handshake success: id=%v,ip=%v", session.SessionId, session.IP)
+	ss = resp.Session
+	c.logger.Infof(ctx, "handshake success: id=%v,ip=%v", ss.SessionId, ss.IP)
 	return
 }
 

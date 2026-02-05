@@ -2,37 +2,17 @@ package network
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 
-	"github.com/gogf/gf/v2/encoding/gbase64"
 	"github.com/gogf/gf/v2/frame/g"
-	"github.com/gogf/gf/v2/util/gconv"
 
 	"go-vnet/common/session"
 	"go-vnet/manager/server/internal/service"
 	"go-vnet/vnet/server"
 )
 
-func (s *sNetwork) AcquireDevice(ctx context.Context, ss *server.Session, payload map[string]any) (dev *session.Device, err error) {
-	linkStr := gconv.String(payload["link"])
-	if linkStr == "" {
-		// err = response.CodeInvalidParameter.WithDetail("connect is empty")
-		return
-	}
-
-	bs, err := gbase64.DecodeString(linkStr)
-	if err != nil {
-		return
-	}
-
-	link := new(server.NetworkLink)
-	if err = json.Unmarshal(bs, &link); err != nil {
-		return
-	}
-
-	subDevice, err := service.Device().GetSubDeviceById(ctx, link.SubDeviceId)
+func (s *sNetwork) AcquireDevice(ctx context.Context, ss *server.Session, subDeviceId uint64, payload map[string]any) (dev *session.Device, err error) {
+	subDevice, err := service.Device().GetSubDeviceById(ctx, subDeviceId)
 	if err != nil {
 		return
 	}
@@ -44,12 +24,6 @@ func (s *sNetwork) AcquireDevice(ctx context.Context, ss *server.Session, payloa
 		return
 	}
 	ss.SetNetwork(network)
-
-	_, err = service.Device().VerifyById(ctx, subDevice.DeviceId, link.Key, link.Nonce, link.Signature)
-	if err != nil {
-		err = fmt.Errorf("verify device failed: %w", err)
-		return
-	}
 
 	// dispatch device
 	dev = new(session.Device)

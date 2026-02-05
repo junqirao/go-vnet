@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
 	"go-vnet/common/protocol"
@@ -34,7 +34,6 @@ type (
 		cfg       *Config
 		logger    logger.Logger
 		sig       chan struct{}
-		auth      *auth.Server
 		manager   *Manager
 		sessions  sync.Map // src : *Session
 		// p2p
@@ -44,7 +43,8 @@ type (
 		ms ManagerServer
 	}
 	ManagerServer interface {
-		AcquireDevice(ctx context.Context, ss *Session, payload map[string]any) (dev *session.Device, err error)
+		AcquireDevice(ctx context.Context, ss *Session, subDeviceId uint64, payload map[string]any) (dev *session.Device, err error)
+		PrivateKeyBySubDeviceId(ctx context.Context, id uint64, key string) (pri *rsa.PrivateKey, err error)
 	}
 	internalServer interface {
 		io.Closer
@@ -72,9 +72,9 @@ func NewServer(cfg *Config) *Server {
 		funcRegisterP2PPeer,
 	)
 
-	chainFunc := config.GetMappedConfig[[]auth.ServerAuthChainFunc](cfg,
-		ConfigKeyAuthChainFunc, []auth.ServerAuthChainFunc{})
-	s.auth = auth.NewServer(cfg.Auth, chainFunc)
+	// chainFunc := config.GetMappedConfig[[]auth.ServerAuthChainFunc](cfg,
+	// 	ConfigKeyAuthChainFunc, []auth.ServerAuthChainFunc{})
+	// s.auth = auth.NewServer(cfg.Auth, chainFunc)
 	s.p2pSignalingServer = newP2PSignalingServer(cfg.P2P, s)
 	return s
 }
@@ -379,6 +379,11 @@ func (s *Server) proxy(ctx context.Context, name string, dstSess, srcSess *Sessi
 }
 
 func (s *Server) handshake(ctx context.Context, ss *Session) (err error) {
+	if s.ms == nil {
+		err = ErrUnauthorized.WithCause(errors.New("manager server not registered"))
+		return
+	}
+
 	// Set a context with a 10-second timeout
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer func() {
@@ -395,85 +400,68 @@ func (s *Server) handshake(ctx context.Context, ss *Session) (err error) {
 		return
 	}
 
-	request, resp, err := s.auth.Auth(ctx, datagram)
+	header, payload, err := session.ParseRequest(datagram)
 	if err != nil {
-		err = ErrUnauthorized.WithCause(err)
-		return
+		return err
 	}
 
-	defer func() {
-		if err != nil {
-			resp["error"] = err.Error()
-		}
-		// send to client
-		bs, err := s.auth.Encode(ctx, resp)
-		if err != nil {
-			s.logger.Errorf(ctx, "encode auth response error: %s", err.Error())
+	privateKey, err := s.ms.PrivateKeyBySubDeviceId(ctx, header.SubDeviceId, header.Key)
+	if err != nil {
+		return err
+	}
+
+	data, err := session.HandleRequest(ctx, header, privateKey, payload,
+		func(ctx context.Context, req map[string]any) (resp map[string]any, err error) {
+			resp = make(map[string]any)
+
+			defer func() {
+				if err != nil {
+					resp["error"] = err.Error()
+				}
+			}()
+
+			var dev *session.Device
+			dev, err = s.ms.AcquireDevice(ctx, ss, header.SubDeviceId, req)
+			if err != nil {
+				err = ErrResourceError.WithCause(fmt.Errorf("acquire device error: %s", err.Error()))
+				return
+			}
+			if ss.network == nil {
+				err = ErrResourceError.WithCause(errors.New("internal error network not set"))
+				return
+			}
+
+			networkId := ss.network.ID
+
+			s.logger.Infof(ctx, "dispatch device: id=%v cidr=%v", dev.Id, dev.CIDR)
+
+			ip, _, _ := net.ParseCIDR(dev.CIDR)
+
+			ss.IP = ip.To4().String()
+			ss.NetworkId = networkId
+			ss.NetworkInfo = map[string]any{
+				"id":   networkId,
+				"cidr": ss.network.CIDR,
+				"mtu":  ss.network.MTU,
+			}
+			ss.DispatchedDevice = session.Device{
+				Id:   dev.Id,
+				Name: dev.Name,
+				CIDR: dev.CIDR,
+				MTU:  dev.MTU,
+			}
+
+			// build response
+			resp["session"] = ss.Session
+			// all these registration will be unregistered in acceptStreamLoop
+			// when the connection is closed (can not accept new stream)
+			s.logger.Infof(ctx, "handle connection, route=%s", ss.IP)
 			return
-		}
-
-		_ = ss.Send(bs)
-	}()
-
-	if s.ms == nil {
-		err = ErrUnauthorized.WithCause(errors.New("manager server not registered"))
-		return
-	}
-	var dev *session.Device
-	dev, err = s.ms.AcquireDevice(ctx, ss, request)
-	if err != nil {
-		err = ErrResourceError.WithCause(fmt.Errorf("acquire device error: %s", err.Error()))
-		return
-	}
-	if ss.network == nil {
-		err = ErrResourceError.WithCause(errors.New("internal error network not set"))
-		return
-	}
-
-	networkId := ss.network.ID
-
-	// // get network_id from request
-	// networkId, ok := request["network_id"].(string)
-	// if !ok {
-	// 	err = ErrInvalidParameter.WithCause(errors.New("network_id field from request not found"))
-	// 	return
-	// }
-	//
-	// ss.network, ok = GetNetworkManager().GetNetwork(networkId)
-	// if !ok {
-	// 	err = ErrResourceNotFound.WithCause(fmt.Errorf("network not found: id=%s", networkId))
-	// 	return
-	// }
-	//
-	// dev, err := ss.network.AcquireDevice(ctx, ss, request)
-	// if err != nil {
-	// 	err = ErrResourceError.WithCause(fmt.Errorf("acquire device error: %s", err.Error()))
-	// 	return
-	// }
-	s.logger.Infof(ctx, "dispatch device: id=%v cidr=%v", dev.Id, dev.CIDR)
-
-	ip, _, _ := net.ParseCIDR(dev.CIDR)
-
-	ss.IP = ip.To4().String()
-	ss.NetworkId = networkId
-	ss.NetworkInfo = map[string]any{
-		"id":   networkId,
-		"cidr": ss.network.CIDR,
-		"mtu":  ss.network.MTU,
-	}
-	ss.DispatchedDevice = session.Device{
-		Id:   dev.Id,
-		Name: dev.Name,
-		CIDR: dev.CIDR,
-		MTU:  dev.MTU,
-	}
-
-	// build response
-	resp["session"] = ss.Session
-
-	// all these registration will be unregistered in acceptStreamLoop
-	// when the connection is closed (can not accept new stream)
-	s.logger.Infof(ctx, "handle connection, route=%s", ss.IP)
+		},
+	)
+	// always send data, when error caused, session
+	// will be closed by Server.handleSession
+	_ = ss.Send(data)
 	return
 }
 

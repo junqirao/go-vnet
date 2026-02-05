@@ -137,6 +137,36 @@ func (d *sDevice) parseDevice(record gdb.Record) (dev *entity.Device, err error)
 	return
 }
 
+func (d *sDevice) PrivateKeyBySubDeviceId(ctx context.Context, id uint64, key string) (pri *rsa.PrivateKey, err error) {
+	// todo cache
+	sd, err := d.GetSubDeviceById(ctx, id)
+	if err != nil {
+		return
+	}
+	dev, err := d.GetDeviceById(ctx, sd.DeviceId)
+	if err != nil {
+		return
+	}
+	encrypted, err := gbase64.DecodeString(dev.PrivateKey)
+	if err != nil {
+		err = response.CodeDefaultFailure.WithDetail(fmt.Sprintf("broken keypair: %s", err.Error()))
+		return
+	}
+	decryptedKey, err := gaes.Decrypt(encrypted, d.buildEncryptKey(key))
+	if err != nil {
+		err = response.CodePermissionDeny.WithDetail("invalid key")
+		return
+	}
+	// convert byte to *rsa.PrivateKey
+	block, _ := pem.Decode(decryptedKey)
+	if block == nil {
+		err = response.CodeDefaultFailure.WithDetail("failed to decode PEM block")
+		return
+	}
+	pri, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+	return
+}
+
 func (d *sDevice) VerifyByName(ctx context.Context, name, key, nonce, signature string) (dev *entity.Device, err error) {
 	dev, err = d.GetDeviceByName(ctx, name)
 	if err != nil {

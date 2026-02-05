@@ -8,7 +8,6 @@ import (
 
 	"github.com/quic-go/quic-go"
 
-	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
 )
@@ -37,15 +36,13 @@ type (
 	Config struct {
 		config.MappedConfig
 
-		NetworkId          string      `yaml:"network_id" json:"network_id"`
-		Link               string      `yaml:"link" json:"link"`
-		PublicKey          string      `yaml:"public_key" json:"public_key"`
-		Port               int         `yaml:"port" json:"port"`
-		Address            string      `yaml:"address" json:"address"`
-		Type               Type        `yaml:"type" json:"type"`
-		InsecureSkipVerify bool        `yaml:"insecure_skip_verify" json:"insecure_skip_verify"`
-		Auth               auth.Config `yaml:"auth" json:"auth"`
-		P2P                P2PConfig   `yaml:"p2p" json:"p2p"`
+		Link               string    `yaml:"link" json:"link"`
+		PublicKey          string    `yaml:"public_key" json:"public_key"`
+		Port               int       `yaml:"port" json:"port"`
+		Address            string    `yaml:"address" json:"address"`
+		Type               Type      `yaml:"type" json:"type"`
+		InsecureSkipVerify bool      `yaml:"insecure_skip_verify" json:"insecure_skip_verify"`
+		P2P                P2PConfig `yaml:"p2p" json:"p2p"`
 	}
 	P2PConfig struct {
 		Enabled     bool     `yaml:"enabled" json:"enabled"`

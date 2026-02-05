@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
 
-	"go-vnet/common/auth"
 	"go-vnet/common/config"
 	"go-vnet/common/logger"
 	web "go-vnet/manager/server"
@@ -29,17 +27,6 @@ func main() {
 	l := logger.NewStdLogger(nil, "transport_server")
 	cfg := server.NewConfig(
 		server.WithLogger(l),
-		server.WithAuthConfig(auth.Config{
-			Type:     auth.TypeSimplePassword,
-			Password: "",
-		}),
-		server.WithAuthenticationChainFunc(func(ctx context.Context, request map[string]any, resp map[string]any) (err error) {
-			fmt.Println("------------")
-			fmt.Println("Auth Chain Func")
-			fmt.Printf("%+v\n", request)
-			fmt.Println("------------")
-			return nil
-		}),
 	)
 	cfg.Servers = append(cfg.Servers,
 		&server.TransportConfig{
