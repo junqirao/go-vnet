@@ -7,10 +7,3 @@ public_key: public_key.pem
 
 p2p:
   enabled: true
-
-# 认证配置
-auth:
-  type: "simple_password"  # simple_password, rsa
-  password: ""
-
-# 其他配置可以根据需要添加
