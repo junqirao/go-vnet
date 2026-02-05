@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/x509"
 	"database/sql"
 	"encoding/pem"
@@ -138,7 +137,6 @@ func (d *sDevice) parseDevice(record gdb.Record) (dev *entity.Device, err error)
 }
 
 func (d *sDevice) PrivateKeyBySubDeviceId(ctx context.Context, id uint64, key string) (pri *rsa.PrivateKey, err error) {
-	// todo cache
 	sd, err := d.GetSubDeviceById(ctx, id)
 	if err != nil {
 		return
@@ -164,67 +162,6 @@ func (d *sDevice) PrivateKeyBySubDeviceId(ctx context.Context, id uint64, key st
 		return
 	}
 	pri, err = x509.ParsePKCS1PrivateKey(block.Bytes)
-	return
-}
-
-func (d *sDevice) VerifyByName(ctx context.Context, name, key, nonce, signature string) (dev *entity.Device, err error) {
-	dev, err = d.GetDeviceByName(ctx, name)
-	if err != nil {
-		return
-	}
-	err = d.verify(ctx, dev, key, nonce, signature)
-	return
-}
-
-func (d *sDevice) VerifyById(ctx context.Context, id, key, nonce, signature string) (dev *entity.Device, err error) {
-	dev, err = d.GetDeviceById(ctx, id)
-	if err != nil {
-		return
-	}
-	err = d.verify(ctx, dev, key, nonce, signature)
-	return
-}
-
-func (d *sDevice) verify(_ context.Context, dev *entity.Device, key string, nonce, signature string) (err error) {
-	if dev.Enabled != 1 {
-		err = response.CodeInvalidParameter.WithDetail("device disabled")
-		return
-	}
-	encrypted, err := gbase64.DecodeString(dev.PrivateKey)
-	if err != nil {
-		err = response.CodeDefaultFailure.WithDetail(fmt.Sprintf("broken keypair: %s", err.Error()))
-		return
-	}
-	decryptedKey, err := gaes.Decrypt(encrypted, d.buildEncryptKey(key))
-	if err != nil {
-		err = response.CodePermissionDeny.WithDetail("invalid key")
-		return
-	}
-	// convert byte to *rsa.PrivateKey
-	block, _ := pem.Decode(decryptedKey)
-	if block == nil {
-		err = response.CodeDefaultFailure.WithDetail("failed to decode PEM block")
-		return
-	}
-	pk, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-	if err != nil {
-		err = response.CodeDefaultFailure.WithDetail("failed to parse private key")
-		return
-	}
-	sign, err := gbase64.DecodeString(signature)
-	if err != nil {
-		err = response.CodeDefaultFailure.WithDetail(fmt.Sprintf("invalid signature format: %s", err.Error()))
-		return
-	}
-	// decode signature -> nonce
-	bs, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, pk, sign, []byte("device"))
-	if err != nil {
-		err = response.CodePermissionDeny.WithDetail("invalid signature")
-		return
-	}
-	if string(bs) != nonce {
-		err = response.CodePermissionDeny.WithDetail("invalid nonce")
-	}
 	return
 }
 

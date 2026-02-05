@@ -399,12 +399,15 @@ func (s *Server) handshake(ctx context.Context, ss *Session) (err error) {
 
 	header, payload, err := session.ParseRequest(datagram)
 	if err != nil {
-		return err
+		err = fmt.Errorf("invalid handshake packet: %s", err.Error())
+		return
 	}
 
 	privateKey, err := s.ms.PrivateKeyBySubDeviceId(ctx, header.SubDeviceId, header.Key)
 	if err != nil {
-		return err
+		g.Log().Errorf(ctx, "management server error: %v", err)
+		err = errors.New("management server error: fetch private key")
+		return
 	}
 
 	data, err := session.HandleRequest(ctx, header, privateKey, payload,
