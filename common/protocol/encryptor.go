@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"crypto/rand"
-	"encoding/binary"
 	"errors"
 	"fmt"
 
@@ -16,14 +15,6 @@ const (
 	Chacha20Poly1305KeySize = 32
 	// Chacha20Poly1305Overhead is the overhead added by chacha20-poly1305 (authentication tag)
 	Chacha20Poly1305Overhead = 16
-	// Chacha20Poly1305TotalOverhead includes nonce (24 bytes) + authentication tag (16 bytes)
-	Chacha20Poly1305TotalOverhead = Chacha20Poly1305NonceSize + Chacha20Poly1305Overhead
-)
-
-var (
-	// TestNonce is a fixed nonce for testing purposes only
-	// WARNING: In production, never reuse the same nonce with the same key
-	TestNonce = [Chacha20Poly1305NonceSize]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18}
 )
 
 var (
@@ -139,27 +130,4 @@ func (e *Chacha20Poly1305Encryptor) Decrypt(data []byte, buf []byte) (int, error
 
 	// Buffer is too small, return error
 	return 0, errors.New("buffer capacity too small")
-}
-
-// GenerateRandomNonce generates a random nonce for production use
-func GenerateRandomNonce() ([Chacha20Poly1305NonceSize]byte, error) {
-	var nonce [Chacha20Poly1305NonceSize]byte
-	_, err := rand.Read(nonce[:])
-	return nonce, err
-}
-
-// GenerateRandomKey generates a random 32-byte key for chacha20-poly1305
-func GenerateRandomKey() ([Chacha20Poly1305KeySize]byte, error) {
-	var key [Chacha20Poly1305KeySize]byte
-	_, err := rand.Read(key[:])
-	return key, err
-}
-
-// BuildNonce builds a nonce from a 64-bit counter
-// Useful for generating nonces in a deterministic way
-func BuildNonce(counter uint64) [Chacha20Poly1305NonceSize]byte {
-	var nonce [Chacha20Poly1305NonceSize]byte
-	binary.BigEndian.PutUint64(nonce[:8], counter)
-	// Remaining 16 bytes can be set to zero or used for additional context
-	return nonce
 }
