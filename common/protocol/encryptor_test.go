@@ -70,20 +70,15 @@ func TestChacha20Poly1305Encryptor_Encrypt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := make([]byte, 0, Chacha20Poly1305NonceSize+len(tt.data)+Chacha20Poly1305Overhead)
-			ciphertext, err := encryptor.Encrypt(tt.data, buf)
+			ciphertextLen, err := encryptor.Encrypt(tt.data, buf)
 			if err != nil {
 				t.Fatalf("Encrypt() error = %v", err)
 			}
 
 			// Verify ciphertext has nonce + encrypted data
 			expectedLen := Chacha20Poly1305NonceSize + len(tt.data) + Chacha20Poly1305Overhead
-			if len(ciphertext) != expectedLen {
-				t.Errorf("Encrypt() len = %v, want %v", len(ciphertext), expectedLen)
-			}
-
-			// Verify nonce is prepended
-			if !bytes.Equal(ciphertext[:Chacha20Poly1305NonceSize], TestNonce[:]) {
-				t.Errorf("Encrypt() nonce mismatch")
+			if ciphertextLen != expectedLen {
+				t.Errorf("Encrypt() len = %v, want %v", ciphertextLen, expectedLen)
 			}
 		})
 	}
@@ -120,19 +115,21 @@ func TestChacha20Poly1305Encryptor_Decrypt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Encrypt first
-			ciphertext, err := encryptor.Encrypt(tt.data, nil)
+			encryptBuf := make([]byte, 0, Chacha20Poly1305NonceSize+len(tt.data)+Chacha20Poly1305Overhead)
+			ciphertextLen, err := encryptor.Encrypt(tt.data, encryptBuf)
 			if err != nil {
 				t.Fatalf("Encrypt() error = %v", err)
 			}
+			ciphertext := encryptBuf[:ciphertextLen]
 
-			// Decrypt
-			plaintext, err := encryptor.Decrypt(ciphertext, nil)
+			// For decryption, buffer capacity should be at least expected plaintext length
+			decryptBuf := make([]byte, 0, len(tt.data))
+			plaintextLen, err := encryptor.Decrypt(ciphertext, decryptBuf)
 			if err != nil {
 				t.Fatalf("Decrypt() error = %v", err)
 			}
+			plaintext := decryptBuf[:plaintextLen]
 
-			// Verify plaintext matches original data
 			if !bytes.Equal(plaintext, tt.data) {
 				t.Errorf("Decrypt() data = %v, want %v", plaintext, tt.data)
 			}
@@ -171,21 +168,20 @@ func TestChacha20Poly1305Encryptor_RoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Encrypt
 			buf := make([]byte, 0, Chacha20Poly1305NonceSize+len(tt.data)+Chacha20Poly1305Overhead)
-			ciphertext, err := encryptor.Encrypt(tt.data, buf)
+			ciphertextLen, err := encryptor.Encrypt(tt.data, buf)
 			if err != nil {
 				t.Fatalf("Encrypt() error = %v", err)
 			}
+			ciphertext := buf[:ciphertextLen]
 
-			// Decrypt
 			decryptBuf := make([]byte, 0, len(tt.data))
-			plaintext, err := encryptor.Decrypt(ciphertext, decryptBuf)
+			plaintextLen, err := encryptor.Decrypt(ciphertext, decryptBuf)
 			if err != nil {
 				t.Fatalf("Decrypt() error = %v", err)
 			}
+			plaintext := decryptBuf[:plaintextLen]
 
-			// Verify round trip
 			if !bytes.Equal(plaintext, tt.data) {
 				t.Errorf("RoundTrip failed: got %v, want %v", plaintext, tt.data)
 			}
@@ -208,7 +204,9 @@ func TestChacha20Poly1305Encryptor_Decrypt_InvalidCiphertext(t *testing.T) {
 			name: "modified ciphertext",
 			data: func() []byte {
 				original := []byte("test data")
-				ciphertext, _ := encryptor.Encrypt(original, nil)
+				buf := make([]byte, 0, Chacha20Poly1305NonceSize+len(original)+Chacha20Poly1305Overhead)
+				ciphertextLen, _ := encryptor.Encrypt(original, buf)
+				ciphertext := buf[:ciphertextLen]
 				// Modify one byte
 				ciphertext[Chacha20Poly1305NonceSize] ^= 0xFF
 				return ciphertext
@@ -222,7 +220,9 @@ func TestChacha20Poly1305Encryptor_Decrypt_InvalidCiphertext(t *testing.T) {
 			name: "wrong nonce",
 			data: func() []byte {
 				original := []byte("test data")
-				ciphertext, _ := encryptor.Encrypt(original, nil)
+				buf := make([]byte, 0, Chacha20Poly1305NonceSize+len(original)+Chacha20Poly1305Overhead)
+				ciphertextLen, _ := encryptor.Encrypt(original, buf)
+				ciphertext := buf[:ciphertextLen]
 				// Modify nonce
 				ciphertext[0] ^= 0xFF
 				return ciphertext
@@ -235,45 +235,6 @@ func TestChacha20Poly1305Encryptor_Decrypt_InvalidCiphertext(t *testing.T) {
 			_, err := encryptor.Decrypt(tt.data, nil)
 			if err != ErrInvalidCiphertext {
 				t.Errorf("Decrypt() error = %v, want %v", err, ErrInvalidCiphertext)
-			}
-		})
-	}
-}
-
-func TestChacha20Poly1305Encryptor_SetNonce(t *testing.T) {
-	key := bytes.Repeat([]byte{0x01}, Chacha20Poly1305KeySize)
-	encryptor, err := NewChacha20Poly1305Encryptor(key)
-	if err != nil {
-		t.Fatalf("NewChacha20Poly1305Encryptor() error = %v", err)
-	}
-
-	tests := []struct {
-		name    string
-		nonce   []byte
-		wantErr bool
-	}{
-		{
-			name:    "valid nonce",
-			nonce:   bytes.Repeat([]byte{0x05}, Chacha20Poly1305NonceSize),
-			wantErr: false,
-		},
-		{
-			name:    "invalid nonce too short",
-			nonce:   bytes.Repeat([]byte{0x01}, 8),
-			wantErr: true,
-		},
-		{
-			name:    "invalid nonce too long",
-			nonce:   bytes.Repeat([]byte{0x01}, 16),
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := encryptor.SetNonce(tt.nonce)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("SetNonce() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -371,12 +332,13 @@ func BenchmarkChacha20Poly1305Encryptor_Encrypt_Small(b *testing.B) {
 	key := bytes.Repeat([]byte{0x01}, Chacha20Poly1305KeySize)
 	encryptor, _ := NewChacha20Poly1305Encryptor(key)
 	data := []byte("hello world")
+	buf := make([]byte, 0, Chacha20Poly1305NonceSize+len(data)+Chacha20Poly1305Overhead)
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, _ = encryptor.Encrypt(data, nil)
+		_, _ = encryptor.Encrypt(data, buf)
 	}
 }
 
@@ -384,12 +346,13 @@ func BenchmarkChacha20Poly1305Encryptor_Encrypt_Medium(b *testing.B) {
 	key := bytes.Repeat([]byte{0x01}, Chacha20Poly1305KeySize)
 	encryptor, _ := NewChacha20Poly1305Encryptor(key)
 	data := bytes.Repeat([]byte("test"), 100)
+	buf := make([]byte, 0, Chacha20Poly1305NonceSize+len(data)+Chacha20Poly1305Overhead)
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, _ = encryptor.Encrypt(data, nil)
+		_, _ = encryptor.Encrypt(data, buf)
 	}
 }
 
@@ -397,12 +360,13 @@ func BenchmarkChacha20Poly1305Encryptor_Encrypt_Large(b *testing.B) {
 	key := bytes.Repeat([]byte{0x01}, Chacha20Poly1305KeySize)
 	encryptor, _ := NewChacha20Poly1305Encryptor(key)
 	data := bytes.Repeat([]byte("data"), 1000)
+	buf := make([]byte, 0, Chacha20Poly1305NonceSize+len(data)+Chacha20Poly1305Overhead)
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, _ = encryptor.Encrypt(data, nil)
+		_, _ = encryptor.Encrypt(data, buf)
 	}
 }
 
@@ -410,13 +374,16 @@ func BenchmarkChacha20Poly1305Encryptor_Decrypt_Small(b *testing.B) {
 	key := bytes.Repeat([]byte{0x01}, Chacha20Poly1305KeySize)
 	encryptor, _ := NewChacha20Poly1305Encryptor(key)
 	data := []byte("hello world")
-	ciphertext, _ := encryptor.Encrypt(data, nil)
+	encryptBuf := make([]byte, 0, Chacha20Poly1305NonceSize+len(data)+Chacha20Poly1305Overhead)
+	ciphertextLen, _ := encryptor.Encrypt(data, encryptBuf)
+	ciphertext := encryptBuf[:ciphertextLen]
+	decryptBuf := make([]byte, 0, len(data))
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, _ = encryptor.Decrypt(ciphertext, nil)
+		_, _ = encryptor.Decrypt(ciphertext, decryptBuf)
 	}
 }
 
@@ -424,13 +391,16 @@ func BenchmarkChacha20Poly1305Encryptor_Decrypt_Medium(b *testing.B) {
 	key := bytes.Repeat([]byte{0x01}, Chacha20Poly1305KeySize)
 	encryptor, _ := NewChacha20Poly1305Encryptor(key)
 	data := bytes.Repeat([]byte("test"), 100)
-	ciphertext, _ := encryptor.Encrypt(data, nil)
+	encryptBuf := make([]byte, 0, Chacha20Poly1305NonceSize+len(data)+Chacha20Poly1305Overhead)
+	ciphertextLen, _ := encryptor.Encrypt(data, encryptBuf)
+	ciphertext := encryptBuf[:ciphertextLen]
+	decryptBuf := make([]byte, 0, len(data))
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, _ = encryptor.Decrypt(ciphertext, nil)
+		_, _ = encryptor.Decrypt(ciphertext, decryptBuf)
 	}
 }
 
@@ -438,12 +408,15 @@ func BenchmarkChacha20Poly1305Encryptor_Decrypt_Large(b *testing.B) {
 	key := bytes.Repeat([]byte{0x01}, Chacha20Poly1305KeySize)
 	encryptor, _ := NewChacha20Poly1305Encryptor(key)
 	data := bytes.Repeat([]byte("data"), 1000)
-	ciphertext, _ := encryptor.Encrypt(data, nil)
+	encryptBuf := make([]byte, 0, Chacha20Poly1305NonceSize+len(data)+Chacha20Poly1305Overhead)
+	ciphertextLen, _ := encryptor.Encrypt(data, encryptBuf)
+	ciphertext := encryptBuf[:ciphertextLen]
+	decryptBuf := make([]byte, 0, len(data))
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, _ = encryptor.Decrypt(ciphertext, nil)
+		_, _ = encryptor.Decrypt(ciphertext, decryptBuf)
 	}
 }

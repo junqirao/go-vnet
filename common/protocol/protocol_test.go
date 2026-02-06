@@ -682,6 +682,9 @@ func BenchmarkTransport_WriteMessage_Large(b *testing.B) {
 func BenchmarkTransport_RoundTrip_Small(b *testing.B) {
 	data := []byte("hello world")
 
+	// Read buffer
+	out := make([]byte, len(data))
+
 	b.ResetTimer()
 	b.ReportAllocs()
 
@@ -699,7 +702,6 @@ func BenchmarkTransport_RoundTrip_Small(b *testing.B) {
 		mock.readBuf = mock.writeBuf
 
 		// Read
-		out := make([]byte, len(data))
 		_, err = transport.Read(out)
 		if err != nil {
 			b.Fatal(err)
@@ -710,6 +712,9 @@ func BenchmarkTransport_RoundTrip_Small(b *testing.B) {
 func BenchmarkTransport_RoundTrip_Large(b *testing.B) {
 	data := bytes.Repeat([]byte("test"), 1000)
 
+	// Read buffer
+	out := make([]byte, len(data))
+
 	b.ResetTimer()
 	b.ReportAllocs()
 
@@ -727,7 +732,6 @@ func BenchmarkTransport_RoundTrip_Large(b *testing.B) {
 		mock.readBuf = mock.writeBuf
 
 		// Read
-		out := make([]byte, len(data))
 		_, err = transport.Read(out)
 		if err != nil {
 			b.Fatal(err)
@@ -838,8 +842,8 @@ func TestTransport_BatchWrite_TooLarge(t *testing.T) {
 	// Create data that will exceed 65530 bytes
 	buf := make([][]byte, 1)
 	sizes := make([]int, 1)
-	buf[0] = make([]byte, 65535)
-	sizes[0] = 65531 // 2 + 2*1 + 65531 = 65535 > 65530
+	buf[0] = make([]byte, 65531) // Allocate actual data of 65531 bytes
+	sizes[0] = 65531             // 2 + 2*1 + 65531 = 65535 > 65530
 
 	_, err := transport.BatchWrite(buf, sizes, 0)
 	if err == nil {
@@ -1225,17 +1229,16 @@ func BenchmarkTransport_ParseBatch_Small(b *testing.B) {
 func BenchmarkTransport_ParseBatch_Medium(b *testing.B) {
 	transport := NewTransport(newMockReadWriter()).(*Transport)
 
-	buf := make([][][]byte, 1)
-	buf[0] = make([][]byte, 10)
-	for i := range buf[0] {
-		buf[0][i] = bytes.Repeat([]byte("test"), 25)
+	buf := make([][]byte, 10)
+	for i := range buf {
+		buf[i] = bytes.Repeat([]byte("test"), 25)
 	}
 	sizes := make([]int, 10)
 	for i := range sizes {
 		sizes[i] = 100
 	}
 
-	msg := buildBatchMessage(0, buf[0], sizes)
+	msg := buildBatchMessage(0, buf, sizes)
 	dataLen := binary.BigEndian.Uint16(msg[5:7])
 	data := msg[7 : 7+dataLen]
 
@@ -1296,6 +1299,13 @@ func BenchmarkTransport_BatchWrite_ParseBatch_RoundTrip_Small(b *testing.B) {
 	}
 	sizes := []int{4, 4, 4}
 
+	// Parse buffers
+	outBuf := make([][]byte, 3)
+	for i := range outBuf {
+		outBuf[i] = make([]byte, sizes[i])
+	}
+	parsedSizes := make([]int, 3)
+
 	b.ResetTimer()
 	b.ReportAllocs()
 
@@ -1315,11 +1325,6 @@ func BenchmarkTransport_BatchWrite_ParseBatch_RoundTrip_Small(b *testing.B) {
 		data := writtenMsg[7 : 7+dataLen]
 
 		// Parse
-		outBuf := make([][]byte, 3)
-		for i := range outBuf {
-			outBuf[i] = make([]byte, sizes[i])
-		}
-		parsedSizes := make([]int, 3)
 		_, err = transport.ParseBatch(data, outBuf, parsedSizes, 0)
 		if err != nil {
 			b.Fatal(err)
@@ -1337,6 +1342,13 @@ func BenchmarkTransport_BatchWrite_ParseBatch_RoundTrip_Large(b *testing.B) {
 		sizes[i] = 2000
 	}
 
+	// Parse buffers
+	outBuf := make([][]byte, 5)
+	for i := range outBuf {
+		outBuf[i] = make([]byte, sizes[i])
+	}
+	parsedSizes := make([]int, 5)
+
 	b.ResetTimer()
 	b.ReportAllocs()
 
@@ -1356,11 +1368,6 @@ func BenchmarkTransport_BatchWrite_ParseBatch_RoundTrip_Large(b *testing.B) {
 		data := writtenMsg[7 : 7+dataLen]
 
 		// Parse
-		outBuf := make([][]byte, 5)
-		for i := range outBuf {
-			outBuf[i] = make([]byte, sizes[i])
-		}
-		parsedSizes := make([]int, 5)
 		_, err = transport.ParseBatch(data, outBuf, parsedSizes, 0)
 		if err != nil {
 			b.Fatal(err)

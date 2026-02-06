@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -15,6 +16,8 @@ const (
 	Chacha20Poly1305KeySize = 32
 	// Chacha20Poly1305Overhead is the overhead added by chacha20-poly1305 (authentication tag)
 	Chacha20Poly1305Overhead = 16
+	// Chacha20Poly1305TotalOverhead includes nonce (24 bytes) + authentication tag (16 bytes)
+	Chacha20Poly1305TotalOverhead = Chacha20Poly1305NonceSize + Chacha20Poly1305Overhead
 )
 
 var (
@@ -30,8 +33,7 @@ var (
 
 // Chacha20Poly1305Encryptor implements Encryptor interface using chacha20-poly1305 AEAD
 type Chacha20Poly1305Encryptor struct {
-	aead  any
-	nonce [Chacha20Poly1305NonceSize]byte
+	aead any
 }
 
 // NewChacha20Poly1305Encryptor creates a new chacha20-poly1305 encryptor with given key
@@ -47,8 +49,7 @@ func NewChacha20Poly1305Encryptor(key []byte) (*Chacha20Poly1305Encryptor, error
 	}
 
 	return &Chacha20Poly1305Encryptor{
-		aead:  aead,
-		nonce: TestNonce, // Use fixed nonce for now
+		aead: aead,
 	}, nil
 }
 
@@ -77,69 +78,67 @@ func (e *Chacha20Poly1305Encryptor) overhead() int {
 }
 
 // Encrypt encrypts data using chacha20-poly1305
-// buf can be used to avoid allocation
-// Returns ciphertext with nonce prepended: [nonce 24 bytes][ciphertext]
-func (e *Chacha20Poly1305Encryptor) Encrypt(data []byte, buf []byte) ([]byte, error) {
+// buf can be used to avoid allocation, must have capacity >= Chacha20Poly1305NonceSize + len(data) + Chacha20Poly1305Overhead
+// Writes ciphertext with random nonce prepended: [nonce 24 bytes][ciphertext]
+// Returns number of bytes written to buf
+func (e *Chacha20Poly1305Encryptor) Encrypt(data []byte, buf []byte) (int, error) {
 	// Prepend nonce to ciphertext
 	totalLen := Chacha20Poly1305NonceSize + len(data) + e.overhead()
 
-	// Use provided buf or allocate new slice
-	var result []byte
-	if cap(buf) >= totalLen {
-		result = buf[:totalLen]
-	} else {
-		result = make([]byte, totalLen)
+	// Check buffer capacity
+	if cap(buf) < totalLen {
+		return 0, fmt.Errorf("buffer capacity too small %d:%d+%d+%d", cap(buf), Chacha20Poly1305NonceSize, len(data), e.overhead())
 	}
 
-	// Copy nonce to result
-	copy(result[:Chacha20Poly1305NonceSize], e.nonce[:])
+	// Ensure buffer has correct length
+	result := buf[:totalLen]
+
+	// Generate random nonce directly in result buffer to avoid extra allocation
+	_, err := rand.Read(result[:Chacha20Poly1305NonceSize])
+	if err != nil {
+		return 0, err
+	}
 
 	// Encrypt using AEAD
-	e.seal(result[Chacha20Poly1305NonceSize:Chacha20Poly1305NonceSize], e.nonce[:], data)
+	e.seal(result[Chacha20Poly1305NonceSize:Chacha20Poly1305NonceSize], result[:Chacha20Poly1305NonceSize], data)
 
-	return result, nil
+	return totalLen, nil
 }
 
 // Decrypt decrypts data using chacha20-poly1305
 // Expects data format: [nonce 24 bytes][ciphertext]
-// buf can be used to avoid allocation
-func (e *Chacha20Poly1305Encryptor) Decrypt(data []byte, buf []byte) ([]byte, error) {
+// buf can be used to avoid allocation, must have capacity >= len(data) - Chacha20Poly1305NonceSize - Chacha20Poly1305Overhead
+// Returns number of bytes written to buf
+func (e *Chacha20Poly1305Encryptor) Decrypt(data []byte, buf []byte) (int, error) {
 	if len(data) < Chacha20Poly1305NonceSize {
-		return nil, ErrInvalidCiphertext
+		return 0, ErrInvalidCiphertext
 	}
 
-	// Extract nonce
+	// Extract nonce and ciphertext
 	nonce := data[:Chacha20Poly1305NonceSize]
 	ciphertext := data[Chacha20Poly1305NonceSize:]
 
-	// Decrypt using AEAD
-	// Use empty slice with capacity to allow AEAD to allocate in provided buffer
-	var dst []byte
-	if len(buf) > 0 {
-		// Create an empty slice with the same capacity to avoid appending to existing data
-		dst = buf[:0:cap(buf)]
-	}
-	plaintext, err := e.open(dst, nonce, ciphertext)
+	// Decrypt using AEAD directly without pre-sizing the result slice
+	// This allows the AEAD implementation to handle the memory allocation efficiently
+	plaintext, err := e.open(buf[:0], nonce, ciphertext)
 	if err != nil {
-		return nil, ErrInvalidCiphertext
+		return 0, ErrInvalidCiphertext
 	}
 
-	// Ensure plaintext is not nil
-	if plaintext == nil {
-		return []byte{}, nil
+	// If AEAD allocated a new slice, copy it back to the provided buffer
+	if cap(buf) >= len(plaintext) {
+		if len(plaintext) > 0 {
+			// Check if plaintext uses a different underlying array
+			if len(buf) == 0 || &plaintext[0] != &buf[0] {
+				// Copy to buffer if it's a different underlying array
+				copy(buf, plaintext)
+			}
+		}
+		return len(plaintext), nil
 	}
 
-	return plaintext, nil
-}
-
-// SetNonce sets a new nonce for the encryptor
-// WARNING: Never reuse the same nonce with the same key
-func (e *Chacha20Poly1305Encryptor) SetNonce(nonce []byte) error {
-	if len(nonce) != Chacha20Poly1305NonceSize {
-		return errors.New("nonce must be exactly 24 bytes")
-	}
-	copy(e.nonce[:], nonce)
-	return nil
+	// Buffer is too small, return error
+	return 0, errors.New("buffer capacity too small")
 }
 
 // GenerateRandomNonce generates a random nonce for production use

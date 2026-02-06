@@ -47,7 +47,7 @@ func TestClientBuildRequest(t *testing.T) {
 	}
 	t.Logf("private key: \n%s\n", pri)
 	t.Logf("public key: \n%s\n", pub)
-	client, err := NewRequestClient(nil, pub)
+	client, err := NewRequestClient(pub)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -57,7 +57,9 @@ func TestClientBuildRequest(t *testing.T) {
 	}
 	nonce := grand.S(16)
 	secret := grand.S(16)
-	request, err := client.buildRequest(req, nonce, secret)
+	request, err := client.buildRequest(req, Header{
+		Nonce: nonce,
+	}, secret)
 	if err != nil {
 		t.Fatal(err)
 		return

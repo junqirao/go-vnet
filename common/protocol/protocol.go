@@ -56,10 +56,10 @@ type (
 	// Encryptor defines the encryption interface
 	// buf parameter allows reusing memory to avoid allocation
 	Encryptor interface {
-		// Encrypt encrypts data into buf, returns the encrypted data slice
-		Encrypt(data []byte, buf []byte) ([]byte, error)
-		// Decrypt decrypts data into buf, returns the decrypted data slice
-		Decrypt(data []byte, buf []byte) ([]byte, error)
+		// Encrypt encrypts data into buf, returns number of bytes written
+		Encrypt(data []byte, buf []byte) (int, error)
+		// Decrypt decrypts data into buf, returns number of bytes written
+		Decrypt(data []byte, buf []byte) (int, error)
 	}
 )
 
@@ -201,6 +201,11 @@ func (t *Transport) BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 			end++
 		}
 
+		// avoid loop forever, collected no data
+		if end == start {
+			return nn, ErrMessageTooLarge
+		}
+
 		nn, err = t.batchWrite(buf[start:end], sizes[start:end], headerSize)
 		if err != nil {
 			return nn, err
@@ -251,25 +256,32 @@ func (t *Transport) batchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 	if t.encrypt && t.encryptor != nil {
 		// Construct complete inner batch message: type + length + data
 		innerMsgLen := 3 + dataLen
-		if innerMsgLen > MaxTransportByteSize-7 {
+
+		// Check if encrypted message fits in buffer
+		encryptedMsgLen := innerMsgLen + Chacha20Poly1305NonceSize + Chacha20Poly1305Overhead
+		if encryptedMsgLen > MaxTransportByteSize-7 {
 			return 0, ErrMessageTooLarge
 		}
-		// Build inner message in cryptoBuffer
-		innerMsg := (*t.cryptoBuffer)[7 : 7+innerMsgLen]
+
+		// Build inner message using buffer (data is already there, just add header)
+		// buffer layout: [magic 4][type 1][length 2][data n bytes]
+		// We construct: [type 1][length 2][data n bytes] = innerMsg
+		innerMsg := (*t.buffer)[4 : 4+innerMsgLen]
 		innerMsg[0] = TypeBatchTransport
 		binary.BigEndian.PutUint16(innerMsg[1:3], uint16(dataLen))
-		copy(innerMsg[3:], (*t.buffer)[7:7+dataLen])
-		// Encrypt the complete inner message
-		encrypted, err := t.encryptor.Encrypt(innerMsg, (*t.cryptoBuffer)[7+innerMsgLen:])
+
+		// Encrypt complete inner message into cryptoBuffer
+		encryptBuf := (*t.cryptoBuffer)[:encryptedMsgLen]
+		encryptedLen, err := t.encryptor.Encrypt(innerMsg, encryptBuf)
 		if err != nil {
 			return 0, err
 		}
 		// Write encrypted message with TypeEncrypted
 		*(*[4]byte)((*t.buffer)[:4]) = t.magic
 		(*t.buffer)[4] = TypeEncrypted
-		binary.BigEndian.PutUint16((*t.buffer)[5:7], uint16(len(encrypted)))
-		copy((*t.buffer)[7:], encrypted)
-		totalLen := 7 + len(encrypted)
+		binary.BigEndian.PutUint16((*t.buffer)[5:7], uint16(encryptedLen))
+		copy((*t.buffer)[7:], encryptBuf[:encryptedLen])
+		totalLen := 7 + encryptedLen
 		_, err = t.upstream.Write((*t.buffer)[:totalLen])
 		return totalLen, err
 	}
@@ -352,24 +364,24 @@ func (t *Transport) ReadMessage(data []byte) (typ byte, n int, err error) {
 			return 0, 0, ErrMissingEncryptor
 		}
 		// Decrypt data using cryptoBuffer to avoid conflicts
-		decrypted, decryptErr := t.encryptor.Decrypt((*t.buffer)[7:7+length], (*t.cryptoBuffer)[7:])
+		decryptBuf := (*t.cryptoBuffer)[7:]
+		decryptedLen, decryptErr := t.encryptor.Decrypt((*t.buffer)[7:7+length], decryptBuf)
 		if decryptErr != nil {
 			return 0, 0, decryptErr
 		}
 		// Check if decrypted data fits in buffer
-		if len(decrypted) > MaxTransportByteSize-7 {
+		if decryptedLen > MaxTransportByteSize-7 {
 			return 0, 0, ErrMessageTooLarge
 		}
 		// Copy decrypted data back to main buffer and parse the message type from decrypted data
-		newLen := len(decrypted)
-		copy((*t.buffer)[7:7+newLen], decrypted)
+		copy((*t.buffer)[7:7+decryptedLen], decryptBuf[:decryptedLen])
 		// Check if decrypted data contains a valid message
-		if newLen >= 3 {
+		if decryptedLen >= 3 {
 			// Parse the message from decrypted data: type is at offset 7, length is at 8-9
 			innerType := (*t.buffer)[7]
 			innerLength := binary.BigEndian.Uint16((*t.buffer)[8:10])
 			// Check if inner message is valid (header: 3 bytes + data length)
-			if newLen >= int(3+innerLength) {
+			if decryptedLen >= int(3+innerLength) {
 				// Copy inner message data to caller's buffer
 				innerDataOffset := 10
 				copy(data, (*t.buffer)[innerDataOffset:innerDataOffset+int(innerLength)])
@@ -378,8 +390,8 @@ func (t *Transport) ReadMessage(data []byte) (typ byte, n int, err error) {
 		}
 		// If decrypted data doesn't contain a valid message, return as raw data
 		typ = TypeTransport // Default to TypeTransport for decrypted content
-		copy(data, (*t.buffer)[7:7+newLen])
-		n = newLen
+		copy(data, (*t.buffer)[7:7+decryptedLen])
+		n = decryptedLen
 		return
 	}
 
@@ -422,21 +434,31 @@ func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 	if t.encrypt && t.encryptor != nil && (typ == TypeTransport || typ == TypeBatchTransport) {
 		// Construct complete inner message: type + length + data
 		innerLen := len(currentData)
-		if innerLen > 65530 {
+
+		// Check if encrypted message fits in buffer
+		encryptedMsgLen := 3 + innerLen + Chacha20Poly1305NonceSize + Chacha20Poly1305Overhead
+		if encryptedMsgLen > 65530 {
 			return 0, ErrMessageTooLarge
 		}
-		// Build inner message in cryptoBuffer
-		innerMsg := (*t.cryptoBuffer)[7 : 7+3+innerLen]
+
+		// Build inner message: type(1) + length(2) + data
+		// Write to cryptoBuffer to avoid conflict with encrypt output
+		innerMsg := (*t.cryptoBuffer)[:3+innerLen]
 		innerMsg[0] = typ
 		binary.BigEndian.PutUint16(innerMsg[1:3], uint16(innerLen))
 		copy(innerMsg[3:], currentData)
-		// Encrypt the complete inner message
-		encrypted, err := t.encryptor.Encrypt(innerMsg, (*t.cryptoBuffer)[7+3+innerLen:])
+
+		// Encrypt the complete inner message into separate buffer
+		// Use offset 0 in cryptoBuffer for encryption output
+		encryptBuf := (*t.cryptoBuffer)[3+innerLen : encryptedMsgLen]
+		encryptedLen, err := t.encryptor.Encrypt(innerMsg, encryptBuf)
 		if err != nil {
 			return 0, err
 		}
+
 		// Write encrypted message with TypeEncrypted
-		n, err := t.writeRawMessage(TypeEncrypted, encrypted)
+		// Copy encrypted data from encryptBuf
+		n, err := t.writeRawMessage(TypeEncrypted, encryptBuf[:encryptedLen])
 		if err != nil {
 			return 0, err
 		}
