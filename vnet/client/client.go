@@ -84,6 +84,7 @@ func NewClient(cfg *Config) *Client {
 		panic(err)
 	}
 
+	// todo sync
 	encryptor, err := protocol.NewChacha20Poly1305Encryptor(bytes.Repeat([]byte{0}, 32))
 	if err != nil {
 		panic(err)

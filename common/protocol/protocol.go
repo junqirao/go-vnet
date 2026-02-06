@@ -252,10 +252,33 @@ func (t *Transport) batchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 		offset += sizes[i]
 	}
 
-	// Apply encryption if enabled
+	// Determine final message type and data
+	finalType := TypeBatchTransport
+	finalData := (*t.buffer)[7 : 7+dataLen]
+	finalDataLen := dataLen
+
+	// Apply compression first (innermost layer)
+	if t.compress && t.compressor != nil {
+		// Check if data size exceeds compression threshold
+		if dataLen >= t.compressThreshold {
+			// Compress data using cryptoBuffer to avoid conflicts
+			compressed, err := t.compressor.Compress(finalData, (*t.cryptoBuffer)[7:])
+			if err != nil {
+				return 0, err
+			}
+			// Only use compressed data if it's smaller than original
+			if len(compressed) < dataLen {
+				finalType = TypeCompress
+				finalData = compressed
+				finalDataLen = len(compressed)
+			}
+		}
+	}
+
+	// Apply encryption (outer layer) after compression
 	if t.encrypt && t.encryptor != nil {
-		// Construct complete inner batch message: type + length + data
-		innerMsgLen := 3 + dataLen
+		// Construct complete inner message: type + length + data
+		innerMsgLen := 3 + finalDataLen
 
 		// Check if encrypted message fits in buffer
 		encryptedMsgLen := innerMsgLen + Chacha20Poly1305NonceSize + Chacha20Poly1305Overhead
@@ -263,19 +286,20 @@ func (t *Transport) batchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 			return 0, ErrMessageTooLarge
 		}
 
-		// Build inner message using buffer (data is already there, just add header)
-		// buffer layout: [magic 4][type 1][length 2][data n bytes]
-		// We construct: [type 1][length 2][data n bytes] = innerMsg
-		innerMsg := (*t.buffer)[4 : 4+innerMsgLen]
-		innerMsg[0] = TypeBatchTransport
-		binary.BigEndian.PutUint16(innerMsg[1:3], uint16(dataLen))
+		// Build inner message: type(1) + length(2) + data
+		// Write to cryptoBuffer to avoid conflict with encrypt output
+		innerMsg := (*t.cryptoBuffer)[:innerMsgLen]
+		innerMsg[0] = finalType
+		binary.BigEndian.PutUint16(innerMsg[1:3], uint16(finalDataLen))
+		copy(innerMsg[3:], finalData)
 
-		// Encrypt complete inner message into cryptoBuffer
-		encryptBuf := (*t.cryptoBuffer)[:encryptedMsgLen]
+		// Encrypt the complete inner message into separate buffer
+		encryptBuf := (*t.cryptoBuffer)[innerMsgLen:encryptedMsgLen]
 		encryptedLen, err := t.encryptor.Encrypt(innerMsg, encryptBuf)
 		if err != nil {
 			return 0, err
 		}
+
 		// Write encrypted message with TypeEncrypted
 		*(*[4]byte)((*t.buffer)[:4]) = t.magic
 		(*t.buffer)[4] = TypeEncrypted
@@ -287,7 +311,11 @@ func (t *Transport) batchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 	}
 
 	// Write complete message (unencrypted)
-	totalLen := 7 + dataLen
+	*(*[4]byte)((*t.buffer)[:4]) = t.magic
+	(*t.buffer)[4] = finalType
+	binary.BigEndian.PutUint16((*t.buffer)[5:7], uint16(finalDataLen))
+	copy((*t.buffer)[7:], finalData)
+	totalLen := 7 + finalDataLen
 	_, err = t.upstream.Write((*t.buffer)[:totalLen])
 	return totalLen, err
 }
@@ -332,8 +360,8 @@ func (t *Transport) ParseBatch(data []byte, buf [][]byte, sizes []int, offset in
 // ReadMessage reads type and data separately without extra allocation
 // data parameter is provided by caller for reuse
 // Handles nested compression and encryption layers
-// For TypeCompress/TypeEncrypted, unwraps them and returns the inner message type
-// For other types, returns directly
+// Order: Decrypt (optional) -> Decompress (optional) -> Return final type
+// For TypeEncrypted/TypeCompress, unwraps them recursively until TypeTransport/TypeBatchTransport
 func (t *Transport) ReadMessage(data []byte) (typ byte, n int, err error) {
 	// Read magic (4 bytes)
 	if _, err = io.ReadFull(t.upstream, (*t.buffer)[:4]); err != nil {
@@ -358,7 +386,7 @@ func (t *Transport) ReadMessage(data []byte) (typ byte, n int, err error) {
 		return
 	}
 
-	// Handle nested encryption: if type is TypeEncrypted, decrypt first
+	// Handle encryption first (outer layer): if type is TypeEncrypted, decrypt first
 	if msgTyp == TypeEncrypted {
 		if t.encryptor == nil {
 			return 0, 0, ErrMissingEncryptor
@@ -375,27 +403,25 @@ func (t *Transport) ReadMessage(data []byte) (typ byte, n int, err error) {
 		}
 		// Copy decrypted data back to main buffer and parse the message type from decrypted data
 		copy((*t.buffer)[7:7+decryptedLen], decryptBuf[:decryptedLen])
-		// Check if decrypted data contains a valid message
-		if decryptedLen >= 3 {
-			// Parse the message from decrypted data: type is at offset 7, length is at 8-9
-			innerType := (*t.buffer)[7]
+		// Update length to decrypted length for further processing
+		length = uint16(decryptedLen)
+
+		// Parse the message from decrypted data: type is at offset 7, length is at 8-9
+		if length >= 3 {
+			msgTyp = (*t.buffer)[7]
 			innerLength := binary.BigEndian.Uint16((*t.buffer)[8:10])
-			// Check if inner message is valid (header: 3 bytes + data length)
-			if decryptedLen >= int(3+innerLength) {
-				// Copy inner message data to caller's buffer
+			// Validate inner message length
+			if length >= 3+innerLength {
+				// Move inner data to buffer offset 7 and update length
 				innerDataOffset := 10
-				copy(data, (*t.buffer)[innerDataOffset:innerDataOffset+int(innerLength)])
-				return innerType, int(innerLength), nil
+				innerDataLen := int(innerLength)
+				copy((*t.buffer)[7:], (*t.buffer)[innerDataOffset:innerDataOffset+innerDataLen])
+				length = uint16(innerDataLen)
 			}
 		}
-		// If decrypted data doesn't contain a valid message, return as raw data
-		typ = TypeTransport // Default to TypeTransport for decrypted content
-		copy(data, (*t.buffer)[7:7+decryptedLen])
-		n = decryptedLen
-		return
 	}
 
-	// Handle nested compression: if type is TypeCompress, decompress next
+	// Handle compression (middle layer): if type is TypeCompress, decompress next
 	if msgTyp == TypeCompress {
 		if t.compressor == nil {
 			return 0, 0, ErrMissingCompressor
@@ -410,14 +436,28 @@ func (t *Transport) ReadMessage(data []byte) (typ byte, n int, err error) {
 			return 0, 0, ErrMessageTooLarge
 		}
 		// Copy decompressed data back to main buffer and continue processing
-		newLen := len(decompressed)
-		copy((*t.buffer)[7:7+newLen], decompressed)
-		return t.ReadMessage(data)
+		copy((*t.buffer)[7:], decompressed)
+		// Update message type and length
+		length = uint16(len(decompressed))
+
+		// Parse the message type from decompressed data
+		if length >= 3 {
+			msgTyp = (*t.buffer)[7]
+			innerLength := binary.BigEndian.Uint16((*t.buffer)[8:10])
+			// Validate inner message length
+			if length >= 3+innerLength {
+				// Move inner data to buffer offset 7 and update length
+				innerDataOffset := 10
+				innerDataLen := int(innerLength)
+				copy((*t.buffer)[7:], (*t.buffer)[innerDataOffset:innerDataOffset+innerDataLen])
+				length = uint16(innerDataLen)
+			}
+		}
 	}
 
-	// For other types, return directly
-	typ = msgTyp
+	// Return final message type (should be TypeTransport or TypeBatchTransport)
 	// Copy data to caller's buffer for reuse
+	typ = msgTyp
 	copy(data, (*t.buffer)[7:7+length])
 	n = int(length)
 	return
@@ -425,13 +465,31 @@ func (t *Transport) ReadMessage(data []byte) (typ byte, n int, err error) {
 
 // WriteMessage writes magic, type and data as a complete message
 // Supports nested compression and encryption
+// Order: Compress (optional) -> Encrypt (optional) -> Send
 func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 	currentData := data
 	currentTyp := typ
-	totalWritten := 0
 
-	// Apply nested encryption first (innermost layer)
-	if t.encrypt && t.encryptor != nil && (typ == TypeTransport || typ == TypeBatchTransport) {
+	// Apply compression first (innermost layer) for standard types
+	// Only compress if data size exceeds threshold
+	if t.compress && t.compressor != nil && (typ == TypeTransport || typ == TypeBatchTransport) {
+		// Check if data size exceeds compression threshold
+		if len(currentData) >= t.compressThreshold {
+			// Use cryptoBuffer for compression to avoid conflicts
+			compressed, err := t.compressor.Compress(currentData, (*t.cryptoBuffer)[7:])
+			if err != nil {
+				return 0, err
+			}
+			// Only use compressed data if it's smaller than original
+			if len(compressed) < len(currentData) {
+				currentData = compressed
+				currentTyp = TypeCompress
+			}
+		}
+	}
+
+	// Apply encryption (outer layer) after compression
+	if t.encrypt && t.encryptor != nil && (typ == TypeTransport || typ == TypeBatchTransport || currentTyp == TypeCompress) {
 		// Construct complete inner message: type + length + data
 		innerLen := len(currentData)
 
@@ -444,7 +502,7 @@ func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 		// Build inner message: type(1) + length(2) + data
 		// Write to cryptoBuffer to avoid conflict with encrypt output
 		innerMsg := (*t.cryptoBuffer)[:3+innerLen]
-		innerMsg[0] = typ
+		innerMsg[0] = currentTyp
 		binary.BigEndian.PutUint16(innerMsg[1:3], uint16(innerLen))
 		copy(innerMsg[3:], currentData)
 
@@ -457,52 +515,11 @@ func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 		}
 
 		// Write encrypted message with TypeEncrypted
-		// Copy encrypted data from encryptBuf
-		n, err := t.writeRawMessage(TypeEncrypted, encryptBuf[:encryptedLen])
-		if err != nil {
-			return 0, err
-		}
-		totalWritten = n
-		currentData = (*t.buffer)[:totalWritten-7] // The complete message written so far (excluding magic)
-		currentTyp = TypeEncrypted
-	}
-
-	// Apply compression (wraps encryption if both enabled) for standard types
-	// Only compress if data size exceeds threshold
-	if t.compress && t.compressor != nil && (typ == TypeTransport || typ == TypeBatchTransport) {
-		// Check if data size exceeds compression threshold
-		if len(currentData) >= t.compressThreshold {
-			// Use cryptoBuffer for compression to avoid conflicts
-			compressed, err := t.compressor.Compress(currentData, (*t.cryptoBuffer)[7:])
-			if err != nil {
-				return 0, err
-			}
-			// Only use compressed data if it's smaller than original
-			if len(compressed) < len(currentData) {
-				// Write compressed message with TypeCompress
-				// If already encrypted, compress the encrypted message; otherwise compress original data
-				var n int
-				if currentTyp == TypeEncrypted {
-					// Need to wrap the encrypted message
-					n, err = t.writeRawMessage(TypeCompress, compressed)
-				} else {
-					n, err = t.writeRawMessage(TypeCompress, compressed)
-				}
-				if err != nil {
-					return 0, err
-				}
-				totalWritten = n
-				currentTyp = TypeCompress
-			}
-		}
+		return t.writeRawMessage(TypeEncrypted, encryptBuf[:encryptedLen])
 	}
 
 	// If neither compression nor encryption enabled, write raw message
-	if currentTyp == typ {
-		return t.writeRawMessage(typ, currentData)
-	}
-
-	return totalWritten, nil
+	return t.writeRawMessage(currentTyp, currentData)
 }
 
 // writeRawMessage writes a message without applying compression/encryption
