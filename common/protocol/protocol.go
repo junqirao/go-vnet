@@ -47,10 +47,10 @@ type (
 	// Compressor defines the compression interface
 	// buf parameter allows reusing memory to avoid allocation
 	Compressor interface {
-		// Compress compresses data into buf, returns the compressed data slice
-		Compress(data []byte, buf []byte) ([]byte, error)
-		// Decompress decompresses data into buf, returns the decompressed data slice
-		Decompress(data []byte, buf []byte) ([]byte, error)
+		// Compress compresses data into buf, returns number of bytes written
+		Compress(data []byte, buf []byte) (int, error)
+		// Decompress decompresses data into buf, returns number of bytes written
+		Decompress(data []byte, buf []byte) (int, error)
 	}
 
 	// Encryptor defines the encryption interface
@@ -262,15 +262,15 @@ func (t *Transport) batchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 		// Check if data size exceeds compression threshold
 		if dataLen >= t.compressThreshold {
 			// Compress data using cryptoBuffer to avoid conflicts
-			compressed, err := t.compressor.Compress(finalData, (*t.cryptoBuffer)[7:])
+			compressedLen, err := t.compressor.Compress(finalData, (*t.cryptoBuffer)[7:])
 			if err != nil {
 				return 0, err
 			}
 			// Only use compressed data if it's smaller than original
-			if len(compressed) < dataLen {
+			if compressedLen < dataLen {
 				finalType = TypeCompress
-				finalData = compressed
-				finalDataLen = len(compressed)
+				finalData = (*t.cryptoBuffer)[7 : 7+compressedLen]
+				finalDataLen = compressedLen
 			}
 		}
 	}
@@ -427,18 +427,18 @@ func (t *Transport) ReadMessage(data []byte) (typ byte, n int, err error) {
 			return 0, 0, ErrMissingCompressor
 		}
 		// Decompress data using cryptoBuffer to avoid conflicts
-		decompressed, err := t.compressor.Decompress((*t.buffer)[7:7+length], (*t.cryptoBuffer)[7:])
+		decompressedLen, err := t.compressor.Decompress((*t.buffer)[7:7+length], (*t.cryptoBuffer)[7:])
 		if err != nil {
 			return 0, 0, err
 		}
 		// Check if decompressed data fits in buffer
-		if len(decompressed) > MaxTransportByteSize-7 {
+		if decompressedLen > MaxTransportByteSize-7 {
 			return 0, 0, ErrMessageTooLarge
 		}
 		// Copy decompressed data back to main buffer and continue processing
-		copy((*t.buffer)[7:], decompressed)
+		copy((*t.buffer)[7:], (*t.cryptoBuffer)[7:7+decompressedLen])
 		// Update message type and length
-		length = uint16(len(decompressed))
+		length = uint16(decompressedLen)
 
 		// Parse the message type from decompressed data
 		if length >= 3 {
@@ -476,13 +476,13 @@ func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 		// Check if data size exceeds compression threshold
 		if len(currentData) >= t.compressThreshold {
 			// Use cryptoBuffer for compression to avoid conflicts
-			compressed, err := t.compressor.Compress(currentData, (*t.cryptoBuffer)[7:])
+			compressedLen, err := t.compressor.Compress(currentData, (*t.cryptoBuffer)[7:])
 			if err != nil {
 				return 0, err
 			}
 			// Only use compressed data if it's smaller than original
-			if len(compressed) < len(currentData) {
-				currentData = compressed
+			if compressedLen < len(currentData) {
+				currentData = (*t.cryptoBuffer)[7 : 7+compressedLen]
 				currentTyp = TypeCompress
 			}
 		}
