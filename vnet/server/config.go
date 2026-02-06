@@ -8,6 +8,7 @@ import (
 	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/config"
+	"go-vnet/common/protocol"
 )
 
 var (
@@ -19,8 +20,8 @@ var (
 )
 
 const (
-	TypeQuic Type = "quic"
-	TypeTCP  Type = "tcp"
+	TypeQuic Type = protocol.TransportTypeQuic
+	TypeTCP  Type = protocol.TransportTypeTcp
 )
 
 type (

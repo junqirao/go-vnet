@@ -13,7 +13,7 @@ type (
 		SessionId        string                    `json:"session_id"`
 		Network          string                    `json:"network"`
 		IP               string                    `json:"ip"`
-		Type             session.Type              `json:"type"`
+		Type             string                    `json:"type"`
 		ClientInfo       server.ClientInfo         `json:"client_info"`
 		DispatchedDevice session.Device            `json:"dispatched_device"`
 		Metrics          *metrics.TransportMetrics `json:"metrics"`

@@ -187,7 +187,7 @@ func (s *Server) serve(ctx context.Context, cfg *TransportConfig) (err error) {
 		ss.ref = internal
 		ss.Session = &session.Session{
 			Ctx:       ctx,
-			Type:      session.Type(cfg.Type.String()),
+			Type:      cfg.Type.String(),
 			SessionId: fmt.Sprintf("%s-%v", strings.ToLower(ss.cfg.Type.String()), id),
 		}
 

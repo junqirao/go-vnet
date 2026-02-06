@@ -89,7 +89,7 @@ func NewClient(cfg *Config) *Client {
 		panic(err)
 	}
 
-	compressor, err := protocol.NewZstdCompressor(protocol.DefaultCompressionLevel)
+	compressor, err := protocol.NewZstdCompressor(protocol.FastestCompressionLevel)
 	if err != nil {
 		panic(err)
 	}

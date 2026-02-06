@@ -15,10 +15,6 @@ import (
 	"go-vnet/vnet/client/hub"
 )
 
-const (
-	transportTypeTcp = "tcp"
-)
-
 type (
 	tcpClient struct {
 		client    *Client
@@ -166,7 +162,7 @@ func (c *tcpClient) Dial(ctx context.Context, dst string) (rw protocol.ReadWrite
 		return
 	}
 
-	transportOptions := append(c.client.transport.opts, protocol.WithType(transportTypeTcp))
+	transportOptions := append(c.client.transport.opts, protocol.WithType(protocol.TransportTypeTcp))
 
 	// rx
 	if dst == c.client.session.IP {

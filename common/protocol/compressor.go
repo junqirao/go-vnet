@@ -3,9 +3,10 @@ package protocol
 import (
 	"errors"
 	"fmt"
-	"sync"
 
 	"github.com/klauspost/compress/zstd"
+
+	"go-vnet/common/pool"
 )
 
 const (
@@ -29,13 +30,13 @@ var (
 // ZstdCompressor implements Compressor interface using zstd compression
 // Uses sync.Pool to reuse encoders and decoders for zero-allocation performance
 type ZstdCompressor struct {
-	encoderPool      *sync.Pool
-	decoderPool      *sync.Pool
+	encoderPool      *pool.BufferedPool[*zstd.Encoder]
+	decoderPool      *pool.BufferedPool[*zstd.Decoder]
 	compressionLevel int
 }
 
 // NewZstdCompressor creates a new zstd compressor with specified compression level
-// ranges from 1 (fastest) to 19 (best compression), 3 is recommended for most use cases
+// ranges from 1 (fastest) to 4 ( the best compression), 2 is recommended for most use cases
 // Returns error if compression level is invalid
 func NewZstdCompressor(level int) (*ZstdCompressor, error) {
 	if level < FastestCompressionLevel || level > BestCompressionLevel {
@@ -47,33 +48,23 @@ func NewZstdCompressor(level int) (*ZstdCompressor, error) {
 	}
 
 	// Initialize encoder pool
-	c.encoderPool = &sync.Pool{
-		New: func() interface{} {
-			encoder, err := zstd.NewWriter(nil,
-				zstd.WithEncoderLevel(zstd.EncoderLevel(level)),
-				zstd.WithEncoderConcurrency(1), // Use single goroutine for minimal overhead
-				zstd.WithZeroFrames(true),      // Use zero frames for better performance
-			)
-			if err != nil {
-				panic(err)
-			}
-			return encoder
-		},
-	}
+	c.encoderPool = pool.NewBufferedPool[*zstd.Encoder](4, func() *zstd.Encoder {
+		encoder, _ := zstd.NewWriter(nil,
+			zstd.WithEncoderLevel(zstd.EncoderLevel(level)),
+			zstd.WithEncoderConcurrency(4), // Use single goroutine for minimal overhead
+			zstd.WithZeroFrames(true),      // Use zero frames for better performance
+		)
+		return encoder
+	})
 
 	// Initialize decoder pool
-	c.decoderPool = &sync.Pool{
-		New: func() interface{} {
-			decoder, err := zstd.NewReader(nil,
-				zstd.WithDecoderConcurrency(1),   // Use single goroutine for minimal overhead
-				zstd.WithDecoderMaxMemory(1<<30), // Max 1GB memory for decompression
-			)
-			if err != nil {
-				panic(err)
-			}
-			return decoder
-		},
-	}
+	c.decoderPool = pool.NewBufferedPool[*zstd.Decoder](4, func() *zstd.Decoder {
+		decoder, _ := zstd.NewReader(nil,
+			zstd.WithDecoderConcurrency(4),   // Use single goroutine for minimal overhead
+			zstd.WithDecoderMaxMemory(1<<30), // Max 1GB memory for decompression
+		)
+		return decoder
+	})
 
 	return c, nil
 }
@@ -100,7 +91,7 @@ func (c *ZstdCompressor) Compress(data []byte, buf []byte) (int, error) {
 	}
 
 	// Get encoder from pool
-	encoder := c.encoderPool.Get().(*zstd.Encoder)
+	encoder := c.encoderPool.Get()
 	defer c.encoderPool.Put(encoder)
 
 	// EncodeAll directly to the provided buffer slice
@@ -134,7 +125,7 @@ func (c *ZstdCompressor) Decompress(data []byte, buf []byte) (int, error) {
 	}
 
 	// Get decoder from pool
-	decoder := c.decoderPool.Get().(*zstd.Decoder)
+	decoder := c.decoderPool.Get()
 	defer c.decoderPool.Put(decoder)
 
 	// DecodeAll directly to the provided buffer slice

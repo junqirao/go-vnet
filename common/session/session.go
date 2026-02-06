@@ -5,10 +5,6 @@ import (
 	"fmt"
 )
 
-const (
-	TypeQuic Type = "quic"
-)
-
 type (
 	SendReceiveCloser interface {
 		Closer
@@ -18,11 +14,10 @@ type (
 	Closer interface {
 		CloseWithError(err error)
 	}
-	Type    string
 	Session struct {
 		Ctx              context.Context `json:"-"`
 		IP               string          `json:"ip"`
-		Type             Type            `json:"type"`
+		Type             string          `json:"type"`
 		SessionId        string          `json:"session_id"`
 		NetworkId        string          `json:"network_id"`
 		NetworkInfo      map[string]any  `json:"network_info"`
@@ -45,10 +40,6 @@ type (
 		MTU  int    `json:"mtu"`
 	}
 )
-
-func (t Type) String() string {
-	return string(t)
-}
 
 func NewError(msg string, code int) *Error {
 	return &Error{

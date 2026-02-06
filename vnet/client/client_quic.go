@@ -17,10 +17,6 @@ import (
 	"go-vnet/vnet/client/hub"
 )
 
-const (
-	transportTypeQuic = "quic"
-)
-
 type (
 	quicClient struct {
 		client    *Client
@@ -108,7 +104,7 @@ func (c *quicClient) rxLoop(ctx context.Context) {
 			return
 		}
 		hook := newQuicRxHook(ctx, c, stream)
-		transportOptions := append(c.client.transport.opts, protocol.WithType(transportTypeQuic))
+		transportOptions := append(c.client.transport.opts, protocol.WithType(protocol.TransportTypeQuic))
 		cancels = append(cancels, c.client.hub.HandleRx(stream, transportOptions, hook))
 	}
 }
@@ -123,7 +119,7 @@ func (c *quicClient) Dial(ctx context.Context, dst string) (rw protocol.ReadWrit
 	if err != nil {
 		return
 	}
-	transportOptions := append(c.client.transport.opts, protocol.WithType(transportTypeQuic))
+	transportOptions := append(c.client.transport.opts, protocol.WithType(protocol.TransportTypeQuic))
 	rw = protocol.NewTransport(stream, transportOptions...)
 	c.transport.streams.Store(dst, rw)
 	g.Log().Infof(ctx, "[TX] open stream: id=%v,dst=%s", stream.StreamID(), dst)

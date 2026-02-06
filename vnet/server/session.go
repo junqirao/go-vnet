@@ -8,6 +8,7 @@ import (
 	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/metrics"
+	"go-vnet/common/protocol"
 	"go-vnet/common/session"
 )
 
@@ -49,7 +50,7 @@ func newServerSession(sr session.SendReceiveCloser, conn any) *Session {
 }
 
 func (s *Session) QuicConn() (c *quic.Conn, err error) {
-	if s.Type != session.TypeQuic {
+	if s.Type != protocol.TransportTypeQuic {
 		err = fmt.Errorf("invalid session type: %s", s.Type)
 		return
 	}

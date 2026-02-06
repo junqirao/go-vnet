@@ -256,7 +256,7 @@ func (c *Client) evaluateAndReplaceP2PRx(ctx context.Context, stream network.Str
 }
 
 func (c *Client) replaceP2P(ctx context.Context, stream network.Stream, dst *hub.Destination) {
-	transportOptions := append(c.transport.opts, protocol.WithType(p2pProtocolID))
+	transportOptions := append(c.transport.opts, protocol.WithType(protocol.TransportTypeP2P))
 	t := protocol.NewTransport(stream, transportOptions...)
 	cancel := c.hub.HandleRx(stream, transportOptions, &p2pHandleRxHook{c: c, dst: dst.Ip()})
 	cancelAll := func() {
@@ -265,7 +265,7 @@ func (c *Client) replaceP2P(ctx context.Context, stream network.Stream, dst *hub
 	}
 	// replace tx
 	replaced := dst.ReplaceTx(func(old protocol.ReadWriter) (new protocol.ReadWriter, replaced bool) {
-		if old != nil && old.Type() == p2pProtocolID {
+		if old != nil && old.Type() == protocol.TransportTypeP2P {
 			return
 		}
 		new = t
@@ -285,7 +285,7 @@ func (c *Client) replaceP2P(ctx context.Context, stream network.Stream, dst *hub
 }
 
 func (c *Client) tryP2P(ctx context.Context, dst *hub.Destination) (err error) {
-	if !c.cfg.P2P.Enabled || dst.Type() == p2pProtocolID {
+	if !c.cfg.P2P.Enabled || dst.Type() == protocol.TransportTypeP2P {
 		return
 	}
 
@@ -346,7 +346,7 @@ func (c *Client) AfterDial(ctx context.Context, dst *hub.Destination) {
 
 func (c *Client) OnFallback(ctx context.Context, dst *hub.Destination, rw protocol.ReadWriter, err error) {
 	g.Log().Infof(ctx, "dst %s connection fallback to %s: %s", dst.Ip(), dst.Type(), err.Error())
-	if rw.Type() == p2pProtocolID {
+	if rw.Type() == protocol.TransportTypeP2P {
 		v, loaded := c.p2pConnections.LoadAndDelete(dst.Ip())
 		if loaded {
 			info := v.(*p2pConnInfo)
