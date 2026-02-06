@@ -261,16 +261,48 @@ func (t *Transport) batchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 	if t.compress && t.compressor != nil {
 		// Check if data size exceeds compression threshold
 		if dataLen >= t.compressThreshold {
-			// Compress data using cryptoBuffer to avoid conflicts
-			compressedLen, err := t.compressor.Compress(finalData, (*t.cryptoBuffer)[7:])
-			if err != nil {
-				return 0, err
-			}
-			// Only use compressed data if it's smaller than original
-			if compressedLen < dataLen {
-				finalType = TypeCompress
-				finalData = (*t.cryptoBuffer)[7 : 7+compressedLen]
-				finalDataLen = compressedLen
+			// Build type+length header for decompression
+			// Format: originalType(1) + originalLength(2) + originalData
+			headerLen := 3 + dataLen
+
+			// Check if we can safely reuse cryptoBuffer without overflow
+			// We need enough space in target: cryptoBuffer[headerLen:] capacity
+			// Zstd may need up to headerLen + 17 bytes in worst case
+			if headerLen+1000 < len((*t.cryptoBuffer)) && (len((*t.cryptoBuffer))-headerLen >= headerLen+17) {
+				// Safe to reuse cryptoBuffer
+				(*t.cryptoBuffer)[0] = TypeBatchTransport
+				binary.BigEndian.PutUint16((*t.cryptoBuffer)[1:3], uint16(dataLen))
+				copy((*t.cryptoBuffer)[3:], finalData)
+
+				// Compress type+length+data to cryptoBuffer[headerLen:]
+				compressTarget := (*t.cryptoBuffer)[headerLen:]
+				compressedLen, err := t.compressor.Compress((*t.cryptoBuffer)[:headerLen], compressTarget)
+				if err != nil {
+					return 0, err
+				}
+				// Only use compressed data if it's smaller than original
+				if compressedLen < dataLen {
+					finalType = TypeCompress
+					finalData = compressTarget[:compressedLen]
+					finalDataLen = compressedLen
+				}
+			} else {
+				// Data too large to safely reuse buffer, use temp buffer
+				tempMsg := make([]byte, headerLen)
+				tempMsg[0] = TypeBatchTransport
+				binary.BigEndian.PutUint16(tempMsg[1:3], uint16(dataLen))
+				copy(tempMsg[3:], finalData)
+
+				compressedLen, err := t.compressor.Compress(tempMsg, (*t.cryptoBuffer)[7:])
+				if err != nil {
+					return 0, err
+				}
+				// Only use compressed data if it's smaller than original
+				if compressedLen < dataLen {
+					finalType = TypeCompress
+					finalData = (*t.cryptoBuffer)[7 : 7+compressedLen]
+					finalDataLen = compressedLen
+				}
 			}
 		}
 	}
@@ -286,28 +318,76 @@ func (t *Transport) batchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 			return 0, ErrMessageTooLarge
 		}
 
-		// Build inner message: type(1) + length(2) + data
-		// Write to cryptoBuffer to avoid conflict with encrypt output
-		innerMsg := (*t.cryptoBuffer)[:innerMsgLen]
-		innerMsg[0] = finalType
-		binary.BigEndian.PutUint16(innerMsg[1:3], uint16(finalDataLen))
-		copy(innerMsg[3:], finalData)
+		// Check if finalData overlaps with cryptoBuffer (reused from compression)
+		// If yes, we need to use temp buffer, otherwise reuse cryptoBuffer
+		dataInCryptoBuffer := len(finalData) > 0 && &finalData[0] == &(*t.cryptoBuffer)[0]
 
-		// Encrypt the complete inner message into separate buffer
-		encryptBuf := (*t.cryptoBuffer)[innerMsgLen:encryptedMsgLen]
-		encryptedLen, err := t.encryptor.Encrypt(innerMsg, encryptBuf)
-		if err != nil {
-			return 0, err
+		if dataInCryptoBuffer {
+			// finalData is from cryptoBuffer, need temp buffer to avoid overlap
+			tempMsg := make([]byte, innerMsgLen)
+			tempMsg[0] = finalType
+			binary.BigEndian.PutUint16(tempMsg[1:3], uint16(finalDataLen))
+			copy(tempMsg[3:], finalData)
+			encryptBuf := (*t.cryptoBuffer)[:encryptedMsgLen]
+			encryptedLen, err := t.encryptor.Encrypt(tempMsg, encryptBuf)
+			if err != nil {
+				return 0, err
+			}
+			// Write encrypted message with TypeEncrypted
+			*(*[4]byte)((*t.buffer)[:4]) = t.magic
+			(*t.buffer)[4] = TypeEncrypted
+			binary.BigEndian.PutUint16((*t.buffer)[5:7], uint16(encryptedLen))
+			copy((*t.buffer)[7:], encryptBuf[:encryptedLen])
+			totalLen := 7 + encryptedLen
+			_, err = t.upstream.Write((*t.buffer)[:totalLen])
+			return totalLen, err
+		} else {
+			// Check if we have enough space to reuse cryptoBuffer for both source and target
+			canReuseCryptoBuffer := innerMsgLen+encryptedMsgLen <= len((*t.cryptoBuffer))
+
+			if canReuseCryptoBuffer {
+				// Buffer is large enough, reuse cryptoBuffer efficiently
+				// Build inner message directly in cryptoBuffer
+				(*t.cryptoBuffer)[0] = finalType
+				binary.BigEndian.PutUint16((*t.cryptoBuffer)[1:3], uint16(finalDataLen))
+				copy((*t.cryptoBuffer)[3:], finalData)
+
+				// Encrypt from cryptoBuffer[0:innerMsgLen] to cryptoBuffer[innerMsgLen:encryptedMsgLen]
+				encryptBuf := (*t.cryptoBuffer)[innerMsgLen:encryptedMsgLen]
+				encryptedLen, err := t.encryptor.Encrypt((*t.cryptoBuffer)[:innerMsgLen], encryptBuf)
+				if err != nil {
+					return 0, err
+				}
+				// Write encrypted message with TypeEncrypted
+				*(*[4]byte)((*t.buffer)[:4]) = t.magic
+				(*t.buffer)[4] = TypeEncrypted
+				binary.BigEndian.PutUint16((*t.buffer)[5:7], uint16(encryptedLen))
+				copy((*t.buffer)[7:], encryptBuf[:encryptedLen])
+				totalLen := 7 + encryptedLen
+				_, err = t.upstream.Write((*t.buffer)[:totalLen])
+				return totalLen, err
+			} else {
+				// Buffer not large enough, use temp buffer
+				tempMsg := make([]byte, innerMsgLen)
+				tempMsg[0] = finalType
+				binary.BigEndian.PutUint16(tempMsg[1:3], uint16(finalDataLen))
+				copy(tempMsg[3:], finalData)
+
+				encryptBuf := (*t.cryptoBuffer)[:encryptedMsgLen]
+				encryptedLen, err := t.encryptor.Encrypt(tempMsg, encryptBuf)
+				if err != nil {
+					return 0, err
+				}
+				// Write encrypted message with TypeEncrypted
+				*(*[4]byte)((*t.buffer)[:4]) = t.magic
+				(*t.buffer)[4] = TypeEncrypted
+				binary.BigEndian.PutUint16((*t.buffer)[5:7], uint16(encryptedLen))
+				copy((*t.buffer)[7:], encryptBuf[:encryptedLen])
+				totalLen := 7 + encryptedLen
+				_, err = t.upstream.Write((*t.buffer)[:totalLen])
+				return totalLen, err
+			}
 		}
-
-		// Write encrypted message with TypeEncrypted
-		*(*[4]byte)((*t.buffer)[:4]) = t.magic
-		(*t.buffer)[4] = TypeEncrypted
-		binary.BigEndian.PutUint16((*t.buffer)[5:7], uint16(encryptedLen))
-		copy((*t.buffer)[7:], encryptBuf[:encryptedLen])
-		totalLen := 7 + encryptedLen
-		_, err = t.upstream.Write((*t.buffer)[:totalLen])
-		return totalLen, err
 	}
 
 	// Write complete message (unencrypted)
@@ -435,23 +515,25 @@ func (t *Transport) ReadMessage(data []byte) (typ byte, n int, err error) {
 		if decompressedLen > MaxTransportByteSize-7 {
 			return 0, 0, ErrMessageTooLarge
 		}
-		// Copy decompressed data back to main buffer and continue processing
-		copy((*t.buffer)[7:], (*t.cryptoBuffer)[7:7+decompressedLen])
-		// Update message type and length
-		length = uint16(decompressedLen)
-
-		// Parse the message type from decompressed data
-		if length >= 3 {
-			msgTyp = (*t.buffer)[7]
-			innerLength := binary.BigEndian.Uint16((*t.buffer)[8:10])
+		// Parse the message type from decompressed data (type + length header)
+		// The decompressed data in cryptoBuffer is in format: type(1) + length(2) + data
+		if decompressedLen >= 3 {
+			msgTyp = (*t.cryptoBuffer)[7]
+			innerLength := binary.BigEndian.Uint16((*t.cryptoBuffer)[8:10])
 			// Validate inner message length
-			if length >= 3+innerLength {
-				// Move inner data to buffer offset 7 and update length
-				innerDataOffset := 10
+			if uint16(decompressedLen) >= 3+innerLength {
+				// Copy original data (skipping type and length headers) to main buffer
+				innerDataOffset := 10 // 3 bytes header offset in cryptoBuffer + 7 = 10
 				innerDataLen := int(innerLength)
-				copy((*t.buffer)[7:], (*t.buffer)[innerDataOffset:innerDataOffset+innerDataLen])
+				copy((*t.buffer)[7:], (*t.cryptoBuffer)[innerDataOffset:innerDataOffset+innerDataLen])
 				length = uint16(innerDataLen)
+			} else {
+				// Invalid compressed data format, return error
+				return 0, 0, ErrDecompressionFailed
 			}
+		} else {
+			// Compressed data too small to contain type + length header
+			return 0, 0, ErrDecompressionFailed
 		}
 	}
 
@@ -475,15 +557,46 @@ func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 	if t.compress && t.compressor != nil && (typ == TypeTransport || typ == TypeBatchTransport) {
 		// Check if data size exceeds compression threshold
 		if len(currentData) >= t.compressThreshold {
-			// Use cryptoBuffer for compression to avoid conflicts
-			compressedLen, err := t.compressor.Compress(currentData, (*t.cryptoBuffer)[7:])
-			if err != nil {
-				return 0, err
-			}
-			// Only use compressed data if it's smaller than original
-			if compressedLen < len(currentData) {
-				currentData = (*t.cryptoBuffer)[7 : 7+compressedLen]
-				currentTyp = TypeCompress
+			// Build original type+length header for decompression
+			// Format: originalType(1) + originalLength(2) + originalData
+			headerLen := 3 + len(currentData)
+
+			// Check if we can safely reuse cryptoBuffer without overflow
+			// We need enough space in target: cryptoBuffer[headerLen:] capacity
+			// Zstd may need up to headerLen + 17 bytes in worst case
+			if headerLen+1000 < len((*t.cryptoBuffer)) && (len((*t.cryptoBuffer))-headerLen >= headerLen+17) {
+				// Safe to reuse cryptoBuffer
+				(*t.cryptoBuffer)[0] = typ
+				binary.BigEndian.PutUint16((*t.cryptoBuffer)[1:3], uint16(len(currentData)))
+				copy((*t.cryptoBuffer)[3:], currentData)
+
+				// Compress type+length+data to cryptoBuffer[headerLen:]
+				compressTarget := (*t.cryptoBuffer)[headerLen:]
+				compressedLen, err := t.compressor.Compress((*t.cryptoBuffer)[:headerLen], compressTarget)
+				if err != nil {
+					return 0, err
+				}
+				// Only use compressed data if it's smaller than original
+				if compressedLen < len(currentData) {
+					currentData = compressTarget[:compressedLen]
+					currentTyp = TypeCompress
+				}
+			} else {
+				// Data too large to safely reuse buffer, use temp buffer
+				tempMsg := make([]byte, headerLen)
+				tempMsg[0] = typ
+				binary.BigEndian.PutUint16(tempMsg[1:3], uint16(len(currentData)))
+				copy(tempMsg[3:], currentData)
+
+				compressedLen, err := t.compressor.Compress(tempMsg, (*t.cryptoBuffer)[7:])
+				if err != nil {
+					return 0, err
+				}
+				// Only use compressed data if it's smaller than original
+				if compressedLen < len(currentData) {
+					currentData = (*t.cryptoBuffer)[7 : 7+compressedLen]
+					currentTyp = TypeCompress
+				}
 			}
 		}
 	}
@@ -492,30 +605,68 @@ func (t *Transport) WriteMessage(typ byte, data []byte) (int, error) {
 	if t.encrypt && t.encryptor != nil && (typ == TypeTransport || typ == TypeBatchTransport || currentTyp == TypeCompress) {
 		// Construct complete inner message: type + length + data
 		innerLen := len(currentData)
+		innerMsgLen := 3 + innerLen
 
 		// Check if encrypted message fits in buffer
-		encryptedMsgLen := 3 + innerLen + Chacha20Poly1305NonceSize + Chacha20Poly1305Overhead
+		encryptedMsgLen := innerMsgLen + Chacha20Poly1305NonceSize + Chacha20Poly1305Overhead
 		if encryptedMsgLen > 65530 {
 			return 0, ErrMessageTooLarge
 		}
 
-		// Build inner message: type(1) + length(2) + data
-		// Write to cryptoBuffer to avoid conflict with encrypt output
-		innerMsg := (*t.cryptoBuffer)[:3+innerLen]
-		innerMsg[0] = currentTyp
-		binary.BigEndian.PutUint16(innerMsg[1:3], uint16(innerLen))
-		copy(innerMsg[3:], currentData)
+		// Check if currentData overlaps with cryptoBuffer (reused from compression)
+		// If yes, we need to use temp buffer, otherwise reuse cryptoBuffer
+		dataInCryptoBuffer := len(currentData) > 0 && &currentData[0] == &(*t.cryptoBuffer)[0]
+		var encryptBuf []byte
 
-		// Encrypt the complete inner message into separate buffer
-		// Use offset 0 in cryptoBuffer for encryption output
-		encryptBuf := (*t.cryptoBuffer)[3+innerLen : encryptedMsgLen]
-		encryptedLen, err := t.encryptor.Encrypt(innerMsg, encryptBuf)
-		if err != nil {
-			return 0, err
+		if dataInCryptoBuffer {
+			// currentData is from cryptoBuffer, need temp buffer to avoid overlap
+			tempMsg := make([]byte, innerMsgLen)
+			tempMsg[0] = currentTyp
+			binary.BigEndian.PutUint16(tempMsg[1:3], uint16(innerLen))
+			copy(tempMsg[3:], currentData)
+			encryptBuf = (*t.cryptoBuffer)[:encryptedMsgLen]
+			var err error
+			encryptedLen, err := t.encryptor.Encrypt(tempMsg, encryptBuf)
+			if err != nil {
+				return 0, err
+			}
+			// Write encrypted message with TypeEncrypted
+			return t.writeRawMessage(TypeEncrypted, encryptBuf[:encryptedLen])
+		} else {
+			// Check if we have enough space to reuse cryptoBuffer for both source and target
+			canReuseCryptoBuffer := innerMsgLen+encryptedMsgLen <= len((*t.cryptoBuffer))
+
+			if canReuseCryptoBuffer {
+				// Buffer is large enough, reuse cryptoBuffer efficiently
+				// Build inner message directly in cryptoBuffer
+				(*t.cryptoBuffer)[0] = currentTyp
+				binary.BigEndian.PutUint16((*t.cryptoBuffer)[1:3], uint16(innerLen))
+				copy((*t.cryptoBuffer)[3:], currentData)
+
+				// Encrypt from cryptoBuffer[0:innerMsgLen] to cryptoBuffer[innerMsgLen:encryptedMsgLen]
+				encryptBuf := (*t.cryptoBuffer)[innerMsgLen:encryptedMsgLen]
+				encryptedLen, err := t.encryptor.Encrypt((*t.cryptoBuffer)[:innerMsgLen], encryptBuf)
+				if err != nil {
+					return 0, err
+				}
+				// Write encrypted message with TypeEncrypted
+				return t.writeRawMessage(TypeEncrypted, encryptBuf[:encryptedLen])
+			} else {
+				// Buffer not large enough, use temp buffer
+				tempMsg := make([]byte, innerMsgLen)
+				tempMsg[0] = currentTyp
+				binary.BigEndian.PutUint16(tempMsg[1:3], uint16(innerLen))
+				copy(tempMsg[3:], currentData)
+
+				encryptBuf := (*t.cryptoBuffer)[:encryptedMsgLen]
+				encryptedLen, err := t.encryptor.Encrypt(tempMsg, encryptBuf)
+				if err != nil {
+					return 0, err
+				}
+				// Write encrypted message with TypeEncrypted
+				return t.writeRawMessage(TypeEncrypted, encryptBuf[:encryptedLen])
+			}
 		}
-
-		// Write encrypted message with TypeEncrypted
-		return t.writeRawMessage(TypeEncrypted, encryptBuf[:encryptedLen])
 	}
 
 	// If neither compression nor encryption enabled, write raw message

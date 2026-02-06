@@ -166,15 +166,17 @@ func (c *tcpClient) Dial(ctx context.Context, dst string) (rw protocol.ReadWrite
 		return
 	}
 
+	transportOptions := append(c.client.transport.opts, protocol.WithType(transportTypeTcp))
+
 	// rx
 	if dst == c.client.session.IP {
-		c.client.hub.HandleRx(conn, []protocol.TransportOpt{protocol.WithType(transportTypeTcp), protocol.WithEncryptor(c.client.test.encryptor)}, newTcpRxHook(ctx, c, conn))
+		c.client.hub.HandleRx(conn, transportOptions, newTcpRxHook(ctx, c, conn))
 		c.transport.rx = conn
 		g.Log().Infof(ctx, "rx connection established: remote=%v", conn.RemoteAddr())
 		return
 	}
 
-	rw = protocol.NewTransport(conn, protocol.WithType(transportTypeTcp), protocol.WithEncryptor(c.client.test.encryptor))
+	rw = protocol.NewTransport(conn, transportOptions...)
 	c.transport.conn.Store(dst, rw)
 	g.Log().Infof(ctx, "[TX] open data connection: dst=%s, remote=%v", dst, conn.RemoteAddr())
 	return

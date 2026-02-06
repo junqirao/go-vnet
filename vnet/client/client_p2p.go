@@ -256,8 +256,9 @@ func (c *Client) evaluateAndReplaceP2PRx(ctx context.Context, stream network.Str
 }
 
 func (c *Client) replaceP2P(ctx context.Context, stream network.Stream, dst *hub.Destination) {
-	t := protocol.NewTransport(stream, protocol.WithType(p2pProtocolID), protocol.WithEncryptor(c.test.encryptor))
-	cancel := c.hub.HandleRx(stream, []protocol.TransportOpt{protocol.WithType(p2pProtocolID), protocol.WithEncryptor(c.test.encryptor)}, &p2pHandleRxHook{c: c, dst: dst.Ip()})
+	transportOptions := append(c.transport.opts, protocol.WithType(p2pProtocolID))
+	t := protocol.NewTransport(stream, transportOptions...)
+	cancel := c.hub.HandleRx(stream, transportOptions, &p2pHandleRxHook{c: c, dst: dst.Ip()})
 	cancelAll := func() {
 		cancel()
 		_ = t.Close()

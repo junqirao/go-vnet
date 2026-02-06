@@ -48,6 +48,10 @@ type (
 		sig      chan struct{}
 		dev      tun.Tun
 
+		transport struct {
+			opts []protocol.TransportOpt
+		}
+
 		// p2p
 		p2pSignalingServerAddress *server.AddressInfo
 		p2pConnections            sync.Map // dst:*p2pConnInfo
@@ -55,11 +59,6 @@ type (
 		peerMapping               sync.Map
 		host                      host.Host
 		hostId                    string
-
-		// for test
-		test struct {
-			encryptor protocol.Encryptor
-		}
 	}
 	internal interface {
 		io.Closer
@@ -90,13 +89,23 @@ func NewClient(cfg *Config) *Client {
 		panic(err)
 	}
 
+	compressor, err := protocol.NewZstdCompressor(protocol.DefaultCompressionLevel)
+	if err != nil {
+		panic(err)
+	}
+
+	opts := []protocol.TransportOpt{
+		protocol.WithEncryptor(encryptor),
+		protocol.WithCompressor(compressor),
+	}
+
 	return &Client{
 		ctx:                context.Background(),
 		cfg:                cfg,
 		rc:                 rc,
 		sig:                make(chan struct{}),
 		peerMappingVersion: &atomic.Uint64{},
-		test:               struct{ encryptor protocol.Encryptor }{encryptor: encryptor},
+		transport:          struct{ opts []protocol.TransportOpt }{opts: opts},
 	}
 }
 
