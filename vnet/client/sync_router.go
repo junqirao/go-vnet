@@ -38,12 +38,12 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 		}
 	}
 	// sync p2p peers
-	currentVer := c.peerMappingVersion.Load()
+	currentVer := c.p2p.peerMappingVersion.Load()
 	if currentVer != latestVer && c.cfg.P2P.Enabled {
 		if err := c.syncP2PPeerMapping(ctx); err != nil {
 			g.Log().Errorf(ctx, "failed to sync peer mapping: %s", err.Error())
 		}
-		c.peerMappingVersion.CompareAndSwap(currentVer, latestVer)
+		c.p2p.peerMappingVersion.CompareAndSwap(currentVer, latestVer)
 	}
 	return
 }
@@ -81,22 +81,22 @@ func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 				continue
 			}
 
-			if v, ok := c.peerMapping.Load(k); ok {
+			if v, ok := c.p2p.peerMapping.Load(k); ok {
 				curr := v.(*peer.AddrInfo)
-				if curr.ID == c.host.ID() || curr.ID == pi.ID {
+				if curr.ID == c.p2p.host.ID() || curr.ID == pi.ID {
 					continue
 				}
 			}
-			c.peerMapping.Store(k, pi)
+			c.p2p.peerMapping.Store(k, pi)
 			g.Log().Infof(ctx, "add peer: %s", k)
 			upsert++
 		}
-		c.peerMapping.Range(func(key, value any) bool {
+		c.p2p.peerMapping.Range(func(key, value any) bool {
 			if _, ok := mapping[key.(string)]; !ok {
-				c.peerMapping.Delete(key)
+				c.p2p.peerMapping.Delete(key)
 				del++
 				g.Log().Infof(ctx, "remove peer: %s", key)
-				conn, ok := c.p2pConnections.Load(key)
+				conn, ok := c.p2p.connections.Load(key)
 				if ok && conn != nil {
 					conn.(*p2pConnInfo).cancel()
 				}
@@ -104,7 +104,7 @@ func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 			return true
 		})
 		g.Log().Infof(ctx, "synced p2p peer mapping from server, version: %d, upsert: %d, delete: %d",
-			c.peerMappingVersion.Load(), upsert, del)
+			c.p2p.peerMappingVersion.Load(), upsert, del)
 	}
 	return
 }

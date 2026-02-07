@@ -50,17 +50,17 @@ func (p *p2pHandleRxHook) OnClose(err error) {
 }
 
 func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
-	c.p2pSignalingServerAddress, err = c.getPeerInfo(ctx)
+	c.p2p.signalingServerAddress, err = c.getPeerInfo(ctx)
 	if err != nil {
 		return
 	}
 
-	if len(c.p2pSignalingServerAddress.Addresses) == 0 {
+	if len(c.p2p.signalingServerAddress.Addresses) == 0 {
 		g.Log().Infof(ctx, "no p2p signaling server address available")
 		return
 	}
 
-	if c.p2pSignalingServerAddress == nil || c.p2pSignalingServerAddress.Id == "" {
+	if c.p2p.signalingServerAddress == nil || c.p2p.signalingServerAddress.Id == "" {
 		return
 	}
 	var (
@@ -89,16 +89,16 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 
 	opts = append(opts, libp2p.ListenAddrs(address...))
 
-	c.host, err = libp2p.New(opts...)
+	c.p2p.host, err = libp2p.New(opts...)
 	if err != nil {
 		return
 	}
-	c.host.SetStreamHandler(p2pProtocolID, c.handleP2PStreamRx)
+	c.p2p.host.SetStreamHandler(p2pProtocolID, c.handleP2PStreamRx)
 
 	serverAddrInfo := &peer.AddrInfo{}
-	serverAddrInfo.ID, _ = peer.Decode(c.p2pSignalingServerAddress.Id)
-	for _, s := range c.p2pSignalingServerAddress.Addresses {
-		ma, err := multiaddr.NewMultiaddr(fmt.Sprintf("%s/p2p/%s", s, c.p2pSignalingServerAddress.Id))
+	serverAddrInfo.ID, _ = peer.Decode(c.p2p.signalingServerAddress.Id)
+	for _, s := range c.p2p.signalingServerAddress.Addresses {
+		ma, err := multiaddr.NewMultiaddr(fmt.Sprintf("%s/p2p/%s", s, c.p2p.signalingServerAddress.Id))
 		if err != nil {
 			g.Log().Errorf(ctx, "invalid p2p signaling server address: %s, reason: %v", s, err)
 			continue
@@ -108,15 +108,15 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 
 	g.Log().Infof(ctx, "connecting to p2p signaling server: %s/p2p/%s", serverAddrInfo.String(), serverAddrInfo.ID)
 
-	err = c.host.Connect(c.ctx, *serverAddrInfo)
+	err = c.p2p.host.Connect(c.ctx, *serverAddrInfo)
 	if err != nil {
 		return fmt.Errorf("failed to connect to server: %v", err)
 	}
 
-	c.hostId = c.host.ID().String()
+	c.p2p.hostId = c.p2p.host.ID().String()
 	peerInfo := peer.AddrInfo{
-		ID:    c.host.ID(),
-		Addrs: c.host.Addrs(),
+		ID:    c.p2p.host.ID(),
+		Addrs: c.p2p.host.Addrs(),
 	}
 	peerInfoStr, _ := peerInfo.MarshalJSON()
 	// register p2p peer
@@ -148,7 +148,7 @@ func (c *Client) getPeerInfo(ctx context.Context) (info *server.AddressInfo, err
 func (c *Client) handleP2PStreamRx(stream network.Stream) {
 	ctx := c.ctx
 	exist := false
-	c.peerMapping.Range(func(key, value any) bool {
+	c.p2p.peerMapping.Range(func(key, value any) bool {
 		pi := value.(*peer.AddrInfo)
 		if pi.ID == stream.Conn().RemotePeer() {
 			exist = true
@@ -172,12 +172,12 @@ func (c *Client) handleP2PStreamRx(stream network.Stream) {
 
 func (c *Client) dialDstRelay(ctx context.Context, targetPeer *peer.AddrInfo, dst string) (stream network.Stream, err error) {
 	g.Log().Infof(ctx, "dialing p2p stream to %s: %s", dst, targetPeer.String())
-	if err = c.host.Connect(c.ctx, *targetPeer); err != nil {
+	if err = c.p2p.host.Connect(c.ctx, *targetPeer); err != nil {
 		err = fmt.Errorf("failed to connect to peer: %v", err)
 		return
 	}
 	g.Log().Infof(ctx, "successfully connected to peer: %s", targetPeer.ID.ShortString())
-	stream, err = c.host.NewStream(c.ctx, targetPeer.ID, p2pProtocolID)
+	stream, err = c.p2p.host.NewStream(c.ctx, targetPeer.ID, p2pProtocolID)
 	return
 }
 
@@ -278,7 +278,7 @@ func (c *Client) replaceP2P(ctx context.Context, stream network.Stream, dst *hub
 	}
 	g.Log().Infof(ctx, "replace dst %s to p2p connection", dst.Ip())
 	// register
-	c.p2pConnections.Store(dst, &p2pConnInfo{
+	c.p2p.connections.Store(dst, &p2pConnInfo{
 		stream: stream,
 		cancel: cancelAll,
 	})
@@ -289,7 +289,7 @@ func (c *Client) tryP2P(ctx context.Context, dst *hub.Destination) (err error) {
 		return
 	}
 
-	v, ok := c.peerMapping.Load(dst.Ip())
+	v, ok := c.p2p.peerMapping.Load(dst.Ip())
 	if !ok {
 		return
 	}
@@ -347,7 +347,7 @@ func (c *Client) AfterDial(ctx context.Context, dst *hub.Destination) {
 func (c *Client) OnFallback(ctx context.Context, dst *hub.Destination, rw protocol.ReadWriter, err error) {
 	g.Log().Infof(ctx, "dst %s connection fallback to %s: %s", dst.Ip(), dst.Type(), err.Error())
 	if rw.Type() == protocol.TransportTypeP2P {
-		v, loaded := c.p2pConnections.LoadAndDelete(dst.Ip())
+		v, loaded := c.p2p.connections.LoadAndDelete(dst.Ip())
 		if loaded {
 			info := v.(*p2pConnInfo)
 			info.cancel()
