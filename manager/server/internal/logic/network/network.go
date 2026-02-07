@@ -38,6 +38,9 @@ func (s *sNetwork) GetNetworkDetails(ctx context.Context, networkId string) (det
 	n, ok := server.GetNetworkManager().GetNetwork(networkId)
 	if ok {
 		sessions := s.listSession(n)
+		for _, session := range sessions {
+			session.DispatchedDevice.Key = ""
+		}
 		details.Runtime = &model.NetworkRuntime{
 			Running:      true,
 			StartedAt:    n.StartedAt,
