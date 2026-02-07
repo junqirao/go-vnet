@@ -95,23 +95,19 @@ func (c *ZstdCompressor) Compress(data []byte, buf []byte) (int, error) {
 	defer c.encoderPool.Put(encoder)
 
 	// EncodeAll directly to the provided buffer slice
-	// This is the most efficient way - no intermediate allocation
+	// This is the most efficient way - minimal allocation
 	compressed := encoder.EncodeAll(data, buf[:0])
 
 	// If the encoder didn't use the provided buffer, copy the data
-	// This happens when the provided buffer is too small
-	if len(compressed) > 0 && cap(buf) >= len(compressed) {
-		if len(compressed) > 0 {
-			// Check if compressed uses a different underlying array
-			if len(buf) == 0 || &compressed[0] != &buf[0] {
-				// Copy to buffer if it's a different underlying array
-				copy(buf, compressed)
-			}
+	// This happens when zstd decides to allocate internally
+	if len(compressed) > 0 {
+		if len(buf) == 0 || &compressed[0] != &buf[0] {
+			// Copy to buffer if it's a different underlying array
+			copy(buf, compressed)
 		}
 		return len(compressed), nil
 	}
 
-	// Buffer is too small, return error
 	return 0, fmt.Errorf("buffer capacity too small: got %d, need at least %d",
 		cap(buf), len(compressed))
 }

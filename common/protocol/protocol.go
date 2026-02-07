@@ -349,14 +349,7 @@ func (t *Transport) batchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 				if err != nil {
 					return 0, err
 				}
-				// Write encrypted message with TypeEncrypted
-				*(*[4]byte)((*t.buffer)[:4]) = t.magic
-				(*t.buffer)[4] = TypeEncrypted
-				binary.BigEndian.PutUint16((*t.buffer)[5:7], uint16(encryptedLen))
-				copy((*t.buffer)[7:], encryptBuf[:encryptedLen])
-				totalLen := 7 + encryptedLen
-				_, err = t.upstream.Write((*t.buffer)[:totalLen])
-				return totalLen, err
+				return t.writeEncryptedMessage(encryptBuf, encryptedLen)
 			}
 
 			// Buffer not large enough, use temp buffer
@@ -370,14 +363,7 @@ func (t *Transport) batchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 			if err != nil {
 				return 0, err
 			}
-			// Write encrypted message with TypeEncrypted
-			*(*[4]byte)((*t.buffer)[:4]) = t.magic
-			(*t.buffer)[4] = TypeEncrypted
-			binary.BigEndian.PutUint16((*t.buffer)[5:7], uint16(encryptedLen))
-			copy((*t.buffer)[7:], encryptBuf[:encryptedLen])
-			totalLen := 7 + encryptedLen
-			_, err = t.upstream.Write((*t.buffer)[:totalLen])
-			return totalLen, err
+			return t.writeEncryptedMessage(encryptBuf, encryptedLen)
 		}
 	}
 
@@ -684,6 +670,19 @@ func (t *Transport) writeRawMessage(typ byte, data []byte) (int, error) {
 	// Write complete message
 	_, err := t.upstream.Write((*t.buffer)[:7+length])
 	return 7 + length, err
+}
+
+// writeEncryptedMessage writes an encrypted message to the upstream
+// This is a helper to reduce code duplication in batch encryption paths
+func (t *Transport) writeEncryptedMessage(encryptedBuf []byte, encryptedLen int) (int, error) {
+	// Write encrypted message with TypeEncrypted
+	*(*[4]byte)((*t.buffer)[:4]) = t.magic
+	(*t.buffer)[4] = TypeEncrypted
+	binary.BigEndian.PutUint16((*t.buffer)[5:7], uint16(encryptedLen))
+	copy((*t.buffer)[7:], encryptedBuf[:encryptedLen])
+	totalLen := 7 + encryptedLen
+	_, err := t.upstream.Write((*t.buffer)[:totalLen])
+	return totalLen, err
 }
 
 func (t *Transport) Upstream() io.ReadWriter {
