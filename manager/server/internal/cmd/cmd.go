@@ -11,6 +11,7 @@ import (
 	"go-vnet/manager/server/internal/controller/device"
 	"go-vnet/manager/server/internal/controller/middleware"
 	"go-vnet/manager/server/internal/controller/network"
+	"go-vnet/manager/server/internal/controller/quota"
 )
 
 var (
@@ -26,6 +27,7 @@ var (
 					group.Bind(
 						network.NewV1(),
 						device.NewV1(),
+						quota.NewV1(),
 					)
 				})
 			})

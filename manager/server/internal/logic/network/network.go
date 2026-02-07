@@ -190,3 +190,24 @@ func (s *sNetwork) ListNetworkInfos(ctx context.Context) (ns []*entity.Network, 
 	}
 	return
 }
+
+func (s *sNetwork) SetNetworkQuota(ctx context.Context, networkId string, quota int) (err error) {
+	// check network exists
+	_, err = s.GetNetworkById(ctx, networkId)
+	if err != nil {
+		return
+	}
+
+	// update network quota
+	mgr := server.GetNetworkManager()
+	_, ok := mgr.GetNetwork(networkId)
+	if ok {
+		// todo update quota
+	}
+
+	// update quota
+	_, err = dao.Network.Ctx(ctx).Where(dao.Network.Columns().Id, networkId).Update(g.Map{
+		dao.Network.Columns().Quota: quota,
+	})
+	return
+}

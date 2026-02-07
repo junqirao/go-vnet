@@ -52,3 +52,17 @@ func (d *sDevice) GetSubDeviceById(ctx context.Context, id uint64) (sub *model.S
 	err = dao.NetworkDevice.Ctx(ctx).Where(dao.NetworkDevice.Columns().Id, id).Scan(sub)
 	return
 }
+
+func (d *sDevice) SetSubDeviceQuota(ctx context.Context, subDeviceId uint64, quota int) (err error) {
+	// check sub device exists
+	_, err = d.GetSubDeviceById(ctx, subDeviceId)
+	if err != nil {
+		return
+	}
+
+	// update quota
+	_, err = dao.NetworkDevice.Ctx(ctx).Where(dao.NetworkDevice.Columns().Id, subDeviceId).Update(g.Map{
+		dao.NetworkDevice.Columns().Quota: quota,
+	})
+	return
+}

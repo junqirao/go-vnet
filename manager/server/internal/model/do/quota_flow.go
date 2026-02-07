@@ -13,6 +13,7 @@ import (
 type QuotaFlow struct {
 	g.Meta      `orm:"table:quota_flow, do:true"`
 	Id          interface{} //
+	Quota       interface{} //
 	Usage       interface{} //
 	Target      interface{} //
 	TargetType  interface{} //

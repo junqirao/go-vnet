@@ -21,6 +21,7 @@ type QuotaFlowDao struct {
 // QuotaFlowColumns defines and stores column names for the table quota_flow.
 type QuotaFlowColumns struct {
 	Id          string //
+	Quota       string //
 	Usage       string //
 	Target      string //
 	TargetType  string //
@@ -31,6 +32,7 @@ type QuotaFlowColumns struct {
 // quotaFlowColumns holds the columns for the table quota_flow.
 var quotaFlowColumns = QuotaFlowColumns{
 	Id:          "id",
+	Quota:       "quota",
 	Usage:       "usage",
 	Target:      "target",
 	TargetType:  "target_type",

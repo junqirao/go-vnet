@@ -39,3 +39,13 @@ type GetDeviceReq struct {
 }
 
 type GetDeviceRes model.Device
+
+type SetSubDeviceQuotaReq struct {
+	g.Meta `path:"/sub/:sub_device_id/quota" tags:"Device" method:"post" summary:"Set sub device quota"`
+	middleware.RequiredAuthHeader
+
+	SubDeviceId uint64 `json:"sub_device_id" v:"required" in:"path"`
+	Quota       int    `json:"quota" v:"required"`
+}
+
+type SetSubDeviceQuotaRes struct{}
