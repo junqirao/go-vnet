@@ -71,12 +71,24 @@ func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 		upsert := 0
 		del := 0
 		for k, v := range mapping {
+			if k == c.session.IP {
+				continue
+			}
+
 			pi := &peer.AddrInfo{}
 			if err = json.Unmarshal([]byte(v), pi); err != nil {
 				g.Log().Infof(ctx, "failed to parse p2p address: %v", err)
 				continue
 			}
+
+			if v, ok := c.peerMapping.Load(k); ok {
+				curr := v.(*peer.AddrInfo)
+				if curr.ID == c.host.ID() || curr.ID == pi.ID {
+					continue
+				}
+			}
 			c.peerMapping.Store(k, pi)
+			g.Log().Infof(ctx, "add peer: %s", k)
 			upsert++
 		}
 		c.peerMapping.Range(func(key, value any) bool {

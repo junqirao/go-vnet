@@ -289,7 +289,7 @@ func (c *Client) tryP2P(ctx context.Context, dst *hub.Destination) (err error) {
 		return
 	}
 
-	v, ok := c.peerMapping.Load(dst)
+	v, ok := c.peerMapping.Load(dst.Ip())
 	if !ok {
 		return
 	}

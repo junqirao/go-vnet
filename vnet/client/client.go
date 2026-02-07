@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -46,6 +47,7 @@ type (
 		session  *session.Session
 		sig      chan struct{}
 		dev      tun.Tun
+		ip       string
 
 		transport struct {
 			opts []protocol.TransportOpt
@@ -67,6 +69,7 @@ type (
 	}
 	handshakeResponse struct {
 		Session *session.Session `json:"session"`
+		Error   string           `json:"error"`
 	}
 	State uint8
 )
@@ -107,7 +110,6 @@ func NewClient(cfg *Config) *Client {
 
 func (c *Client) Run(ctx context.Context) {
 	if err := c.run(ctx); err != nil {
-		g.Log().Errorf(ctx, "run client error: %v", err.Error())
 		return
 	}
 
@@ -208,6 +210,10 @@ func (c *Client) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 	payload["hostname"], _ = os.Hostname()
 	resp := &handshakeResponse{}
 	if err = c.rc.Do(ctx, sr, session.NewHeader(link.SubDeviceId, link.Key), payload, resp); err != nil {
+		return
+	}
+	if resp.Error != "" {
+		err = errors.New(resp.Error)
 		return
 	}
 	ss = resp.Session

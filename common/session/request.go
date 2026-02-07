@@ -84,7 +84,7 @@ func (c *RequestClient) decode(receive []byte, secret, nonce string, ptr any) (e
 	// split
 	parts := strings.Split(string(receive), ".")
 	if len(parts) != 3 {
-		err = errors.New("invalid data format")
+		err = errors.New(string(receive))
 		return
 	}
 
@@ -144,6 +144,9 @@ func HandleRequest(ctx context.Context, header *Header, pri *rsa.PrivateKey, pl 
 
 	resp, err := handler(ctx, p.Request)
 	if err != nil {
+		if resp != nil {
+			data, _ = encode(header, p.Secret, resp)
+		}
 		return
 	}
 
