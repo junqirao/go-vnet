@@ -43,6 +43,8 @@ type (
 		Type               Type      `yaml:"type" json:"type"`
 		InsecureSkipVerify bool      `yaml:"insecure_skip_verify" json:"insecure_skip_verify"`
 		P2P                P2PConfig `yaml:"p2p" json:"p2p"`
+		Compress           bool      `json:"compress"`
+		Encrypt            bool      `json:"encrypt"`
 	}
 	P2PConfig struct {
 		Enabled     bool     `yaml:"enabled" json:"enabled"`

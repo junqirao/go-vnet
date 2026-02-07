@@ -559,7 +559,7 @@ func TestTransport_EncryptedCompressed_MissingCompressor(t *testing.T) {
 	}
 
 	mock := newMockReadWriteCloser()
-	transport := NewTransport(mock, WithEncryptor(encryptor), WithCompressor(compressor))
+	transport := NewTransport(mock, WithEncryptor(encryptor), WithCompressor(compressor), EnableCompress(true), EnableEncrypt(true))
 
 	// Write encrypted and compressed message
 	data := bytes.Repeat([]byte("test"), 5000)
@@ -822,9 +822,9 @@ func BenchmarkTransport_EncryptedCompressed_BatchWrite(b *testing.B) {
 	bufs := [][]byte{
 		append(make([]byte, 8), bytes.Repeat([]byte("test"), 100)...),
 		append(make([]byte, 8), bytes.Repeat([]byte("data"), 100)...),
-		append(make([]byte, 8), bytes.Repeat([]byte("message"), 100)...),
+		append(make([]byte, 8), bytes.Repeat([]byte("msg"), 100)...),
 	}
-	sizes := []int{400, 400, 800}
+	sizes := []int{400, 400, 300}
 
 	b.ResetTimer()
 	b.ReportAllocs()

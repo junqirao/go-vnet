@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -83,20 +82,17 @@ func NewClient(cfg *Config) *Client {
 		panic(err)
 	}
 
-	// todo sync
-	encryptor, err := protocol.NewChacha20Poly1305Encryptor(bytes.Repeat([]byte{0}, 32))
-	if err != nil {
-		panic(err)
-	}
-
-	compressor, err := protocol.NewZstdCompressor(protocol.FastestCompressionLevel)
-	if err != nil {
-		panic(err)
-	}
-
 	opts := []protocol.TransportOpt{
-		protocol.WithEncryptor(encryptor),
-		protocol.WithCompressor(compressor),
+		protocol.EnableEncrypt(cfg.Encrypt),
+		protocol.EnableCompress(cfg.Compress),
+	}
+
+	if cfg.Compress {
+		compressor, err := protocol.NewZstdCompressor(protocol.FastestCompressionLevel)
+		if err != nil {
+			panic(err)
+		}
+		opts = append(opts, protocol.WithCompressor(compressor))
 	}
 
 	return &Client{
@@ -156,6 +152,15 @@ func (c *Client) run(ctx context.Context) (err error) {
 	if c.dev, err = c.setupDevice(ctx, sess); err != nil {
 		return
 	}
+
+	// setup encryptor
+	encryptor, err := protocol.NewChacha20Poly1305Encryptor([]byte(sess.DispatchedDevice.Key)[:32])
+	if err != nil {
+		g.Log().Errorf(ctx, "failed to setup encryptor: %s", err.Error())
+		return
+	}
+
+	c.transport.opts = append(c.transport.opts, protocol.WithEncryptor(encryptor))
 
 	// create manager for control connection
 	c.manager = NewManager(sess, control)

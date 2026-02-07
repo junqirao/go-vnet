@@ -38,6 +38,7 @@ type (
 		Name string `json:"name"`
 		CIDR string `json:"cidr"`
 		MTU  int    `json:"mtu"`
+		Key  string `json:"key"`
 	}
 )
 

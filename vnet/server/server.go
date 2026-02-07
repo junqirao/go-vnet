@@ -449,6 +449,7 @@ func (s *Server) handshake(ctx context.Context, ss *Session) (err error) {
 				Name: dev.Name,
 				CIDR: dev.CIDR,
 				MTU:  dev.MTU,
+				Key:  ss.network.key,
 			}
 
 			// build response

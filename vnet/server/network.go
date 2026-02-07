@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gogf/gf/v2/util/grand"
+
 	"go-vnet/common/addresses"
 	"go-vnet/common/flow"
 	"go-vnet/common/metrics"
@@ -22,6 +24,7 @@ type (
 		pool          *addresses.IPAllocator
 		control       *flow.Control
 		StartedAt     time.Time
+		key           string
 	}
 	NetworkConfig struct {
 		ID         string `json:"id"`
@@ -43,6 +46,7 @@ func NewNetwork(cfg *NetworkConfig) (n *Network, err error) {
 		router:        router.NewRouter(),
 		pool:          allocator,
 		StartedAt:     time.Now(),
+		key:           grand.S(32),
 	}
 	return
 }
