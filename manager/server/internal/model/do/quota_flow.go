@@ -12,10 +12,10 @@ import (
 // QuotaFlow is the golang structure of table quota_flow for DAO operations like Where/Data.
 type QuotaFlow struct {
 	g.Meta      `orm:"table:quota_flow, do:true"`
-	Id          any         //
-	Usage       any         //
-	Target      any         //
-	TargetType  any         //
+	Id          interface{} //
+	Usage       interface{} //
+	Target      interface{} //
+	TargetType  interface{} //
 	RecordStart *gtime.Time //
 	RecordEnd   *gtime.Time //
 }

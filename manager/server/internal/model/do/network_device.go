@@ -11,9 +11,9 @@ import (
 // NetworkDevice is the golang structure of table network_device for DAO operations like Where/Data.
 type NetworkDevice struct {
 	g.Meta    `orm:"table:network_device, do:true"`
-	Id        any //
-	DeviceId  any //
-	NetworkId any //
-	Quota     any //
-	Settings  any //
+	Id        interface{} //
+	DeviceId  interface{} //
+	NetworkId interface{} //
+	Quota     interface{} //
+	Settings  interface{} //
 }

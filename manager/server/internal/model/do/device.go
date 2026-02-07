@@ -12,10 +12,10 @@ import (
 // Device is the golang structure of table device for DAO operations like Where/Data.
 type Device struct {
 	g.Meta     `orm:"table:device, do:true"`
-	Id         any         //
-	Name       any         //
-	Enabled    any         //
-	PublicKey  any         //
-	PrivateKey any         //
+	Id         interface{} //
+	Name       interface{} //
+	Enabled    interface{} //
+	PublicKey  interface{} //
+	PrivateKey interface{} //
 	CreatedAt  *gtime.Time //
 }

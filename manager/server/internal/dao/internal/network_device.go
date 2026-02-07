@@ -13,10 +13,9 @@ import (
 
 // NetworkDeviceDao is the data access object for the table network_device.
 type NetworkDeviceDao struct {
-	table    string               // table is the underlying table name of the DAO.
-	group    string               // group is the database configuration group name of the current DAO.
-	columns  NetworkDeviceColumns // columns contains all the column names of Table for convenient usage.
-	handlers []gdb.ModelHandler   // handlers for customized model modification.
+	table   string               // table is the underlying table name of the DAO.
+	group   string               // group is the database configuration group name of the current DAO.
+	columns NetworkDeviceColumns // columns contains all the column names of Table for convenient usage.
 }
 
 // NetworkDeviceColumns defines and stores column names for the table network_device.
@@ -38,12 +37,11 @@ var networkDeviceColumns = NetworkDeviceColumns{
 }
 
 // NewNetworkDeviceDao creates and returns a new DAO object for table data access.
-func NewNetworkDeviceDao(handlers ...gdb.ModelHandler) *NetworkDeviceDao {
+func NewNetworkDeviceDao() *NetworkDeviceDao {
 	return &NetworkDeviceDao{
-		group:    "default",
-		table:    "network_device",
-		columns:  networkDeviceColumns,
-		handlers: handlers,
+		group:   "default",
+		table:   "network_device",
+		columns: networkDeviceColumns,
 	}
 }
 
@@ -69,11 +67,7 @@ func (dao *NetworkDeviceDao) Group() string {
 
 // Ctx creates and returns a Model for the current DAO. It automatically sets the context for the current operation.
 func (dao *NetworkDeviceDao) Ctx(ctx context.Context) *gdb.Model {
-	model := dao.DB().Model(dao.table)
-	for _, handler := range dao.handlers {
-		model = handler(model)
-	}
-	return model.Safe().Ctx(ctx)
+	return dao.DB().Model(dao.table).Safe().Ctx(ctx)
 }
 
 // Transaction wraps the transaction logic using function f.

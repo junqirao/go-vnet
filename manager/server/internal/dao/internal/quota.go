@@ -13,43 +13,39 @@ import (
 
 // QuotaDao is the data access object for the table quota.
 type QuotaDao struct {
-	table    string             // table is the underlying table name of the DAO.
-	group    string             // group is the database configuration group name of the current DAO.
-	columns  QuotaColumns       // columns contains all the column names of Table for convenient usage.
-	handlers []gdb.ModelHandler // handlers for customized model modification.
+	table   string       // table is the underlying table name of the DAO.
+	group   string       // group is the database configuration group name of the current DAO.
+	columns QuotaColumns // columns contains all the column names of Table for convenient usage.
 }
 
 // QuotaColumns defines and stores column names for the table quota.
 type QuotaColumns struct {
-	Id          string //
-	Name        string //
-	Type        string //
-	Value       string //
-	PeriodStart string //
-	PeriodEnd   string //
-	Target      string //
-	TargetType  string //
+	Id         string //
+	Name       string //
+	Type       string //
+	Value      string //
+	Period     string //
+	Target     string //
+	TargetType string //
 }
 
 // quotaColumns holds the columns for the table quota.
 var quotaColumns = QuotaColumns{
-	Id:          "id",
-	Name:        "name",
-	Type:        "type",
-	Value:       "value",
-	PeriodStart: "period_start",
-	PeriodEnd:   "period_end",
-	Target:      "target",
-	TargetType:  "target_type",
+	Id:         "id",
+	Name:       "name",
+	Type:       "type",
+	Value:      "value",
+	Period:     "period",
+	Target:     "target",
+	TargetType: "target_type",
 }
 
 // NewQuotaDao creates and returns a new DAO object for table data access.
-func NewQuotaDao(handlers ...gdb.ModelHandler) *QuotaDao {
+func NewQuotaDao() *QuotaDao {
 	return &QuotaDao{
-		group:    "default",
-		table:    "quota",
-		columns:  quotaColumns,
-		handlers: handlers,
+		group:   "default",
+		table:   "quota",
+		columns: quotaColumns,
 	}
 }
 
@@ -75,11 +71,7 @@ func (dao *QuotaDao) Group() string {
 
 // Ctx creates and returns a Model for the current DAO. It automatically sets the context for the current operation.
 func (dao *QuotaDao) Ctx(ctx context.Context) *gdb.Model {
-	model := dao.DB().Model(dao.table)
-	for _, handler := range dao.handlers {
-		model = handler(model)
-	}
-	return model.Safe().Ctx(ctx)
+	return dao.DB().Model(dao.table).Safe().Ctx(ctx)
 }
 
 // Transaction wraps the transaction logic using function f.

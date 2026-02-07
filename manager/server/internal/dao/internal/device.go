@@ -13,10 +13,9 @@ import (
 
 // DeviceDao is the data access object for the table device.
 type DeviceDao struct {
-	table    string             // table is the underlying table name of the DAO.
-	group    string             // group is the database configuration group name of the current DAO.
-	columns  DeviceColumns      // columns contains all the column names of Table for convenient usage.
-	handlers []gdb.ModelHandler // handlers for customized model modification.
+	table   string        // table is the underlying table name of the DAO.
+	group   string        // group is the database configuration group name of the current DAO.
+	columns DeviceColumns // columns contains all the column names of Table for convenient usage.
 }
 
 // DeviceColumns defines and stores column names for the table device.
@@ -40,12 +39,11 @@ var deviceColumns = DeviceColumns{
 }
 
 // NewDeviceDao creates and returns a new DAO object for table data access.
-func NewDeviceDao(handlers ...gdb.ModelHandler) *DeviceDao {
+func NewDeviceDao() *DeviceDao {
 	return &DeviceDao{
-		group:    "default",
-		table:    "device",
-		columns:  deviceColumns,
-		handlers: handlers,
+		group:   "default",
+		table:   "device",
+		columns: deviceColumns,
 	}
 }
 
@@ -71,11 +69,7 @@ func (dao *DeviceDao) Group() string {
 
 // Ctx creates and returns a Model for the current DAO. It automatically sets the context for the current operation.
 func (dao *DeviceDao) Ctx(ctx context.Context) *gdb.Model {
-	model := dao.DB().Model(dao.table)
-	for _, handler := range dao.handlers {
-		model = handler(model)
-	}
-	return model.Safe().Ctx(ctx)
+	return dao.DB().Model(dao.table).Safe().Ctx(ctx)
 }
 
 // Transaction wraps the transaction logic using function f.

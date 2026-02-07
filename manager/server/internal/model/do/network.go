@@ -11,10 +11,10 @@ import (
 // Network is the golang structure of table network for DAO operations like Where/Data.
 type Network struct {
 	g.Meta      `orm:"table:network, do:true"`
-	Id          any //
-	Name        any //
-	Cidr        any //
-	Mtu         any //
-	Description any //
-	Extra       any //
+	Id          interface{} //
+	Name        interface{} //
+	Cidr        interface{} //
+	Mtu         interface{} //
+	Description interface{} //
+	Extra       interface{} //
 }
