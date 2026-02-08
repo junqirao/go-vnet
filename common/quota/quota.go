@@ -27,7 +27,6 @@ type (
 		used     int64
 		maxLimit int64        // maximum allowed usage value (quota limit)
 		usage    atomic.Int64 // current usage value in bytes
-		closed   atomic.Bool  // marks if quota is closed
 	}
 	// Adaptor defines the interface for quota persistence.
 	// Implementations are responsible for loading and persisting quota values.
@@ -56,7 +55,6 @@ func New(ctx context.Context, adaptor Adaptor) (q *Quota, err error) {
 		used:     used,
 		maxLimit: maxLimit,
 		usage:    atomic.Int64{},
-		closed:   atomic.Bool{},
 	}
 	q.usage.Store(0)
 	return
@@ -86,7 +84,7 @@ func (q *Quota) AddUsage(value int64) error {
 	// Check if the new usage would exceed the limit
 	if newUsage+q.used > q.maxLimit && q.maxLimit != ValueNoLimit {
 		// Immediate commit when quota is exceeded
-		_, _ = q.CommitUsage()
+		q.CommitUsage()
 		return ErrQuotaExceeded
 	}
 
@@ -100,21 +98,10 @@ func (q *Quota) AddUsage(value int64) error {
 // Returns:
 //   - int64: the committed usage value (current counter)
 //   - error: ErrQuotaClosed if already committed, or error from adaptor submit operation
-func (q *Quota) CommitUsage() (int64, error) {
-	// Check if already closed
-	if q.closed.Load() {
-		return 0, ErrQuotaClosed
-	}
-
-	// Mark as closed before committing to prevent double commit
-	if !q.closed.CompareAndSwap(false, true) {
-		return 0, ErrQuotaClosed
-	}
-
+func (q *Quota) CommitUsage() int64 {
 	currentUsage := q.usage.Load()
-
 	q.adaptor.SubmitUsage(q.ctx, currentUsage)
-	return currentUsage, nil
+	return currentUsage
 }
 
 // GetUsage returns the current local counter value without resetting it.
@@ -132,14 +119,6 @@ func (q *Quota) GetUsage() int64 {
 //   - int64: the maximum limit
 func (q *Quota) GetMaxLimit() int64 {
 	return q.maxLimit
-}
-
-// IsClosed returns true if the quota is closed (already committed).
-//
-// Returns:
-//   - bool: true if closed, false otherwise
-func (q *Quota) IsClosed() bool {
-	return q.closed.Load()
 }
 
 // Reset resets the local counter value to zero.

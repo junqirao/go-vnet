@@ -344,10 +344,7 @@ func (c *Destination) txLoop() {
 
 			_, err = c.tx.BatchWrite(buf[:batch], sizes[:batch], c.ref.cfg.HeaderSize)
 			if err != nil {
-				c.OnError(c.ctx, &TxError{
-					dst: c,
-					Err: err,
-				})
+				c.fallbackOrReportError(err)
 			}
 			for i := 0; i < batch; i++ {
 				c.ref.putTxEvent(evs[i])

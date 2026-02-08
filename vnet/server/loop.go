@@ -2,8 +2,6 @@ package server
 
 import (
 	"time"
-
-	"github.com/gogf/gf/v2/frame/g"
 )
 
 const (
@@ -43,9 +41,8 @@ func (s *Server) updateSessionMetrics(ss *Session) {
 }
 
 func (s *Server) updateUsage(ss *Session) {
-	_, err := ss.quota.CommitUsage()
-	if err != nil {
-		g.Log().Errorf(ss.Ctx, "commit usage error: %s", err.Error())
+	if ss.quota == nil {
 		return
 	}
+	ss.quota.CommitUsage()
 }
