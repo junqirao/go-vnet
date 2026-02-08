@@ -4,6 +4,7 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 
 	"go-vnet/manager/server/internal/controller/middleware"
+	"go-vnet/manager/server/internal/model"
 	"go-vnet/manager/server/internal/model/entity"
 )
 
@@ -14,7 +15,7 @@ type GetQuotaReq struct {
 	Id int `json:"id" v:"required" in:"path"`
 }
 
-type GetQuotaRes entity.Quota
+type GetQuotaRes model.Quota
 
 type ListQuotaReq struct {
 	g.Meta `path:"/quota" tags:"Quota" method:"get" summary:"List all quotas"`
@@ -29,17 +30,13 @@ type CreateQuotaReq struct {
 	g.Meta `path:"/quota" tags:"Quota" method:"post" summary:"Create quota"`
 	middleware.RequiredAuthHeader
 
-	Name       string `json:"name" v:"required"`
-	Type       string `json:"type" v:"required"`
-	Value      int    `json:"value" v:"required"`
-	Period     string `json:"period"`
-	Target     string `json:"target" v:"required"`
-	TargetType string `json:"target_type" v:"required"`
+	Name   string `json:"name" v:"required"`
+	Type   string `json:"type" v:"required"`
+	Value  int    `json:"value" v:"required"`
+	Period string `json:"period"`
 }
 
-type CreateQuotaRes struct {
-	Id int `json:"id"`
-}
+type CreateQuotaRes struct{}
 
 type UpdateQuotaReq struct {
 	g.Meta `path:"/quota/:id" tags:"Quota" method:"post" summary:"Update quota"`

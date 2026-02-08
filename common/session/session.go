@@ -34,11 +34,12 @@ type (
 		cause error
 	}
 	Device struct {
-		Id   string `json:"id"`
-		Name string `json:"name"`
-		CIDR string `json:"cidr"`
-		MTU  int    `json:"mtu"`
-		Key  string `json:"key,omitempty"`
+		Id    string `json:"id"`
+		Name  string `json:"name"`
+		CIDR  string `json:"cidr"`
+		MTU   int    `json:"mtu"`
+		Key   string `json:"key,omitempty"`
+		Quota int    `json:"quota"`
 	}
 )
 

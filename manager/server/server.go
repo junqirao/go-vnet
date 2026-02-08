@@ -1,10 +1,9 @@
 package server
 
 import (
+	_ "github.com/gogf/gf/contrib/drivers/mysql/v2"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gctx"
-
-	_ "github.com/gogf/gf/contrib/drivers/mysql/v2"
 
 	"go-vnet/manager/server/internal/cmd"
 	_ "go-vnet/manager/server/internal/logic"
@@ -17,6 +16,7 @@ type (
 	managerServer struct {
 		service.INetwork
 		service.IDevice
+		service.IQuota
 	}
 )
 
@@ -33,10 +33,17 @@ func StartAllNetworks() {
 	}
 	mgr := server.GetNetworkManager()
 	for _, info := range infos {
+		q, err := service.Quota().GetById(ctx, info.Quota)
+		if err != nil {
+			g.Log().Errorf(ctx, "failed to get network quota %s: %s", info.Id, err.Error())
+			continue
+		}
 		n, err := server.NewNetwork(&server.NetworkConfig{
-			ID:   info.Id,
-			CIDR: info.Cidr,
-			MTU:  info.Mtu,
+			ID:                   info.Id,
+			CIDR:                 info.Cidr,
+			MTU:                  info.Mtu,
+			DataTrafficQuota:     int64(q.Value),
+			DataTrafficQuotaType: q.Type,
 		})
 		if err != nil {
 			g.Log().Errorf(ctx, "failed to start network %s: %s", info.Id, err.Error())
@@ -51,5 +58,6 @@ func ManagerServer() server.ManagerServer {
 	return &managerServer{
 		INetwork: service.Network(),
 		IDevice:  service.Device(),
+		IQuota:   service.Quota(),
 	}
 }

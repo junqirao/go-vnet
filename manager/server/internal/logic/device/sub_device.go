@@ -2,6 +2,7 @@ package device
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/util/gconv"
@@ -48,8 +49,22 @@ func (d *sDevice) CreateSubDevice(ctx context.Context,
 }
 
 func (d *sDevice) GetSubDeviceById(ctx context.Context, id uint64) (sub *model.SubDevice, err error) {
-	sub = new(model.SubDevice)
-	err = dao.NetworkDevice.Ctx(ctx).Where(dao.NetworkDevice.Columns().Id, id).Scan(sub)
+	dev := new(entity.NetworkDevice)
+	err = dao.NetworkDevice.Ctx(ctx).Where(dao.NetworkDevice.Columns().Id, id).Scan(dev)
+	if err != nil {
+		return
+	}
+	sub = &model.SubDevice{
+		Id:        dev.Id,
+		QuotaId:   dev.Quota,
+		DeviceId:  dev.DeviceId,
+		NetworkId: dev.NetworkId,
+		Settings:  &model.SubDeviceSettings{},
+	}
+	if err = json.Unmarshal([]byte(dev.Settings), sub.Settings); err != nil {
+		return
+	}
+	sub.Quota, err = service.Quota().GetById(ctx, sub.QuotaId)
 	return
 }
 

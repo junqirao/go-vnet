@@ -4,13 +4,13 @@ import (
 	"context"
 	"time"
 
-	"go-vnet/manager/server/internal/model/entity"
+	"go-vnet/manager/server/internal/model"
 )
 
 type (
 	adaptor struct {
 		ref         *sQuota
-		quota       *entity.Quota
+		quota       *model.Quota
 		target      string
 		targetType  string
 		startTime   time.Time // 记录 adaptor 创建时的时间
@@ -23,14 +23,16 @@ func (a *adaptor) LoadUsage(ctx context.Context) (int64, error) {
 	return a.ref.LoadUsage(ctx, a.quota.Id, a.target, a.targetType)
 }
 
-func (a *adaptor) SubmitUsage(ctx context.Context, usage int64) error {
+func (a *adaptor) GetQuotaMaxUsage() int64 {
+	// Return the maximum quota limit value from the quota configuration
+	// -1 represents unlimited quota
+	return int64(a.quota.Value)
+}
+
+func (a *adaptor) SubmitUsage(ctx context.Context, usage int64) {
 	// Delegate to sQuota.SubmitUsage with quota id, target, target type, usage and start time
-	err := a.ref.SubmitUsage(ctx, a.quota.Id, a.target, a.targetType, usage, a.startTime)
-	if err != nil {
-		return err
-	}
+	a.ref.SubmitUsage(ctx, a.quota.Id, a.target, a.targetType, usage, a.startTime)
 
 	// Update adaptor state after successful submission
 	a.lastEndTime = time.Now()
-	return nil
 }

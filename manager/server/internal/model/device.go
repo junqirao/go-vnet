@@ -2,8 +2,6 @@ package model
 
 import (
 	"github.com/gogf/gf/v2/os/gtime"
-
-	"go-vnet/manager/server/internal/model/entity"
 )
 
 const (
@@ -26,7 +24,14 @@ type (
 		CreatedAt *gtime.Time  `json:"created_at"`
 		Sub       []*SubDevice `json:"sub"`
 	}
-	SubDevice         = entity.NetworkDevice
+	SubDevice struct {
+		Id        int                `json:"id"`
+		QuotaId   int                `json:"quota_id"`
+		DeviceId  string             `json:"device_id"`
+		NetworkId string             `json:"network_id"`
+		Quota     *Quota             `json:"quota"`
+		Settings  *SubDeviceSettings `json:"settings"`
+	}
 	DeviceMode        int
 	SubDeviceSettings struct {
 		// FixedIP allocation, records ip position

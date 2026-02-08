@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"go-vnet/common/protocol"
+	"go-vnet/common/quota"
 	"go-vnet/common/session"
 	"go-vnet/vnet/server/consts"
 )
@@ -43,6 +44,7 @@ type (
 	ManagerServer interface {
 		AcquireDevice(ctx context.Context, ss *Session, subDeviceId uint64, payload map[string]any) (dev *session.Device, err error)
 		PrivateKeyBySubDeviceId(ctx context.Context, id uint64, key string) (pri *rsa.PrivateKey, err error)
+		GetQuotaAdaptor(ctx context.Context, id int, target string, targetType string) (a quota.Adaptor, err error)
 	}
 	internalServer interface {
 		io.Closer
@@ -78,7 +80,7 @@ func NewServer(cfg *Config) *Server {
 
 func (s *Server) Serve(ctx context.Context) (err error) {
 	go s.checkStatusLoop()
-	go s.backgroundUpdateMetricsLoop()
+	go s.backgroundLoop()
 	defer func() {
 		_ = s.manager.Close()
 		_ = s.p2pSignalingServer.Close()
@@ -226,6 +228,15 @@ func (s *Server) handleSession(ss *Session) {
 	// register router
 	ss.network.Router().Register(routeAddress, ss)
 
+	// get quota
+	qa, err := s.ms.GetQuotaAdaptor(ctx, ss.DispatchedDevice.Quota, ss.DispatchedDevice.Id, quota.TargetTypeDevice)
+	if err != nil {
+		return
+	}
+	if ss.quota, err = quota.New(ss.Ctx, qa); err != nil {
+		return
+	}
+
 	var (
 		ep error
 	)
@@ -350,11 +361,17 @@ func (s *Server) proxy(ctx context.Context, name string, dstSess, srcSess *Sessi
 		nr, er = src.Read(buf)
 		srcSess.Metrics.TxBytes.Add(uint64(nr))
 		srcSess.Metrics.TxPackets.Add(1)
+		if err = srcSess.quota.AddUsage(int64(nr)); err != nil {
+			return written, err
+		}
 		if nr > 0 {
 			// equals dst.Write(buf[0:nr]) when control not set
 			nw, ew := dst.Write(buf[0:nr])
 			dstSess.Metrics.RxBytes.Add(uint64(nw))
 			dstSess.Metrics.RxPackets.Add(1)
+			if err = dstSess.quota.AddUsage(int64(nr)); err != nil {
+				return written, err
+			}
 			// fmt.Printf("proxy %d->%d \n", nr, nw)
 			if ew != nil {
 				_ = dst.Close()
@@ -445,11 +462,12 @@ func (s *Server) handshake(ctx context.Context, ss *Session) (err error) {
 				"mtu":  ss.network.MTU,
 			}
 			ss.DispatchedDevice = session.Device{
-				Id:   dev.Id,
-				Name: dev.Name,
-				CIDR: dev.CIDR,
-				MTU:  dev.MTU,
-				Key:  ss.network.key,
+				Id:    dev.Id,
+				Name:  dev.Name,
+				CIDR:  dev.CIDR,
+				MTU:   dev.MTU,
+				Quota: dev.Quota,
+				Key:   ss.network.key,
 			}
 
 			// build response

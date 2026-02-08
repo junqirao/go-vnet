@@ -9,10 +9,12 @@ import (
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/util/gconv"
 	"github.com/junqirao/gocomponents/response"
 
 	"go-vnet/common/quota"
 	"go-vnet/manager/server/internal/dao"
+	"go-vnet/manager/server/internal/model"
 	"go-vnet/manager/server/internal/model/entity"
 	"go-vnet/manager/server/internal/service"
 )
@@ -25,16 +27,30 @@ type (
 	sQuota struct{}
 )
 
-func (s *sQuota) GetById(ctx context.Context, id int) (quota *entity.Quota, err error) {
+func (s *sQuota) GetById(ctx context.Context, id int) (q *model.Quota, err error) {
+	if id == quota.IdNoLimit {
+		return &model.Quota{
+			Name:  "unlimited",
+			Value: quota.ValueNoLimit,
+		}, nil
+	}
 	record, err := dao.Quota.Ctx(ctx).One(dao.Quota.Columns().Id, id)
 	if err != nil {
 		return
 	}
-	quota = &entity.Quota{}
-	if err = record.Struct(&quota); err != nil {
+	eq := &entity.Quota{}
+	if err = record.Struct(&eq); err != nil {
 		if errors.Is(gerror.Cause(err), sql.ErrNoRows) {
 			err = response.CodeNotFound
+			return
 		}
+	}
+	q = &model.Quota{
+		Id:     eq.Id,
+		Name:   eq.Name,
+		Type:   eq.Type,
+		Value:  eq.Value,
+		Period: eq.Period,
 	}
 	return
 }
@@ -80,45 +96,44 @@ func (s *sQuota) Update(ctx context.Context, id int, fields map[string]any) (err
 
 func (s *sQuota) Delete(ctx context.Context, id int) (err error) {
 	q, err := s.GetById(ctx, id)
-	if err != nil {
+	if err != nil || q.Id == quota.IdNoLimit {
 		return
 	}
 
 	return dao.Quota.Ctx(ctx).Transaction(ctx, func(ctx context.Context, tx gdb.TX) (err error) {
 		// Reset the quota value of the associated object to no limit
-		if q.TargetType == quota.TargetTypeDevice {
-			_, err = dao.NetworkDevice.Ctx(ctx).Where(dao.NetworkDevice.Columns().Id, q.Target).Update(g.Map{
-				dao.NetworkDevice.Columns().Quota: quota.IdNoLimit,
-			})
-			if err != nil {
-				return
-			}
-		} else if q.TargetType == quota.TargetTypeNetwork {
-			_, err = dao.Network.Ctx(ctx).Where(dao.Network.Columns().Id, q.Target).Update(g.Map{
-				dao.Network.Columns().Quota: quota.IdNoLimit,
-			})
-			if err != nil {
-				return
-			}
+		// device
+		if err = s.resetQuotaValueOfAssociatedObject(dao.NetworkDevice.Ctx(ctx), dao.NetworkDevice.Columns().Id, id); err != nil {
+			return
 		}
-
+		if err = s.resetQuotaValueOfAssociatedObject(dao.Network.Ctx(ctx), dao.Network.Columns().Id, id); err != nil {
+			return
+		}
 		_, err = dao.Quota.Ctx(ctx).Delete(dao.Quota.Columns().Id, id)
 		return
 	})
 }
 
-func (s *sQuota) GetAdaptor(ctx context.Context, id int, target string, targetType string) (a quota.Adaptor, err error) {
-	var (
-		q = &entity.Quota{
-			Name:  "unlimited",
-			Value: quota.ValueNoLimit,
-		}
-	)
+func (s *sQuota) resetQuotaValueOfAssociatedObject(model *gdb.Model, idField string, id int) (err error) {
+	var res gdb.Result
+	res, err = model.Where("quota", id).All()
+	if err != nil {
+		return
+	}
+	ids := make([]int, 0)
+	for _, v := range res {
+		ids = append(ids, gconv.Int(v.Map()[idField]))
+	}
+	_, err = model.WhereIn(idField, ids).Update(g.Map{
+		"quota": quota.IdNoLimit,
+	})
+	return
+}
 
-	if id != quota.IdNoLimit {
-		if q, err = s.GetById(ctx, id); err != nil {
-			return
-		}
+func (s *sQuota) GetQuotaAdaptor(ctx context.Context, id int, target string, targetType string) (a quota.Adaptor, err error) {
+	q, err := s.GetById(ctx, id)
+	if err != nil {
+		return
 	}
 
 	a = &adaptor{

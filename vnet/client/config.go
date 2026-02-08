@@ -22,6 +22,8 @@ var (
 				ListenAddr:  []string{},
 				TryInterval: 30,
 			},
+			Encrypt:  true,
+			Compress: false,
 		}
 	}
 )

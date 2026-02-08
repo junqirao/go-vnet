@@ -1,9 +1,9 @@
 package quota
 
 const (
-	ResourceTypeDataTrafficMegabytes = "data_traffic_megabytes"
-	ResourceTypeDataTrafficGigabytes = "data_traffic_gigabytes"
-	ResourceTypeDataTrafficTerabytes = "data_traffic_terabytes"
+	ResourceTypeMegabytes = "mb"
+	ResourceTypeGigabytes = "gb"
+	ResourceTypeTerabytes = "tb"
 )
 
 const (

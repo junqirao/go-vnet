@@ -59,10 +59,16 @@ func (s *sNetwork) CreateNetwork(ctx context.Context, network *entity.Network) (
 	if err != nil {
 		return
 	}
+	q, err := service.Quota().GetById(ctx, network.Quota)
+	if err != nil {
+		return "", err
+	}
 	n, err := server.NewNetwork(&server.NetworkConfig{
-		ID:   id,
-		CIDR: network.Cidr,
-		MTU:  network.Mtu,
+		ID:                   id,
+		CIDR:                 network.Cidr,
+		MTU:                  network.Mtu,
+		DataTrafficQuota:     int64(q.Value),
+		DataTrafficQuotaType: q.Type,
 	})
 	if err != nil {
 		return
@@ -95,10 +101,18 @@ func (s *sNetwork) StartNetwork(ctx context.Context, networkId string) (err erro
 	if err != nil {
 		return
 	}
+
+	q, err := service.Quota().GetById(ctx, en.Quota)
+	if err != nil {
+		return
+	}
+
 	n, err := server.NewNetwork(&server.NetworkConfig{
-		ID:   en.Id,
-		CIDR: en.Cidr,
-		MTU:  en.Mtu,
+		ID:                   en.Id,
+		CIDR:                 en.Cidr,
+		MTU:                  en.Mtu,
+		DataTrafficQuota:     int64(q.Value),
+		DataTrafficQuotaType: q.Type,
 	})
 	if err != nil {
 		return

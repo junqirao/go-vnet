@@ -10,12 +10,10 @@ import (
 
 // Quota is the golang structure of table quota for DAO operations like Where/Data.
 type Quota struct {
-	g.Meta     `orm:"table:quota, do:true"`
-	Id         interface{} //
-	Name       interface{} //
-	Type       interface{} //
-	Value      interface{} //
-	Period     interface{} //
-	Target     interface{} //
-	TargetType interface{} //
+	g.Meta `orm:"table:quota, do:true"`
+	Id     interface{} //
+	Name   interface{} //
+	Type   interface{} //
+	Value  interface{} //
+	Period interface{} //
 }

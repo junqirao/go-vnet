@@ -20,24 +20,20 @@ type QuotaDao struct {
 
 // QuotaColumns defines and stores column names for the table quota.
 type QuotaColumns struct {
-	Id         string //
-	Name       string //
-	Type       string //
-	Value      string //
-	Period     string //
-	Target     string //
-	TargetType string //
+	Id     string //
+	Name   string //
+	Type   string //
+	Value  string //
+	Period string //
 }
 
 // quotaColumns holds the columns for the table quota.
 var quotaColumns = QuotaColumns{
-	Id:         "id",
-	Name:       "name",
-	Type:       "type",
-	Value:      "value",
-	Period:     "period",
-	Target:     "target",
-	TargetType: "target_type",
+	Id:     "id",
+	Name:   "name",
+	Type:   "type",
+	Value:  "value",
+	Period: "period",
 }
 
 // NewQuotaDao creates and returns a new DAO object for table data access.

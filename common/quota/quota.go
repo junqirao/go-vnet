@@ -31,17 +31,21 @@ type (
 	// Adaptor defines the interface for quota persistence.
 	// Implementations are responsible for loading and persisting quota values.
 	Adaptor interface {
-		// LoadUsage loads the current quota limit value.
+		// LoadUsage loads the current used quota value from database.
 		LoadUsage(ctx context.Context) (int64, error)
+		// GetQuotaMaxUsage returns the maximum quota limit value.
+		// Returns -1 for unlimited quota.
+		GetQuotaMaxUsage() int64
 		// SubmitUsage submits the total usage (maxLimit + current counter) to storage.
-		SubmitUsage(ctx context.Context, usage int64) error
+		SubmitUsage(ctx context.Context, usage int64)
 	}
 )
 
 // New creates a new Quota instance with the given adaptor.
 // The loaded value is used as the maximum limit, and the counter starts at 0.
 func New(ctx context.Context, adaptor Adaptor) (q *Quota, err error) {
-	maxLimit, err := adaptor.LoadUsage(ctx)
+	maxLimit := adaptor.GetQuotaMaxUsage()
+	used, err := adaptor.LoadUsage(ctx)
 	if err != nil {
 		return
 	}
@@ -52,7 +56,7 @@ func New(ctx context.Context, adaptor Adaptor) (q *Quota, err error) {
 		usage:    atomic.Int64{},
 		closed:   atomic.Bool{},
 	}
-	q.usage.Store(0)
+	q.usage.Store(used)
 	return
 }
 
@@ -60,7 +64,7 @@ func New(ctx context.Context, adaptor Adaptor) (q *Quota, err error) {
 // This operation is thread-safe and can be called concurrently.
 //
 // If the addition exceeded the quota limit, it:
-// 1. Immediately commits the current usage (maxLimit + counter)
+// 1. Immediately commits the local counter to storage
 // 2. Marks the quota as closed to prevent further commits
 // 3. Returns ErrQuotaExceeded
 //
@@ -88,11 +92,11 @@ func (q *Quota) AddUsage(value int64) error {
 	return nil
 }
 
-// CommitUsage commits the total usage value (maxLimit + current counter) to the adaptor.
+// CommitUsage commits the local counter usage to the adaptor.
 // Once committed, the quota is marked as closed and cannot be committed again.
 //
 // Returns:
-//   - int64: the committed usage value (maxLimit + current counter)
+//   - int64: the committed usage value (current counter)
 //   - error: ErrQuotaClosed if already committed, or error from adaptor submit operation
 func (q *Quota) CommitUsage() (int64, error) {
 	// Check if already closed
@@ -106,15 +110,9 @@ func (q *Quota) CommitUsage() (int64, error) {
 	}
 
 	currentUsage := q.usage.Load()
-	totalUsage := q.maxLimit + currentUsage
 
-	if err := q.adaptor.SubmitUsage(q.ctx, totalUsage); err != nil {
-		// Rollback the close flag on error
-		q.closed.Store(false)
-		return 0, err
-	}
-
-	return totalUsage, nil
+	q.adaptor.SubmitUsage(q.ctx, currentUsage)
+	return currentUsage, nil
 }
 
 // GetUsage returns the current local counter value without resetting it.

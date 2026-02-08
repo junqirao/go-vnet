@@ -210,7 +210,11 @@ func (c *Client) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 		err = fmt.Errorf("invalid link: %w", err)
 		return
 	}
+
 	payload["hostname"], _ = os.Hostname()
+	payload["encrypt"] = c.cfg.Encrypt
+	payload["compress"] = c.cfg.Compress
+
 	resp := &handshakeResponse{}
 	if err = c.rc.Do(ctx, sr, session.NewHeader(link.SubDeviceId, link.Key), payload, resp); err != nil {
 		return

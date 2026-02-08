@@ -9,6 +9,7 @@ import (
 
 	"go-vnet/common/metrics"
 	"go-vnet/common/protocol"
+	"go-vnet/common/quota"
 	"go-vnet/common/session"
 )
 
@@ -21,6 +22,7 @@ type (
 		sig     chan struct{}
 		cfg     *TransportConfig
 		network *Network
+		quota   *quota.Quota
 		conn    any
 		storage sync.Map
 
@@ -30,6 +32,8 @@ type (
 	}
 	ClientInfo struct {
 		Hostname any `json:"hostname"`
+		Encrypt  any `json:"encrypt"`
+		Compress any `json:"compress"`
 	}
 )
 

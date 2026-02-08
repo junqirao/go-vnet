@@ -27,10 +27,12 @@ type (
 		key           string
 	}
 	NetworkConfig struct {
-		ID         string `json:"id"`
-		CIDR       string `json:"cidr"`
-		MTU        int    `json:"mtu"`
-		RouterData []byte `json:"-"`
+		ID                   string `json:"id"`
+		CIDR                 string `json:"cidr"`
+		MTU                  int    `json:"mtu"`
+		DataTrafficQuota     int64  `json:"data_traffic_quota"`
+		DataTrafficQuotaType string `json:"data_traffic_quota_type"`
+		RouterData           []byte `json:"-"`
 	}
 	AllocDeviceFunc func(ctx context.Context, payload map[string]any) (dev *session.Device, err error)
 )

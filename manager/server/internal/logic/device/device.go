@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"database/sql"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -100,8 +101,23 @@ func (d *sDevice) GetDeviceInfo(ctx context.Context, deviceId string) (dev *mode
 		return
 	}
 	for _, result := range results {
-		sub := new(entity.NetworkDevice)
-		if err = result.Struct(&sub); err != nil {
+		en := new(entity.NetworkDevice)
+		if err = result.Struct(&en); err != nil {
+			return
+		}
+
+		sub := &model.SubDevice{
+			Id:        en.Id,
+			QuotaId:   en.Quota,
+			DeviceId:  en.DeviceId,
+			NetworkId: en.NetworkId,
+			Settings:  &model.SubDeviceSettings{},
+		}
+		if err = json.Unmarshal([]byte(en.Settings), sub.Settings); err != nil {
+			return
+		}
+		sub.Quota, err = service.Quota().GetById(ctx, en.Quota)
+		if err != nil {
 			return
 		}
 		dev.Sub = append(dev.Sub, sub)
