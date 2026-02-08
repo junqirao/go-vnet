@@ -150,8 +150,8 @@ func (s *sQuota) LoadUsage(ctx context.Context, id int, target string, targetTyp
 	return totalUsage, nil
 }
 
-// SubmitAllToDatabase submits all in-memory cached usage to database and clears cache
-func (s *sQuota) SubmitAllToDatabase(ctx context.Context) error {
+// SubmitFlowToDatabase submits all in-memory cached usage to database and clears cache
+func (s *sQuota) SubmitFlowToDatabase(ctx context.Context) error {
 	var errorsList []error
 
 	// Iterate through all cache items and submit to database
@@ -159,22 +159,32 @@ func (s *sQuota) SubmitAllToDatabase(ctx context.Context) error {
 		cacheKey := key.(cacheKey)
 		item := value.(*usageCacheItem)
 
-		// Skip items with zero usage
-		usage := item.usage.Load()
-		if usage == 0 {
-			return true
-		}
+		// Atomically read and reset usage to avoid race conditions with concurrent SubmitUsage
+		// This ensures we don't lose any usage data during submission
+		for {
+			currentUsage := item.usage.Load()
+			if currentUsage == 0 {
+				// No usage to submit, skip this item
+				return true
+			}
 
-		// Submit to database
-		err := s.submitToDatabase(ctx, cacheKey.id, cacheKey.target, cacheKey.targetType, usage, item.startTime)
-		if err != nil {
-			errorsList = append(errorsList, fmt.Errorf("failed to submit cache key %s: %w", cacheKey.String(), err))
-			return true // Continue with other items even if one fails
-		}
+			// Try to reset to 0 atomically
+			if item.usage.CompareAndSwap(currentUsage, 0) {
+				// Successfully swapped, now submit the currentUsage to database
+				err := s.submitToDatabase(ctx, cacheKey.id, cacheKey.target, cacheKey.targetType, currentUsage, item.startTime)
+				if err != nil {
+					// Failed to submit, restore the usage value back
+					item.usage.Add(currentUsage)
+					errorsList = append(errorsList, fmt.Errorf("failed to submit cache key %s: %w", cacheKey.String(), err))
+					return true // Continue with other items even if one fails
+				}
 
-		// Remove successfully submitted item from cache
-		usageCache.Delete(key)
-		return true
+				// Successfully submitted and usage is already 0, remove item from cache
+				usageCache.Delete(key)
+				return true
+			}
+			// CAS failed, another thread modified the usage, retry
+		}
 	})
 
 	// Return combined error if any occurred

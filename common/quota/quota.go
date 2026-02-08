@@ -24,6 +24,7 @@ type (
 	Quota struct {
 		ctx      context.Context
 		adaptor  Adaptor
+		used     int64
 		maxLimit int64        // maximum allowed usage value (quota limit)
 		usage    atomic.Int64 // current usage value in bytes
 		closed   atomic.Bool  // marks if quota is closed
@@ -52,11 +53,12 @@ func New(ctx context.Context, adaptor Adaptor) (q *Quota, err error) {
 	q = &Quota{
 		ctx:      ctx,
 		adaptor:  adaptor,
+		used:     used,
 		maxLimit: maxLimit,
 		usage:    atomic.Int64{},
 		closed:   atomic.Bool{},
 	}
-	q.usage.Store(used)
+	q.usage.Store(0)
 	return
 }
 
@@ -82,7 +84,7 @@ func (q *Quota) AddUsage(value int64) error {
 	newUsage := currentUsage + value
 
 	// Check if the new usage would exceed the limit
-	if newUsage > q.maxLimit && q.maxLimit != ValueNoLimit {
+	if newUsage+q.used > q.maxLimit && q.maxLimit != ValueNoLimit {
 		// Immediate commit when quota is exceeded
 		_, _ = q.CommitUsage()
 		return ErrQuotaExceeded
