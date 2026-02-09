@@ -54,8 +54,6 @@ func (s *sQuota) LoadUsage(ctx context.Context, id int, target string, targetTyp
 		endTime = startTime.AddDate(0, 1, 0).Add(-time.Second)
 	}
 
-	// Convert to UTC to match database gtime.Time timezone
-
 	// Query quota_flow records within the time range
 	results, err := dao.QuotaFlow.Ctx(ctx).
 		Where(g.Map{
