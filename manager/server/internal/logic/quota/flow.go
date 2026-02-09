@@ -12,7 +12,6 @@ import (
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gtime"
-	"github.com/junqirao/gocomponents/response"
 
 	"go-vnet/common/quota"
 	"go-vnet/manager/server/internal/dao"
@@ -76,17 +75,8 @@ func (s *sQuota) SubmitUsage(ctx context.Context, id int, target string, targetT
 }
 
 func (s *sQuota) LoadUsage(ctx context.Context, id int, target string, targetType string) (int64, error) {
-	// Get quota configuration to determine period type
-	v, err := dao.Quota.Ctx(ctx).One(dao.Quota.Columns().Id, id)
+	q, err := s.GetById(ctx, id)
 	if err != nil {
-		if errors.Is(gerror.Cause(err), sql.ErrNoRows) {
-			return 0, response.CodeNotFound
-		}
-		return 0, err
-	}
-
-	var q entity.Quota
-	if err = v.Struct(&q); err != nil {
 		return 0, err
 	}
 

@@ -234,6 +234,8 @@ func (s *Server) handleSession(ss *Session) {
 		return
 	}
 	if ss.quota, err = quota.New(ss.Ctx, qa); err != nil {
+		g.Log().Errorf(ctx, "get quota error: %s", err.Error())
+		ss.CloseWithError(err)
 		return
 	}
 
@@ -336,7 +338,10 @@ func (s *Server) handleFuncCallLoop(ss *Session) {
 			if err != nil {
 				return
 			}
-			_ = s.manager.HandleEvent(ss.Ctx, ss, datagram)
+			err = s.manager.HandleEvent(ss.Ctx, ss, datagram)
+			if err != nil {
+				g.Log().Errorf(ss.Ctx, "handle func call error: %s", err.Error())
+			}
 		}
 	}
 }

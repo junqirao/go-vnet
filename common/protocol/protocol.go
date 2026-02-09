@@ -3,11 +3,13 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 )
 
 const (
-	MaxTransportByteSize = 65535
+	MaxTransportByteSize  = 65535
+	MaxTransportBatchSize = 128
 	// DefaultCompressThreshold is the default size threshold for compression
 	DefaultCompressThreshold = 1024 * 10 // 10KB
 )
@@ -205,7 +207,7 @@ func (t *Transport) BatchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 			baseOverhead += Chacha20Poly1305Overhead // +16 for encryption overhead
 		}
 		remaining := MaxTransportByteSize - baseOverhead
-		for end < length && remaining >= (2+sizes[end]) {
+		for end < length && remaining >= (2+sizes[end]) && (end-start) < MaxTransportBatchSize {
 			remaining -= 2 + sizes[end]
 			totalSize += sizes[end]
 			end++
@@ -389,7 +391,7 @@ func (t *Transport) ParseBatch(data []byte, buf [][]byte, sizes []int, offset in
 	// Read all size_data (2 bytes each) into sizes
 	for i := 0; i < sizesLen; i++ {
 		if i >= len(sizes) {
-			err = errors.New("sizes array too small")
+			err = fmt.Errorf("sizes array too small: required=%d, len=%d", sizesLen, len(sizes))
 			return
 		}
 		sizes[i] = int(binary.BigEndian.Uint16(data[dataOffset : dataOffset+2]))
