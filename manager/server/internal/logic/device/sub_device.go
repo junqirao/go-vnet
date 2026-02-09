@@ -8,6 +8,7 @@ import (
 	"github.com/gogf/gf/v2/util/gconv"
 	"github.com/junqirao/gocomponents/response"
 
+	"go-vnet/common/quota"
 	"go-vnet/manager/server/internal/dao"
 	"go-vnet/manager/server/internal/model"
 	"go-vnet/manager/server/internal/model/entity"
@@ -65,6 +66,10 @@ func (d *sDevice) GetSubDeviceById(ctx context.Context, id uint64) (sub *model.S
 		return
 	}
 	sub.Quota, err = service.Quota().GetById(ctx, sub.QuotaId)
+	if err != nil {
+		return
+	}
+	sub.Usage, err = service.Quota().LoadUsage(ctx, sub.QuotaId, sub.DeviceId, quota.TargetTypeDevice)
 	return
 }
 

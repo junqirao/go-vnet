@@ -247,6 +247,8 @@ func (s *Server) handleSession(ss *Session) {
 	go s.handleFuncCallLoop(ss)
 
 	defer func() {
+		// submit usage
+		usage := ss.quota.CommitUsage()
 		// release device
 		err := ss.network.ReleaseDevice(ss.DispatchedDevice.CIDR)
 		if err != nil {
@@ -261,7 +263,7 @@ func (s *Server) handleSession(ss *Session) {
 		// delete p2p peer mapping
 		// add version make client re-sync
 		s.peerMappingVersion.Add(1)
-		g.Log().Infof(ss.Ctx, "%s session closed: %s", ss.IP, ss.SessionId)
+		g.Log().Infof(ss.Ctx, "%s session closed: %s, usage=%dbytes", ss.IP, ss.SessionId, usage)
 	}()
 
 	for {
@@ -369,9 +371,15 @@ func (s *Server) proxy(ctx context.Context, name string, dstSess, srcSess *Sessi
 		if err = srcSess.quota.AddUsage(int64(nr)); err != nil {
 			return written, err
 		}
+		if err = srcSess.quota.AddUsage(int64(nr)); err != nil {
+			return written, err
+		}
 		if nr > 0 {
 			// equals dst.Write(buf[0:nr]) when control not set
 			nw, ew := dst.Write(buf[0:nr])
+			if err = dstSess.quota.AddUsage(int64(nw)); err != nil {
+				return written, err
+			}
 			dstSess.Metrics.RxBytes.Add(uint64(nw))
 			dstSess.Metrics.RxPackets.Add(1)
 			if err = dstSess.quota.AddUsage(int64(nr)); err != nil {

@@ -45,11 +45,20 @@ func (s *sQuota) GetById(ctx context.Context, id int) (q *model.Quota, err error
 			return
 		}
 	}
+	value := eq.Value
+	switch eq.Type {
+	case quota.ResourceTypeMegabytes:
+		value = eq.Value * 1024 * 1024
+	case quota.ResourceTypeGigabytes:
+		value = eq.Value * 1024 * 1024 * 1024
+	case quota.ResourceTypeTerabytes:
+		value = eq.Value * 1024 * 1024 * 1024 * 1024
+	}
 	q = &model.Quota{
 		Id:     eq.Id,
 		Name:   eq.Name,
 		Type:   eq.Type,
-		Value:  eq.Value,
+		Value:  value,
 		Period: eq.Period,
 	}
 	return

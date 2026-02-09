@@ -99,7 +99,10 @@ func (q *Quota) AddUsage(value int64) error {
 //   - int64: the committed usage value (current counter)
 //   - error: ErrQuotaClosed if already committed, or error from adaptor submit operation
 func (q *Quota) CommitUsage() int64 {
-	currentUsage := q.usage.Load()
+	if q.usage.Load() == 0 {
+		return 0
+	}
+	currentUsage := q.usage.Swap(0)
 	q.adaptor.SubmitUsage(q.ctx, currentUsage)
 	return currentUsage
 }

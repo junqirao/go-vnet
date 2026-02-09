@@ -10,17 +10,24 @@ const (
 
 func (s *Server) backgroundLoop() {
 	metricsTicker := time.NewTicker(updateSessionMetricsInterval)
+	updateUsageTicker := time.NewTicker(time.Minute)
 	go func() {
 		for {
 			select {
 			case <-s.sig:
 				return
+			case <-updateUsageTicker.C:
+				// session
+				s.sessions.Range(func(key, value any) bool {
+					ss := value.(*Session)
+					s.updateUsage(ss)
+					return true
+				})
 			case <-metricsTicker.C:
 				// session
 				s.sessions.Range(func(key, value any) bool {
 					ss := value.(*Session)
 					s.updateSessionMetrics(ss)
-					s.updateUsage(ss)
 					return true
 				})
 				// network

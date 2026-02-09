@@ -1,8 +1,6 @@
 package server
 
 import (
-	"time"
-
 	_ "github.com/gogf/gf/contrib/drivers/mysql/v2"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gctx"
@@ -24,7 +22,6 @@ type (
 
 func RunServer() {
 	cmd.WebServer.Run(gctx.GetInitCtx())
-	go runSubmitFlowToDatabase()
 }
 
 func StartAllNetworks() {
@@ -62,16 +59,5 @@ func ManagerServer() server.ManagerServer {
 		INetwork: service.Network(),
 		IDevice:  service.Device(),
 		IQuota:   service.Quota(),
-	}
-}
-
-func runSubmitFlowToDatabase() {
-	ctx := gctx.GetInitCtx()
-	for {
-		time.Sleep(time.Minute * 1)
-		err := service.Quota().SubmitFlowToDatabase(ctx)
-		if err != nil {
-			g.Log().Errorf(ctx, "failed to submit flow to database: %s", err.Error())
-		}
 	}
 }

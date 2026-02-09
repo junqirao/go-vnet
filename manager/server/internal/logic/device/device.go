@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/junqirao/gocomponents/response"
 
+	"go-vnet/common/quota"
 	"go-vnet/manager/server/internal/dao"
 	"go-vnet/manager/server/internal/model"
 	"go-vnet/manager/server/internal/model/entity"
@@ -117,6 +118,10 @@ func (d *sDevice) GetDeviceInfo(ctx context.Context, deviceId string) (dev *mode
 			return
 		}
 		sub.Quota, err = service.Quota().GetById(ctx, en.Quota)
+		if err != nil {
+			return
+		}
+		sub.Usage, err = service.Quota().LoadUsage(ctx, sub.QuotaId, sub.DeviceId, quota.TargetTypeDevice)
 		if err != nil {
 			return
 		}
