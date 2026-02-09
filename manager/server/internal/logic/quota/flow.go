@@ -8,7 +8,6 @@ import (
 
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
-	"github.com/gogf/gf/v2/os/gtime"
 
 	"go-vnet/common/quota"
 	"go-vnet/manager/server/internal/dao"
@@ -55,6 +54,10 @@ func (s *sQuota) LoadUsage(ctx context.Context, id int, target string, targetTyp
 		endTime = startTime.AddDate(0, 1, 0).Add(-time.Second)
 	}
 
+	// Convert to UTC to match database gtime.Time timezone
+	startTimeUTC := startTime.UTC()
+	endTimeUTC := endTime.UTC()
+
 	// Query quota_flow records within the time range
 	results, err := dao.QuotaFlow.Ctx(ctx).
 		Where(g.Map{
@@ -62,8 +65,8 @@ func (s *sQuota) LoadUsage(ctx context.Context, id int, target string, targetTyp
 			dao.QuotaFlow.Columns().Target:     target,
 			dao.QuotaFlow.Columns().TargetType: targetType,
 		}).
-		WhereGTE(dao.QuotaFlow.Columns().RecordEnd, startTime).
-		WhereLTE(dao.QuotaFlow.Columns().RecordEnd, endTime).
+		WhereGTE(dao.QuotaFlow.Columns().RecordEnd, startTimeUTC).
+		WhereLTE(dao.QuotaFlow.Columns().RecordEnd, endTimeUTC).
 		All()
 	if err != nil {
 		return 0, err
@@ -98,23 +101,18 @@ func (s *sQuota) submitToDatabase(ctx context.Context, id int, target string, ta
 	}
 
 	// If startTime is zero, use current time
-	currentTime := startTime
 	if startTime.IsZero() {
-		currentTime = time.Now()
+		startTime = time.Now()
 	}
 
-	curr := gtime.NewFromTime(currentTime)
+	curr := startTime.Unix()
 
 	var flow entity.QuotaFlow
 	err = record.Struct(&flow)
 	if err == nil {
 		// Check if there is a recent record and the time difference is within 1 hour
-		if flow.RecordEnd != nil {
-			// Convert both times to Unix timestamps to avoid timezone issues
-			currentUnix := currentTime.Unix()
-			recordEndUnix := flow.RecordEnd.Time.Unix()
-			timeDiffSeconds := currentUnix - recordEndUnix
-			timeDiff := time.Duration(timeDiffSeconds) * time.Second
+		if flow.RecordEnd > 0 {
+			timeDiff := time.Duration(curr-flow.RecordEnd) * time.Second
 			// Merge if time difference is within 1 hour
 			if timeDiff.Abs() < time.Hour {
 				// Update the existing record: add usage and update record_end
@@ -135,7 +133,7 @@ func (s *sQuota) submitToDatabase(ctx context.Context, id int, target string, ta
 		Target:      target,
 		TargetType:  targetType,
 		RecordStart: curr,
-		RecordEnd:   gtime.Now(),
+		RecordEnd:   time.Now().Unix(),
 	})
 	return err
 }

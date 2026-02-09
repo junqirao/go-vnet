@@ -6,7 +6,6 @@ package do
 
 import (
 	"github.com/gogf/gf/v2/frame/g"
-	"github.com/gogf/gf/v2/os/gtime"
 )
 
 // QuotaFlow is the golang structure of table quota_flow for DAO operations like Where/Data.
@@ -17,6 +16,6 @@ type QuotaFlow struct {
 	Usage       interface{} //
 	Target      interface{} //
 	TargetType  interface{} //
-	RecordStart *gtime.Time //
-	RecordEnd   *gtime.Time //
+	RecordStart interface{} //
+	RecordEnd   interface{} //
 }
