@@ -48,13 +48,11 @@ func (s *sQuota) LoadUsage(ctx context.Context, id int, target string, targetTyp
 		// Current day: from 00:00:00 to 23:59:59
 		startTime = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		endTime = startTime.Add(24 * time.Hour).Add(-time.Second)
-	case quota.PeriodTypeMonth:
+	default:
+		// default quota.PeriodTypeMonth
 		// Current month: from 1st day 00:00:00 to last day 23:59:59
 		startTime = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 		endTime = startTime.AddDate(0, 1, 0).Add(-time.Second)
-	default:
-		// Unknown period type, use no limit
-		return -1, nil
 	}
 
 	// Query quota_flow records within the time range
@@ -112,7 +110,11 @@ func (s *sQuota) submitToDatabase(ctx context.Context, id int, target string, ta
 	if err == nil {
 		// Check if there is a recent record and the time difference is within 1 hour
 		if flow.RecordEnd != nil {
-			timeDiff := currentTime.Sub(flow.RecordEnd.Time)
+			// Convert both times to Unix timestamps to avoid timezone issues
+			currentUnix := currentTime.Unix()
+			recordEndUnix := flow.RecordEnd.Time.Unix()
+			timeDiffSeconds := currentUnix - recordEndUnix
+			timeDiff := time.Duration(timeDiffSeconds) * time.Second
 			// Merge if time difference is within 1 hour
 			if timeDiff.Abs() < time.Hour {
 				// Update the existing record: add usage and update record_end
