@@ -164,8 +164,11 @@ func (c *Client) updateRouter(ctx context.Context) (err error) {
 				}
 				g.Log().Infof(ctx, "add route: %s", ip)
 				var hook hub.TxHook = c
-				c.hub.Router().Register(ip,
-					hub.NewDestination(context.Background(), strings.Split(ip, "/")[0], c.internal, c.hub, hook))
+				dst := hub.NewDestination(context.Background(), strings.Split(ip, "/")[0], c.internal, c.hub, hook)
+				dst.SetP2PDialFunc(func(ctx context.Context) error {
+					return c.tryP2P(ctx, dst)
+				})
+				c.hub.Router().Register(ip, dst)
 			}
 		}
 

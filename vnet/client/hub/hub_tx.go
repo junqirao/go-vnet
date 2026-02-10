@@ -2,7 +2,6 @@ package hub
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"runtime"
 	"sync"
@@ -12,10 +11,7 @@ import (
 	tun "github.com/sagernet/sing-tun"
 
 	"go-vnet/common/protocol"
-)
-
-var (
-	ErrCancel = errors.New("cancel")
+	"go-vnet/vnet/server"
 )
 
 func (h *Hub) txLoop() {
@@ -212,6 +208,7 @@ type (
 		txEventChan chan *txEvent
 		fallback    protocol.ReadWriter
 		hook        TxHook
+		tryP2P      func(ctx context.Context) error
 	}
 	TxError struct {
 		dst *Destination
@@ -280,6 +277,10 @@ func (c *Destination) PushTxEvent(e *txEvent) (err error) {
 	return
 }
 
+func (c *Destination) SetP2PDialFunc(f func(ctx context.Context) error) {
+	c.tryP2P = f
+}
+
 func (c *Destination) negotiate() (err error) {
 	if c.tx != nil {
 		return
@@ -298,14 +299,24 @@ func (c *Destination) negotiate() (err error) {
 	if _, err = ups.Read(buf[:]); err != nil {
 		return
 	}
-	if buf[0] != 1 {
+	switch buf[0] {
+	case server.NegotiateResponseQuotaExceeded:
+		// try p2p
+		g.Log().Infof(c.ctx, "[TX] negotiate quota exceeded, try dial p2p to dst: %s", c.ip)
+		if c.tryP2P != nil {
+			return c.tryP2P(c.ctx)
+		}
+		err = fmt.Errorf("no connection available to destination: %s", c.ip)
+		return
+	case server.NegotiateResponseSuccess:
+		g.Log().Infof(c.ctx, "[TX] negotiate success")
+		c.tx = tx
+		c.hook.AfterDial(c.ctx, c)
+		return
+	default:
 		g.Log().Infof(c.ctx, "[TX] negotiate failed: %d", buf[0])
 		return fmt.Errorf("negotiate failed: %d", buf[0])
 	}
-	g.Log().Infof(c.ctx, "[TX] negotiate success")
-	c.tx = tx
-	c.hook.AfterDial(c.ctx, c)
-	return
 }
 
 func (c *Destination) txLoop() {
@@ -447,7 +458,9 @@ func (c *Destination) ReplaceTx(fn func(old protocol.ReadWriter) (new protocol.R
 	}
 	newOne, replaced := fn(c.tx)
 	if replaced {
-		c.fallback = c.tx
+		if c.tx != nil {
+			c.fallback = c.tx
+		}
 		c.tx = newOne
 	}
 	return

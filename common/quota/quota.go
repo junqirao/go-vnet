@@ -78,18 +78,21 @@ func (q *Quota) AddUsage(value int64) error {
 		return nil
 	}
 
-	currentUsage := q.usage.Load()
-	newUsage := currentUsage + value
-
-	// Check if the new usage would exceed the limit
-	if newUsage+q.used > q.maxLimit && q.maxLimit != ValueNoLimit {
-		// Immediate commit when quota is exceeded
+	if q.isExceeded() {
 		q.CommitUsage()
 		return ErrQuotaExceeded
 	}
 
 	q.usage.Add(value)
 	return nil
+}
+
+func (q *Quota) IsExceeded() bool {
+	return q.isExceeded()
+}
+
+func (q *Quota) isExceeded() bool {
+	return q.usage.Load()+q.used > q.maxLimit && q.maxLimit != ValueNoLimit
 }
 
 // CommitUsage commits the local counter usage to the adaptor.

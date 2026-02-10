@@ -497,6 +497,11 @@ func (s *Server) handshake(ctx context.Context, ss *Session) (err error) {
 	return
 }
 
+const (
+	NegotiateResponseSuccess       = 1
+	NegotiateResponseQuotaExceeded = 2
+)
+
 func (s *Server) negotiation(_ context.Context, sess *Session, src io.ReadWriter) (dstSession *Session, dst string, err error) {
 	// get dst ip by first packet, 10s timeout
 	var (
@@ -529,8 +534,13 @@ func (s *Server) negotiation(_ context.Context, sess *Session, src io.ReadWriter
 		return
 	}
 
+	ack := NegotiateResponseSuccess
+	if sess.quota.IsExceeded() {
+		ack = NegotiateResponseQuotaExceeded
+	}
+
 	// send ack (byte 1) to client
-	_, _ = src.Write([]byte{1})
+	_, _ = src.Write([]byte{byte(ack)})
 	dstSession, ok = v.(*Session)
 	if !ok {
 		err = fmt.Errorf("error session type: dst=%v", dst)

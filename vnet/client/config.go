@@ -18,9 +18,10 @@ var (
 			MappedConfig: config.NewMappedConfig(),
 			Type:         TypeQuic,
 			P2P: P2PConfig{
-				Enabled:     true,
-				ListenAddr:  []string{},
-				TryInterval: 30,
+				Enabled:        true,
+				ListenAddr:     []string{},
+				TryInterval:    30,
+				ActiveDialPeer: false,
 			},
 			Encrypt:  true,
 			Compress: false,
@@ -49,9 +50,10 @@ type (
 		Encrypt            bool      `json:"encrypt"`
 	}
 	P2PConfig struct {
-		Enabled     bool     `yaml:"enabled" json:"enabled"`
-		ListenAddr  []string `yaml:"listen_addr" json:"listen_addr"`
-		TryInterval int      `yaml:"try_interval" json:"try_interval"`
+		Enabled        bool     `yaml:"enabled" json:"enabled"`
+		ListenAddr     []string `yaml:"listen_addr" json:"listen_addr"`
+		TryInterval    int      `yaml:"try_interval" json:"try_interval"`
+		ActiveDialPeer bool     `yaml:"active_dial_peer" json:"active_dial_peer"`
 	}
 	ConfigOption func(cfg *Config)
 )

@@ -285,7 +285,11 @@ func (c *Client) replaceP2P(ctx context.Context, stream network.Stream, dst *hub
 }
 
 func (c *Client) tryP2P(ctx context.Context, dst *hub.Destination) (err error) {
-	if !c.cfg.P2P.Enabled || dst.Type() == protocol.TransportTypeP2P {
+	if !c.cfg.P2P.Enabled {
+		g.Log().Infof(ctx, "p2p is not enabled, skip dial p2p to %s", dst.Ip())
+		return
+	}
+	if dst.Type() == protocol.TransportTypeP2P {
 		return
 	}
 
@@ -310,7 +314,7 @@ func (c *Client) tryP2P(ctx context.Context, dst *hub.Destination) (err error) {
 }
 
 func (c *Client) backgroundTryDialP2P() {
-	if !c.cfg.P2P.Enabled {
+	if !c.cfg.P2P.Enabled || !c.cfg.P2P.ActiveDialPeer {
 		return
 	}
 	g.Log().Infof(c.ctx, "background try dial p2p started")
