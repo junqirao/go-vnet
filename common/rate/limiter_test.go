@@ -189,6 +189,180 @@ func TestLimiter_Recovery(t *testing.T) {
 	}
 }
 
+// TestLimiter_PutBack 归还令牌测试
+func TestLimiter_PutBack(t *testing.T) {
+	limiter := NewLimiter(100, 100) // 100 QPS, 桶容量100
+
+	// 申请50个令牌
+	if !limiter.AllowN(50) {
+		t.Fatal("Failed to allocate 50 tokens")
+	}
+
+	// 检查可用令牌数
+	tokens := limiter.Tokens()
+	if tokens < 49.9 || tokens > 50.1 {
+		t.Errorf("Expected tokens around 50 after allocating 50, got %f", tokens)
+	}
+
+	// 归还20个令牌
+	putback := limiter.PutBack(20)
+	if putback != 20 {
+		t.Errorf("Expected to put back 20 tokens, got %d", putback)
+	}
+
+	// 检查可用令牌数
+	tokens = limiter.Tokens()
+	if tokens < 69.9 || tokens > 70.1 {
+		t.Errorf("Expected tokens around 70 after putting back 20, got %f", tokens)
+	}
+}
+
+// TestLimiter_PutBackFromLast 从上一次消费中归还令牌
+func TestLimiter_PutBackFromLast(t *testing.T) {
+	limiter := NewLimiter(100, 100)
+
+	// 申请50个令牌
+	if !limiter.AllowN(50) {
+		t.Fatal("Failed to allocate 50 tokens")
+	}
+
+	// 实际只使用了30个，归还未使用的20个
+	putback := limiter.PutBackFromLast(30)
+	if putback != 20 {
+		t.Errorf("Expected to put back 20 tokens, got %d", putback)
+	}
+
+	// 检查可用令牌数
+	tokens := limiter.Tokens()
+	if tokens < 69.9 || tokens > 70.1 {
+		t.Errorf("Expected tokens around 70 after putting back 20, got %f", tokens)
+	}
+}
+
+// TestLimiter_PutBack_EdgeCases 归还令牌边界情况测试
+func TestLimiter_PutBack_EdgeCases(t *testing.T) {
+	limiter := NewLimiter(100, 100)
+
+	t.Run("PutBackZero", func(t *testing.T) {
+		putback := limiter.PutBack(0)
+		if putback != 0 {
+			t.Errorf("Expected to put back 0 tokens, got %d", putback)
+		}
+	})
+
+	t.Run("PutBackNegative", func(t *testing.T) {
+		putback := limiter.PutBack(-1)
+		if putback != 0 {
+			t.Errorf("Expected to put back 0 tokens for negative input, got %d", putback)
+		}
+	})
+
+	t.Run("PutBackExceedBurst", func(t *testing.T) {
+		// 申请50个令牌
+		if !limiter.AllowN(50) {
+			t.Fatal("Failed to allocate 50 tokens")
+		}
+
+		// 尝试归还超过桶容量的令牌
+		tokensBefore := limiter.Tokens()
+		_ = limiter.PutBack(1000) // 应该被限制在桶容量内
+		_ = limiter.PutBack(1000) // 再次尝试
+		tokensAfter := limiter.Tokens()
+
+		if tokensAfter > 100.1 || tokensAfter < tokensBefore {
+			t.Errorf("Tokens after putback %f should be at most 100, tokens before %f", tokensAfter, tokensBefore)
+		}
+	})
+
+	t.Run("PutBackFromLastZeroUsed", func(t *testing.T) {
+		limiter2 := NewLimiter(100, 100)
+		// 申请10个令牌
+		if !limiter2.AllowN(10) {
+			t.Fatal("Failed to allocate 10 tokens")
+		}
+
+		// 声称全部使用了，不应该归还
+		putback := limiter2.PutBackFromLast(10)
+		if putback != 0 {
+			t.Errorf("Expected to put back 0 tokens when all used, got %d", putback)
+		}
+	})
+}
+
+// TestLimiter_PutBack_Concurrent 并发归还测试
+func TestLimiter_PutBack_Concurrent(t *testing.T) {
+	limiter := NewLimiter(1000, 1000)
+
+	// 先申请500个令牌
+	if !limiter.AllowN(500) {
+		t.Fatal("Failed to allocate 500 tokens")
+	}
+
+	var wg sync.WaitGroup
+	var totalPutback atomic.Int64
+
+	// 10个goroutine并发归还
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			putback := limiter.PutBack(20)
+			totalPutback.Add(int64(putback))
+		}()
+	}
+
+	wg.Wait()
+
+	// 应该归还了200个令牌
+	if totalPutback.Load() != 200 {
+		t.Errorf("Expected total putback 200, got %d", totalPutback.Load())
+	}
+
+	// 检查可用令牌数
+	tokens := limiter.Tokens()
+	// 初始1000，申请500，剩余500，归还200，应该是700
+	if tokens < 699.9 || tokens > 700.1 {
+		t.Errorf("Expected tokens around 700, got %f", tokens)
+	}
+}
+
+// TestLimiter_PutBack_Scenario 实际场景测试：批量申请但部分使用
+func TestLimiter_PutBack_Scenario(t *testing.T) {
+	limiter := NewLimiter(100, 100)
+
+	// 场景：批量处理任务
+	// 申请50个令牌准备处理50个任务
+	if !limiter.AllowN(50) {
+		t.Fatal("Failed to allocate 50 tokens")
+	}
+
+	tokensBefore := limiter.Tokens()
+	t.Logf("After allocating 50: tokens = %.2f", tokensBefore)
+
+	// 实际只处理了30个任务，需要归还20个令牌
+	putback := limiter.PutBackFromLast(30)
+	if putback != 20 {
+		t.Errorf("Expected to put back 20 tokens, got %d", putback)
+	}
+
+	tokensAfter := limiter.Tokens()
+	t.Logf("After putting back 20: tokens = %.2f", tokensAfter)
+
+	// 验证可用令牌数增加了20
+	diff := tokensAfter - tokensBefore
+	if diff < 19.9 || diff > 20.1 {
+		t.Errorf("Expected tokens to increase by 20, got %.2f", diff)
+	}
+
+	// 现在应该可以继续申请更多令牌
+	if !limiter.AllowN(20) {
+		t.Error("Failed to allocate additional 20 tokens after putback")
+	}
+
+	tokensFinal := limiter.Tokens()
+	t.Logf("After allocating another 20: tokens = %.2f", tokensFinal)
+}
+
 // TestLimiter_CompareWithStdLimiter 与标准库对比测试
 func TestLimiter_CompareWithStdLimiter(t *testing.T) {
 	r := 100.0
@@ -301,6 +475,32 @@ func BenchmarkStdLimiter_AllowN(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		limiter.AllowN(time.Now(), 10)
+	}
+}
+
+// BenchmarkLimiter_PutBack 归还令牌性能测试
+func BenchmarkLimiter_PutBack(b *testing.B) {
+	limiter := NewLimiter(1000000, 1000000)
+	// 先申请一些令牌
+	limiter.AllowN(100000)
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			limiter.PutBack(10)
+		}
+	})
+}
+
+// BenchmarkLimiter_PutBackFromLast 从上次消费中归还性能测试
+func BenchmarkLimiter_PutBackFromLast(b *testing.B) {
+	limiter := NewLimiter(1000000, 1000000)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// 模拟批量申请但部分使用的场景
+		limiter.AllowN(100)
+		limiter.PutBackFromLast(80) // 使用了80，归还20
 	}
 }
 

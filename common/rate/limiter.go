@@ -8,11 +8,12 @@ import (
 // Limiter 无锁限流器，基于令牌桶算法
 // 使用原子操作实现，无需互斥锁，适合高并发场景
 type Limiter struct {
-	lastUpdate int64 // 上次更新时间（纳秒）
-	available  int64 // 可用令牌数（固定精度，乘以precision）
-	rate       int64 // 速率（令牌/秒，乘以precision）
-	burst      int64 // 桶容量（令牌数，乘以precision）
-	precision  int64 // 精度因子，用于避免浮点运算
+	lastUpdate   int64 // 上次更新时间（纳秒）
+	available    int64 // 可用令牌数（固定精度，乘以precision）
+	rate         int64 // 速率（令牌/秒，乘以precision）
+	burst        int64 // 桶容量（令牌数，乘以precision）
+	precision    int64 // 精度因子，用于避免浮点运算
+	lastConsumed int64 // 最近一次成功消费的令牌数（用于 putback）
 }
 
 // NewLimiter 创建无锁限流器
@@ -86,6 +87,8 @@ func (l *Limiter) AllowN(n int) bool {
 			// 尝试消费令牌
 			newCurrent := current - requestTokens
 			if atomic.CompareAndSwapInt64(&l.available, current, newCurrent) {
+				// 记录成功消费的令牌数
+				atomic.StoreInt64(&l.lastConsumed, int64(n))
 				return true
 			}
 			// CAS失败，重试
@@ -117,6 +120,69 @@ func (l *Limiter) WaitN(n int) {
 			time.Sleep(time.Microsecond)
 		}
 	}
+}
+
+// PutBack 归还未使用的令牌
+// n: 要归还的令牌数，必须为正数
+// 返回实际归还的令牌数
+func (l *Limiter) PutBack(n int) int {
+	if n <= 0 {
+		return 0
+	}
+
+	putbackTokens := int64(n) * l.precision
+
+	for {
+		current := atomic.LoadInt64(&l.available)
+		newCurrent := current + putbackTokens
+
+		// 不能超过桶容量
+		if newCurrent > l.burst {
+			newCurrent = l.burst
+		}
+
+		// 尝试原子更新
+		if atomic.CompareAndSwapInt64(&l.available, current, newCurrent) {
+			// 计算实际归还的令牌数
+			actualPutback := newCurrent - current
+			if actualPutback < 0 {
+				actualPutback = 0
+			}
+			actual := int(actualPutback / l.precision)
+
+			// 更新 lastConsumed，减去已归还的部分
+			lastConsumed := atomic.LoadInt64(&l.lastConsumed)
+			if lastConsumed >= int64(n) {
+				atomic.StoreInt64(&l.lastConsumed, lastConsumed-int64(n))
+			} else {
+				atomic.StoreInt64(&l.lastConsumed, 0)
+			}
+
+			return actual
+		}
+		// CAS失败，重试
+	}
+}
+
+// PutBackFromLast 归还上一次消费中未使用的令牌
+// 这是一个便捷方法，适用于批量申请但部分使用的场景
+func (l *Limiter) PutBackFromLast(used int) int {
+	if used < 0 {
+		return 0
+	}
+
+	lastConsumed := atomic.LoadInt64(&l.lastConsumed)
+	if lastConsumed <= 0 {
+		return 0
+	}
+
+	// 计算未使用的令牌数
+	availablePutback := int(lastConsumed) - used
+	if availablePutback <= 0 {
+		return 0
+	}
+
+	return l.PutBack(availablePutback)
 }
 
 // Tokens 返回当前可用令牌数
