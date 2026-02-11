@@ -1,14 +1,16 @@
 package quota
 
 const (
-	ResourceTypeMegabytes = "mb"
-	ResourceTypeGigabytes = "gb"
-	ResourceTypeTerabytes = "tb"
+	ResourceTypeMegabytes          = "mb"
+	ResourceTypeGigabytes          = "gb"
+	ResourceTypeTerabytes          = "tb"
+	ResourceTypeMegabytesPerSecond = "mbps"
 )
 
 const (
 	PeriodTypeDay   = "day"
 	PeriodTypeMonth = "month"
+	PeriodPermanent = "permanent"
 )
 
 const (
