@@ -4,6 +4,7 @@ type (
 	Quota struct {
 		Id     int    `json:"id"`
 		Name   string `json:"name"`
+		Unit   string `json:"unit"`
 		Type   string `json:"type"`
 		Value  int64  `json:"value"`
 		Period string `json:"period"`

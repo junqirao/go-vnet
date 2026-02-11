@@ -58,6 +58,7 @@ func (s *sQuota) GetById(ctx context.Context, id int) (q *model.Quota, err error
 		Id:     eq.Id,
 		Name:   eq.Name,
 		Type:   eq.Type,
+		Unit:   eq.Unit,
 		Value:  int64(value),
 		Period: eq.Period,
 	}

@@ -34,13 +34,19 @@ type (
 		cause error
 	}
 	Device struct {
-		Id        string `json:"id"`            // device id
-		Name      string `json:"name"`          // name
-		CIDR      string `json:"cidr"`          // cidr
-		MTU       int    `json:"mtu"`           // mtu
-		Key       string `json:"key,omitempty"` // network encrypt key
-		Quota     int    `json:"quota"`         // data traffic quota id
-		Bandwidth int    `json:"bandwidth"`     // bandwidth quota id
+		Id               string `json:"id"`                 // device id
+		Name             string `json:"name"`               // name
+		CIDR             string `json:"cidr"`               // cidr
+		MTU              int    `json:"mtu"`                // mtu
+		Key              string `json:"key,omitempty"`      // network encrypt key
+		DataTrafficQuota *Quota `json:"data_traffic_quota"` // data traffic quota
+		BandwidthQuota   *Quota `json:"bandwidth_quota"`    // bandwidth quota
+	}
+	Quota struct {
+		Id     int    `json:"id"`
+		Unit   string `json:"unit"`
+		Value  int64  `json:"value"`
+		Period string `json:"period"`
 	}
 )
 
@@ -73,5 +79,17 @@ func (e *Error) Clone() *Error {
 		msg:   e.msg,
 		code:  e.code,
 		cause: e.cause,
+	}
+}
+
+func (d *Device) Clone() *Device {
+	return &Device{
+		Id:               d.Id,
+		Name:             d.Name,
+		CIDR:             d.CIDR,
+		MTU:              d.MTU,
+		Key:              d.Key,
+		DataTrafficQuota: d.DataTrafficQuota,
+		BandwidthQuota:   d.BandwidthQuota,
 	}
 }

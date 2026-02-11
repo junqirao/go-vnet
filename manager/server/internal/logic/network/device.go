@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/gogf/gf/v2/frame/g"
 
@@ -48,12 +49,37 @@ func (s *sNetwork) AcquireDevice(ctx context.Context, ss *server.Session, subDev
 		Compress: payload["compress"],
 	}
 
+	bw, err := service.Quota().GetById(ctx, subDevice.BandwidthId)
+	if err != nil {
+		err = fmt.Errorf("get bandwidth quota failed: %w", err)
+		return
+	}
+
+	dt, err := service.Quota().GetById(ctx, subDevice.QuotaId)
+	if err != nil {
+		err = fmt.Errorf("get bandwidth quota failed: %w", err)
+		return
+	}
+
 	dev.Id = subDevice.DeviceId
 	dev.Name = deviceInfo.Name
 	dev.CIDR = cidr
 	dev.MTU = network.MTU
-	dev.Quota = subDevice.QuotaId
-	dev.Bandwidth = subDevice.BandwidthId
+
+	// quota
+	dev.BandwidthQuota = &session.Quota{
+		Id:     bw.Id,
+		Unit:   bw.Unit,
+		Value:  bw.Value,
+		Period: bw.Period,
+	}
+	dev.DataTrafficQuota = &session.Quota{
+		Id:     dt.Id,
+		Unit:   dt.Unit,
+		Value:  dt.Value,
+		Period: dt.Period,
+	}
+
 	network.RegisterSession(cidr, ss)
 	return
 }
