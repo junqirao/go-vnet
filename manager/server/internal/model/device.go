@@ -29,9 +29,8 @@ type (
 		QuotaId   int                `json:"quota_id"`
 		DeviceId  string             `json:"device_id"`
 		NetworkId string             `json:"network_id"`
-		Quota     *Quota             `json:"quota"`
+		Quota     *QuotaDetail       `json:"quota"`
 		Settings  *SubDeviceSettings `json:"settings"`
-		Usage     int64              `json:"usage"`
 	}
 	DeviceMode        int
 	SubDeviceSettings struct {

@@ -35,7 +35,8 @@ type GetDeviceReq struct {
 	g.Meta `path:"/device/:device_id" tags:"Device" method:"get" summary:"Get Device Info"`
 	middleware.RequiredAuthHeader
 
-	DeviceId string `json:"device_id" v:"required" in:"path"`
+	DeviceId    string `json:"device_id" v:"required" in:"path"`
+	SubDeviceId uint64 `json:"sub_device_id"`
 }
 
 type GetDeviceRes model.Device

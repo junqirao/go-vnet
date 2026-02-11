@@ -15,7 +15,7 @@ import (
 type (
 	IDevice interface {
 		CreateDevice(ctx context.Context, deviceKey string, dev *entity.Device) (id string, err error)
-		GetDeviceInfo(ctx context.Context, deviceId string) (dev *model.Device, err error)
+		GetDeviceInfo(ctx context.Context, deviceId string, sub ...uint64) (dev *model.Device, err error)
 		GetDeviceById(ctx context.Context, id string) (dev *entity.Device, err error)
 		GetDeviceByName(ctx context.Context, name string) (dev *entity.Device, err error)
 		PrivateKeyBySubDeviceId(ctx context.Context, id uint64, key string) (pri *rsa.PrivateKey, err error)

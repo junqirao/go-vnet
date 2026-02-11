@@ -65,11 +65,7 @@ func (d *sDevice) GetSubDeviceById(ctx context.Context, id uint64) (sub *model.S
 	if err = json.Unmarshal([]byte(dev.Settings), sub.Settings); err != nil {
 		return
 	}
-	sub.Quota, err = service.Quota().GetById(ctx, sub.QuotaId)
-	if err != nil {
-		return
-	}
-	sub.Usage, err = service.Quota().LoadUsage(ctx, sub.QuotaId, sub.DeviceId, quota.TargetTypeDevice)
+	sub.Quota, err = service.Quota().GetQuotaDetails(ctx, sub.QuotaId, sub.DeviceId, quota.TargetTypeDevice)
 	return
 }
 

@@ -32,10 +32,11 @@ func (s *sQuota) SubmitUsage(ctx context.Context, id int, target string, targetT
 	return
 }
 
-func (s *sQuota) LoadUsage(ctx context.Context, id int, target string, targetType string) (int64, error) {
+func (s *sQuota) LoadUsage(ctx context.Context, id int, target string, targetType string) (usage int64, flow []*entity.QuotaFlow, err error) {
 	q, err := s.GetById(ctx, id)
 	if err != nil {
-		return -1, err
+		usage = -1
+		return
 	}
 
 	// Determine time range based on period type
@@ -65,20 +66,20 @@ func (s *sQuota) LoadUsage(ctx context.Context, id int, target string, targetTyp
 		WhereLTE(dao.QuotaFlow.Columns().RecordEnd, endTime.Unix()).
 		All()
 	if err != nil {
-		return 0, err
+		return
 	}
 
 	// Sum up all usage values from database
-	var totalUsage int64 = 0
 	for _, record := range results {
-		var flow entity.QuotaFlow
-		if err = record.Struct(&flow); err != nil {
-			return 0, err
+		var f entity.QuotaFlow
+		if err = record.Struct(&f); err != nil {
+			return
 		}
-		totalUsage += int64(flow.Usage)
+		usage += int64(f.Usage)
+		flow = append(flow, &f)
 	}
 
-	return totalUsage, nil
+	return
 }
 
 // submitToDatabase submits a single usage record to database (internal helper)

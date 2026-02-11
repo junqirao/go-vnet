@@ -20,7 +20,8 @@ type (
 
 func (a *adaptor) LoadUsage(ctx context.Context) (int64, error) {
 	// Delegate to sQuota.LoadUsage with quota id, target and target type
-	return a.ref.LoadUsage(ctx, a.quota.Id, a.target, a.targetType)
+	usage, _, err := a.ref.LoadUsage(ctx, a.quota.Id, a.target, a.targetType)
+	return usage, err
 }
 
 func (a *adaptor) GetQuotaMaxUsage() int64 {

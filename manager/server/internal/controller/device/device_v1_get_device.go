@@ -8,7 +8,7 @@ import (
 )
 
 func (c *ControllerV1) GetDevice(ctx context.Context, req *v1.GetDeviceReq) (res *v1.GetDeviceRes, err error) {
-	info, err := service.Device().GetDeviceInfo(ctx, req.DeviceId)
+	info, err := service.Device().GetDeviceInfo(ctx, req.DeviceId, req.SubDeviceId)
 	if err != nil {
 		return
 	}

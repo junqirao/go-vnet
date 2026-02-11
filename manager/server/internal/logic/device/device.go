@@ -85,7 +85,7 @@ func (d *sDevice) CreateDevice(ctx context.Context, deviceKey string, dev *entit
 	return
 }
 
-func (d *sDevice) GetDeviceInfo(ctx context.Context, deviceId string) (dev *model.Device, err error) {
+func (d *sDevice) GetDeviceInfo(ctx context.Context, deviceId string, sub ...uint64) (dev *model.Device, err error) {
 	device, err := d.GetDeviceById(ctx, deviceId)
 	if err != nil {
 		return
@@ -95,9 +95,13 @@ func (d *sDevice) GetDeviceInfo(ctx context.Context, deviceId string) (dev *mode
 		Name:      device.Name,
 		CreatedAt: device.CreatedAt,
 	}
-	results, err := dao.NetworkDevice.Ctx(ctx).Where(g.Map{
+	m := dao.NetworkDevice.Ctx(ctx).Where(g.Map{
 		dao.NetworkDevice.Columns().DeviceId: deviceId,
-	}).All()
+	})
+	if len(sub) > 0 {
+		m = m.WhereIn(dao.NetworkDevice.Columns().Id, sub)
+	}
+	results, err := m.All()
 	if err != nil {
 		return
 	}
@@ -107,25 +111,21 @@ func (d *sDevice) GetDeviceInfo(ctx context.Context, deviceId string) (dev *mode
 			return
 		}
 
-		sub := &model.SubDevice{
+		sd := &model.SubDevice{
 			Id:        en.Id,
 			QuotaId:   en.Quota,
 			DeviceId:  en.DeviceId,
 			NetworkId: en.NetworkId,
 			Settings:  &model.SubDeviceSettings{},
 		}
-		if err = json.Unmarshal([]byte(en.Settings), sub.Settings); err != nil {
+		if err = json.Unmarshal([]byte(en.Settings), sd.Settings); err != nil {
 			return
 		}
-		sub.Quota, err = service.Quota().GetById(ctx, en.Quota)
+		sd.Quota, err = service.Quota().GetQuotaDetails(ctx, en.Quota, sd.DeviceId, quota.TargetTypeDevice)
 		if err != nil {
 			return
 		}
-		sub.Usage, err = service.Quota().LoadUsage(ctx, sub.QuotaId, sub.DeviceId, quota.TargetTypeDevice)
-		if err != nil {
-			return
-		}
-		dev.Sub = append(dev.Sub, sub)
+		dev.Sub = append(dev.Sub, sd)
 	}
 	return
 }
