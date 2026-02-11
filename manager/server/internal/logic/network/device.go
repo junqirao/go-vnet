@@ -53,6 +53,7 @@ func (s *sNetwork) AcquireDevice(ctx context.Context, ss *server.Session, subDev
 	dev.CIDR = cidr
 	dev.MTU = network.MTU
 	dev.Quota = subDevice.QuotaId
+	dev.Bandwidth = subDevice.BandwidthId
 	network.RegisterSession(cidr, ss)
 	return
 }

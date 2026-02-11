@@ -32,6 +32,7 @@ type CreateQuotaReq struct {
 
 	Name   string `json:"name" v:"required"`
 	Type   string `json:"type" v:"required"`
+	Unit   string `json:"unit" v:"required"`
 	Value  int    `json:"value" v:"required"`
 	Period string `json:"period"`
 }

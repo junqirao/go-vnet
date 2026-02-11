@@ -151,6 +151,8 @@ func (c *Client) run(ctx context.Context) (err error) {
 		g.Log().Errorf(ctx, "handshake error: %v", err.Error())
 		return
 	}
+	g.Log().Infof(ctx, "device spec: bw_quota=%d, dt_quota=%d",
+		sess.DispatchedDevice.Bandwidth, sess.DispatchedDevice.Quota)
 	c.session = sess
 
 	// setup tun device

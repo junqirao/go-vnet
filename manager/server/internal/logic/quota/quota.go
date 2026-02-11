@@ -155,16 +155,18 @@ func (s *sQuota) GetQuotaAdaptor(ctx context.Context, id int, target string, tar
 	return
 }
 
-func (s *sQuota) GetQuotaDetails(ctx context.Context, id int, target string, targetType string) (d *model.QuotaDetail, err error) {
+func (s *sQuota) GetQuotaDetails(ctx context.Context, id int, target string, targetType string, usage ...bool) (d *model.QuotaDetail, err error) {
 	d = &model.QuotaDetail{}
 	d.Quota, err = s.GetById(ctx, id)
 	if err != nil {
 		return
 	}
-	d.Usage, d.Flow, err = s.LoadUsage(ctx, id, target, targetType)
-	if err != nil {
-		return
+	if usage != nil && usage[0] {
+		d.Usage, d.Flow, err = s.LoadUsage(ctx, id, target, targetType)
+		if err != nil {
+			return
+		}
+		d.IsExceed = d.Usage > d.Quota.Value
 	}
-	d.IsExceed = d.Usage > d.Quota.Value
 	return
 }

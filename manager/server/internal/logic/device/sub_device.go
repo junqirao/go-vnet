@@ -49,23 +49,51 @@ func (d *sDevice) CreateSubDevice(ctx context.Context,
 	return
 }
 
-func (d *sDevice) GetSubDeviceById(ctx context.Context, id uint64) (sub *model.SubDevice, err error) {
+func (d *sDevice) GetSubDeviceWithUsageById(ctx context.Context, id uint64) (sub *model.SubDevice, err error) {
 	dev := new(entity.NetworkDevice)
 	err = dao.NetworkDevice.Ctx(ctx).Where(dao.NetworkDevice.Columns().Id, id).Scan(dev)
 	if err != nil {
 		return
 	}
-	sub = &model.SubDevice{
-		Id:        dev.Id,
-		QuotaId:   dev.Quota,
-		DeviceId:  dev.DeviceId,
-		NetworkId: dev.NetworkId,
-		Settings:  &model.SubDeviceSettings{},
-	}
-	if err = json.Unmarshal([]byte(dev.Settings), sub.Settings); err != nil {
+	return d.fillSubDeviceQuotaDetails(ctx, d.buildSubDeviceBrief(ctx, dev))
+}
+
+func (d *sDevice) GetSubDeviceById(ctx context.Context, id uint64) (sub *model.SubDeviceBrief, err error) {
+	dev := new(entity.NetworkDevice)
+	if err = dao.NetworkDevice.Ctx(ctx).Where(dao.NetworkDevice.Columns().Id, id).Scan(dev); err != nil {
 		return
 	}
-	sub.Quota, err = service.Quota().GetQuotaDetails(ctx, sub.QuotaId, sub.DeviceId, quota.TargetTypeDevice)
+	sub = d.buildSubDeviceBrief(ctx, dev)
+	return
+}
+
+func (d *sDevice) buildSubDeviceBrief(ctx context.Context, dev *entity.NetworkDevice) *model.SubDeviceBrief {
+	sub := &model.SubDeviceBrief{
+		Id:          dev.Id,
+		QuotaId:     dev.Quota,
+		DeviceId:    dev.DeviceId,
+		BandwidthId: dev.Bandwidth,
+		NetworkId:   dev.NetworkId,
+		Settings:    &model.SubDeviceSettings{},
+	}
+	if err := json.Unmarshal([]byte(dev.Settings), sub.Settings); err != nil {
+		g.Log().Errorf(ctx, "unmarshal sub device settings error: %v", err)
+	}
+	return sub
+}
+
+func (d *sDevice) fillSubDeviceQuotaDetails(ctx context.Context, brief *model.SubDeviceBrief) (sub *model.SubDevice, err error) {
+	sub = &model.SubDevice{
+		SubDeviceBrief: brief,
+	}
+	sub.Quota, err = service.Quota().GetQuotaDetails(ctx, sub.QuotaId, sub.DeviceId, quota.TargetTypeDeviceTraffic, true)
+	if err != nil {
+		return
+	}
+	sub.Bandwidth, err = service.Quota().GetQuotaDetails(ctx, sub.BandwidthId, sub.DeviceId, quota.TargetTypeDeviceBandwidth, false)
+	if err != nil {
+		return
+	}
 	return
 }
 

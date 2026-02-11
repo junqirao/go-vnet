@@ -20,7 +20,8 @@ type (
 		GetDeviceByName(ctx context.Context, name string) (dev *entity.Device, err error)
 		PrivateKeyBySubDeviceId(ctx context.Context, id uint64, key string) (pri *rsa.PrivateKey, err error)
 		CreateSubDevice(ctx context.Context, deviceId string, networkId string, quota int, settings *model.SubDeviceSettings) (err error)
-		GetSubDeviceById(ctx context.Context, id uint64) (sub *model.SubDevice, err error)
+		GetSubDeviceWithUsageById(ctx context.Context, id uint64) (sub *model.SubDevice, err error)
+		GetSubDeviceById(ctx context.Context, id uint64) (sub *model.SubDeviceBrief, err error)
 		SetSubDeviceQuota(ctx context.Context, subDeviceId uint64, quota int) (err error)
 	}
 )

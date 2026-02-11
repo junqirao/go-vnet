@@ -24,6 +24,7 @@ type NetworkDeviceColumns struct {
 	DeviceId  string //
 	NetworkId string //
 	Quota     string //
+	Bandwidth string // quota id
 	Settings  string //
 }
 
@@ -33,6 +34,7 @@ var networkDeviceColumns = NetworkDeviceColumns{
 	DeviceId:  "device_id",
 	NetworkId: "network_id",
 	Quota:     "quota",
+	Bandwidth: "bandwidth",
 	Settings:  "settings",
 }
 

@@ -15,5 +15,6 @@ type NetworkDevice struct {
 	DeviceId  interface{} //
 	NetworkId interface{} //
 	Quota     interface{} //
+	Bandwidth interface{} // quota id
 	Settings  interface{} //
 }

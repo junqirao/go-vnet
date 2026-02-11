@@ -11,6 +11,7 @@ import (
 
 	"go-vnet/common/quota"
 	"go-vnet/manager/server/internal/dao"
+	"go-vnet/manager/server/internal/model"
 	"go-vnet/manager/server/internal/model/entity"
 )
 
@@ -32,7 +33,7 @@ func (s *sQuota) SubmitUsage(ctx context.Context, id int, target string, targetT
 	return
 }
 
-func (s *sQuota) LoadUsage(ctx context.Context, id int, target string, targetType string) (usage int64, flow []*entity.QuotaFlow, err error) {
+func (s *sQuota) LoadUsage(ctx context.Context, id int, target string, targetType string) (usage int64, flow []*model.QuotaFlowBrief, err error) {
 	q, err := s.GetById(ctx, id)
 	if err != nil {
 		usage = -1
@@ -75,8 +76,12 @@ func (s *sQuota) LoadUsage(ctx context.Context, id int, target string, targetTyp
 		if err = record.Struct(&f); err != nil {
 			return
 		}
-		usage += int64(f.Usage)
-		flow = append(flow, &f)
+		usage += f.Usage
+		flow = append(flow, &model.QuotaFlowBrief{
+			Usage:       f.Usage,
+			RecordStart: f.RecordStart,
+			RecordEnd:   f.RecordEnd,
+		})
 	}
 
 	return
@@ -114,7 +119,7 @@ func (s *sQuota) submitToDatabase(ctx context.Context, id int, target string, ta
 			if timeDiff.Abs() < time.Hour {
 				// Update the existing record: add usage and update record_end
 				_, err = dao.QuotaFlow.Ctx(ctx).Where(dao.QuotaFlow.Columns().Id, flow.Id).Update(g.Map{
-					dao.QuotaFlow.Columns().Usage:     flow.Usage + int(usage),
+					dao.QuotaFlow.Columns().Usage:     flow.Usage + usage,
 					dao.QuotaFlow.Columns().RecordEnd: curr,
 				})
 				return err
@@ -126,7 +131,7 @@ func (s *sQuota) submitToDatabase(ctx context.Context, id int, target string, ta
 	// Cannot merge or no record exists, create a new flow record
 	_, err = dao.QuotaFlow.Ctx(ctx).Insert(&entity.QuotaFlow{
 		Quota:       id,
-		Usage:       int(usage),
+		Usage:       usage,
 		Target:      target,
 		TargetType:  targetType,
 		RecordStart: curr,

@@ -67,7 +67,7 @@ func (s *sNetwork) CreateNetwork(ctx context.Context, network *entity.Network) (
 		ID:                   id,
 		CIDR:                 network.Cidr,
 		MTU:                  network.Mtu,
-		DataTrafficQuota:     int64(q.Value),
+		DataTrafficQuota:     q.Value,
 		DataTrafficQuotaType: q.Type,
 	})
 	if err != nil {
@@ -111,7 +111,7 @@ func (s *sNetwork) StartNetwork(ctx context.Context, networkId string) (err erro
 		ID:                   en.Id,
 		CIDR:                 en.Cidr,
 		MTU:                  en.Mtu,
-		DataTrafficQuota:     int64(q.Value),
+		DataTrafficQuota:     q.Value,
 		DataTrafficQuotaType: q.Type,
 	})
 	if err != nil {

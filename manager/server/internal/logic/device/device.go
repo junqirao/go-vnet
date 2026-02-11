@@ -6,7 +6,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"database/sql"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -20,7 +19,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/junqirao/gocomponents/response"
 
-	"go-vnet/common/quota"
 	"go-vnet/manager/server/internal/dao"
 	"go-vnet/manager/server/internal/model"
 	"go-vnet/manager/server/internal/model/entity"
@@ -111,20 +109,12 @@ func (d *sDevice) GetDeviceInfo(ctx context.Context, deviceId string, sub ...uin
 			return
 		}
 
-		sd := &model.SubDevice{
-			Id:        en.Id,
-			QuotaId:   en.Quota,
-			DeviceId:  en.DeviceId,
-			NetworkId: en.NetworkId,
-			Settings:  &model.SubDeviceSettings{},
-		}
-		if err = json.Unmarshal([]byte(en.Settings), sd.Settings); err != nil {
-			return
-		}
-		sd.Quota, err = service.Quota().GetQuotaDetails(ctx, en.Quota, sd.DeviceId, quota.TargetTypeDevice)
+		var sd *model.SubDevice
+		sd, err = d.fillSubDeviceQuotaDetails(ctx, d.buildSubDeviceBrief(ctx, en))
 		if err != nil {
 			return
 		}
+
 		dev.Sub = append(dev.Sub, sd)
 	}
 	return

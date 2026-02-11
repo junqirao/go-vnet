@@ -9,6 +9,7 @@ type Quota struct {
 	Id     int    `json:"id"     orm:"id"     ` //
 	Name   string `json:"name"   orm:"name"   ` //
 	Type   string `json:"type"   orm:"type"   ` //
+	Unit   string `json:"unit"   orm:"unit"   ` //
 	Value  int    `json:"value"  orm:"value"  ` //
 	Period string `json:"period" orm:"period" ` //
 }

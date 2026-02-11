@@ -23,6 +23,7 @@ type QuotaColumns struct {
 	Id     string //
 	Name   string //
 	Type   string //
+	Unit   string //
 	Value  string //
 	Period string //
 }
@@ -32,6 +33,7 @@ var quotaColumns = QuotaColumns{
 	Id:     "id",
 	Name:   "name",
 	Type:   "type",
+	Unit:   "unit",
 	Value:  "value",
 	Period: "period",
 }

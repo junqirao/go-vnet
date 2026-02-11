@@ -1,9 +1,10 @@
 package quota
 
 const (
-	ResourceTypeMegabytes = "mb"
-	ResourceTypeGigabytes = "gb"
-	ResourceTypeTerabytes = "tb"
+	ResourceTypeMegabytes          = "mb"
+	ResourceTypeGigabytes          = "gb"
+	ResourceTypeTerabytes          = "tb"
+	ResourceTypeMegabytesPerSecond = "mbps"
 )
 
 const (
@@ -12,8 +13,9 @@ const (
 )
 
 const (
-	TargetTypeDevice  = "device"
-	TargetTypeNetwork = "network"
+	TargetTypeDeviceTraffic   = "device_traffic"
+	TargetTypeDeviceBandwidth = "device_bandwidth"
+	TargetTypeNetwork         = "network"
 )
 
 const (

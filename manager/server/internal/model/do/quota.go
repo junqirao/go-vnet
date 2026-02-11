@@ -14,6 +14,7 @@ type Quota struct {
 	Id     interface{} //
 	Name   interface{} //
 	Type   interface{} //
+	Unit   interface{} //
 	Value  interface{} //
 	Period interface{} //
 }

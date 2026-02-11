@@ -42,7 +42,7 @@ func StartAllNetworks() {
 			ID:                   info.Id,
 			CIDR:                 info.Cidr,
 			MTU:                  info.Mtu,
-			DataTrafficQuota:     int64(q.Value),
+			DataTrafficQuota:     q.Value,
 			DataTrafficQuotaType: q.Type,
 		})
 		if err != nil {

@@ -12,6 +12,7 @@ func (c *ControllerV1) CreateQuota(ctx context.Context, req *v1.CreateQuotaReq) 
 	err = service.Quota().Create(ctx, &entity.Quota{
 		Name:   req.Name,
 		Type:   req.Type,
+		Unit:   req.Unit,
 		Value:  req.Value,
 		Period: req.Period,
 	})

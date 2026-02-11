@@ -229,7 +229,7 @@ func (s *Server) handleSession(ss *Session) {
 	ss.network.Router().Register(routeAddress, ss)
 
 	// get quota
-	qa, err := s.ms.GetQuotaAdaptor(ctx, ss.DispatchedDevice.Quota, ss.DispatchedDevice.Id, quota.TargetTypeDevice)
+	qa, err := s.ms.GetQuotaAdaptor(ctx, ss.DispatchedDevice.Quota, ss.DispatchedDevice.Id, quota.TargetTypeDeviceTraffic)
 	if err != nil {
 		return
 	}
@@ -475,12 +475,13 @@ func (s *Server) handshake(ctx context.Context, ss *Session) (err error) {
 				"mtu":  ss.network.MTU,
 			}
 			ss.DispatchedDevice = session.Device{
-				Id:    dev.Id,
-				Name:  dev.Name,
-				CIDR:  dev.CIDR,
-				MTU:   dev.MTU,
-				Quota: dev.Quota,
-				Key:   ss.network.key,
+				Id:        dev.Id,
+				Name:      dev.Name,
+				CIDR:      dev.CIDR,
+				MTU:       dev.MTU,
+				Quota:     dev.Quota,
+				Bandwidth: dev.Bandwidth,
+				Key:       ss.network.key,
 			}
 
 			// build response

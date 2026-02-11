@@ -10,5 +10,6 @@ type NetworkDevice struct {
 	DeviceId  string `json:"deviceId"  orm:"device_id"  ` //
 	NetworkId string `json:"networkId" orm:"network_id" ` //
 	Quota     int    `json:"quota"     orm:"quota"      ` //
+	Bandwidth int    `json:"bandwidth" orm:"bandwidth"  ` // quota id
 	Settings  string `json:"settings"  orm:"settings"   ` //
 }

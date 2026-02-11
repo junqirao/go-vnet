@@ -24,13 +24,18 @@ type (
 		CreatedAt *gtime.Time  `json:"created_at"`
 		Sub       []*SubDevice `json:"sub"`
 	}
+	SubDeviceBrief struct {
+		Id          int                `json:"id"`
+		QuotaId     int                `json:"quota_id"`
+		BandwidthId int                `json:"bandwidth_id"`
+		DeviceId    string             `json:"device_id"`
+		NetworkId   string             `json:"network_id"`
+		Settings    *SubDeviceSettings `json:"settings"`
+	}
 	SubDevice struct {
-		Id        int                `json:"id"`
-		QuotaId   int                `json:"quota_id"`
-		DeviceId  string             `json:"device_id"`
-		NetworkId string             `json:"network_id"`
-		Quota     *QuotaDetail       `json:"quota"`
-		Settings  *SubDeviceSettings `json:"settings"`
+		*SubDeviceBrief
+		Quota     *QuotaDetail `json:"quota"`
+		Bandwidth *QuotaDetail `json:"bandwidth"`
 	}
 	DeviceMode        int
 	SubDeviceSettings struct {
