@@ -15,7 +15,6 @@ type Network struct {
 	Name        interface{} //
 	Cidr        interface{} //
 	Mtu         interface{} //
-	Quota       interface{} //
 	Description interface{} //
 	Extra       interface{} //
 }

@@ -17,6 +17,5 @@ type INetworkV1 interface {
 	StartNetwork(ctx context.Context, req *v1.StartNetworkReq) (res *v1.StartNetworkRes, err error)
 	RemoveNetwork(ctx context.Context, req *v1.RemoveNetworkReq) (res *v1.RemoveNetworkRes, err error)
 	UpdateNetwork(ctx context.Context, req *v1.UpdateNetworkReq) (res *v1.UpdateNetworkRes, err error)
-	SetNetworkQuota(ctx context.Context, req *v1.SetNetworkQuotaReq) (res *v1.SetNetworkQuotaRes, err error)
 	ListSession(ctx context.Context, req *v1.ListSessionReq) (res *v1.ListSessionRes, err error)
 }

@@ -59,16 +59,10 @@ func (s *sNetwork) CreateNetwork(ctx context.Context, network *entity.Network) (
 	if err != nil {
 		return
 	}
-	q, err := service.Quota().GetById(ctx, network.Quota)
-	if err != nil {
-		return "", err
-	}
 	n, err := server.NewNetwork(&server.NetworkConfig{
-		ID:                   id,
-		CIDR:                 network.Cidr,
-		MTU:                  network.Mtu,
-		DataTrafficQuota:     q.Value,
-		DataTrafficQuotaType: q.Type,
+		ID:   id,
+		CIDR: network.Cidr,
+		MTU:  network.Mtu,
 	})
 	if err != nil {
 		return
@@ -102,17 +96,10 @@ func (s *sNetwork) StartNetwork(ctx context.Context, networkId string) (err erro
 		return
 	}
 
-	q, err := service.Quota().GetById(ctx, en.Quota)
-	if err != nil {
-		return
-	}
-
 	n, err := server.NewNetwork(&server.NetworkConfig{
-		ID:                   en.Id,
-		CIDR:                 en.Cidr,
-		MTU:                  en.Mtu,
-		DataTrafficQuota:     q.Value,
-		DataTrafficQuotaType: q.Type,
+		ID:   en.Id,
+		CIDR: en.Cidr,
+		MTU:  en.Mtu,
 	})
 	if err != nil {
 		return
@@ -202,26 +189,5 @@ func (s *sNetwork) ListNetworkInfos(ctx context.Context) (ns []*entity.Network, 
 		_ = record.Struct(&n)
 		ns = append(ns, n)
 	}
-	return
-}
-
-func (s *sNetwork) SetNetworkQuota(ctx context.Context, networkId string, quota int) (err error) {
-	// check network exists
-	_, err = s.GetNetworkById(ctx, networkId)
-	if err != nil {
-		return
-	}
-
-	// update network quota
-	mgr := server.GetNetworkManager()
-	_, ok := mgr.GetNetwork(networkId)
-	if ok {
-		// todo update quota
-	}
-
-	// update quota
-	_, err = dao.Network.Ctx(ctx).Where(dao.Network.Columns().Id, networkId).Update(g.Map{
-		dao.Network.Columns().Quota: quota,
-	})
 	return
 }

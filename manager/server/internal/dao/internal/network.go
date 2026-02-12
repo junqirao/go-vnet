@@ -24,7 +24,6 @@ type NetworkColumns struct {
 	Name        string //
 	Cidr        string //
 	Mtu         string //
-	Quota       string //
 	Description string //
 	Extra       string //
 }
@@ -35,7 +34,6 @@ var networkColumns = NetworkColumns{
 	Name:        "name",
 	Cidr:        "cidr",
 	Mtu:         "mtu",
-	Quota:       "quota",
 	Description: "description",
 	Extra:       "extra",
 }

@@ -24,7 +24,6 @@ type (
 		DeleteNetwork(ctx context.Context, networkId string) (err error)
 		UpdateNetwork(ctx context.Context, networkId string, fields map[string]any) (err error)
 		ListNetworkInfos(ctx context.Context) (ns []*entity.Network, err error)
-		SetNetworkQuota(ctx context.Context, networkId string, quota int) (err error)
 		ListSessionByNetwork(_ context.Context, networkId string) (sessions []*model.Session, err error)
 	}
 )

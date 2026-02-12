@@ -10,7 +10,6 @@ type Network struct {
 	Name        string `json:"name"        orm:"name"        ` //
 	Cidr        string `json:"cidr"        orm:"cidr"        ` //
 	Mtu         int    `json:"mtu"         orm:"mtu"         ` //
-	Quota       int    `json:"quota"       orm:"quota"       ` //
 	Description string `json:"description" orm:"description" ` //
 	Extra       string `json:"extra"       orm:"extra"       ` //
 }

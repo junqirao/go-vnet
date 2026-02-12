@@ -33,17 +33,10 @@ func StartAllNetworks() {
 	}
 	mgr := server.GetNetworkManager()
 	for _, info := range infos {
-		q, err := service.Quota().GetById(ctx, info.Quota)
-		if err != nil {
-			g.Log().Errorf(ctx, "failed to get network quota %s: %s", info.Id, err.Error())
-			continue
-		}
 		n, err := server.NewNetwork(&server.NetworkConfig{
-			ID:                   info.Id,
-			CIDR:                 info.Cidr,
-			MTU:                  info.Mtu,
-			DataTrafficQuota:     q.Value,
-			DataTrafficQuotaType: q.Type,
+			ID:   info.Id,
+			CIDR: info.Cidr,
+			MTU:  info.Mtu,
 		})
 		if err != nil {
 			g.Log().Errorf(ctx, "failed to start network %s: %s", info.Id, err.Error())

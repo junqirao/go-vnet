@@ -68,13 +68,3 @@ type UpdateNetworkReq struct {
 }
 
 type UpdateNetworkRes struct{}
-
-type SetNetworkQuotaReq struct {
-	g.Meta `path:"/network/:network_id/quota" tags:"Network" method:"post" summary:"Set network quota"`
-	middleware.RequiredAuthHeader
-
-	NetworkId string `json:"network_id" v:"required" in:"path"`
-	Quota     int    `json:"quota" v:"required"`
-}
-
-type SetNetworkQuotaRes struct{}
