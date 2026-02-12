@@ -10,6 +10,7 @@ import (
 	"go-vnet/common/metrics"
 	"go-vnet/common/protocol"
 	"go-vnet/common/quota"
+	"go-vnet/common/rate"
 	"go-vnet/common/session"
 )
 
@@ -18,13 +19,15 @@ type (
 		*session.Session
 		session.SendReceiveCloser `json:"-"`
 
-		ref     internalServer
-		sig     chan struct{}
-		cfg     *TransportConfig
-		network *Network
-		quota   *quota.Quota
-		conn    any
-		storage sync.Map
+		ref              internalServer
+		sig              chan struct{}
+		cfg              *TransportConfig
+		network          *Network
+		quota            *quota.Quota
+		bandwidth        int64
+		bandwidthLimiter *rate.SmoothLimiter
+		conn             any
+		storage          sync.Map
 
 		ClientInfo ClientInfo                `json:"client_info"`
 		Metrics    *metrics.TransportMetrics `json:"metrics"`

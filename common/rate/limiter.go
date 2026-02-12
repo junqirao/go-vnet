@@ -108,16 +108,14 @@ func (l *Limiter) Wait() {
 // WaitN 等待直到可以获取n个令牌
 func (l *Limiter) WaitN(n int) {
 	for !l.AllowN(n) {
-		// 计算需要生成n个令牌的时间
 		requestTokens := int64(n) * l.precision
 		tokensToGenerate := requestTokens - atomic.LoadInt64(&l.available)
 		if tokensToGenerate > 0 {
-			waitTime := tokensToGenerate * 1e9 / l.rate
+			// 使用更高精度的计算避免累积误差
+			waitTime := int64(float64(tokensToGenerate) * 1e9 / float64(l.rate))
 			if waitTime > 0 {
 				time.Sleep(time.Duration(waitTime))
 			}
-		} else {
-			time.Sleep(time.Microsecond)
 		}
 	}
 }
@@ -203,4 +201,14 @@ func (l *Limiter) Tokens() float64 {
 	}
 
 	return float64(current) / float64(l.precision)
+}
+
+// Rate 返回限流器的速率（令牌/秒）
+func (l *Limiter) Rate() int {
+	return int(l.rate / l.precision)
+}
+
+// Burst 返回限流器的桶容量（令牌数）
+func (l *Limiter) Burst() int {
+	return int(l.burst / l.precision)
 }

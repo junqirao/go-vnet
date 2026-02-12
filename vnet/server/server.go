@@ -17,6 +17,7 @@ import (
 
 	"go-vnet/common/protocol"
 	"go-vnet/common/quota"
+	"go-vnet/common/rate"
 	"go-vnet/common/session"
 	"go-vnet/vnet/server/consts"
 )
@@ -238,6 +239,13 @@ func (s *Server) handleSession(ss *Session) {
 		ss.CloseWithError(err)
 		return
 	}
+	// get smooth limiter
+	maxSpeed := ss.DispatchedDevice.BandwidthQuota.Value * 1024 * 1024 / 8
+	if maxSpeed > 0 {
+		g.Log().Infof(ctx, "create smooth limiter with max speed: %dbyte/s", maxSpeed)
+		ss.bandwidthLimiter = rate.NewSmoothLimiter(int(maxSpeed))
+	}
+	ss.bandwidth = ss.DispatchedDevice.BandwidthQuota.Value
 
 	var (
 		ep error
@@ -353,7 +361,21 @@ func (s *Server) proxy(ctx context.Context, name string, dstSess, srcSess *Sessi
 		buf = make([]byte, protocol.MaxTransportByteSize)
 		nr  int
 		er  error
+
+		limiter *rate.SmoothLimiter
 	)
+
+	if dstSess.bandwidth > 0 && srcSess.bandwidth > 0 {
+		if dstSess.bandwidth > srcSess.bandwidth {
+			limiter = dstSess.bandwidthLimiter
+		} else {
+			limiter = srcSess.bandwidthLimiter
+		}
+	} else if dstSess.bandwidth > 0 {
+		limiter = dstSess.bandwidthLimiter
+	} else if srcSess.bandwidth > 0 {
+		limiter = srcSess.bandwidthLimiter
+	}
 
 	for {
 		select {
@@ -366,26 +388,27 @@ func (s *Server) proxy(ctx context.Context, name string, dstSess, srcSess *Sessi
 		}
 
 		nr, er = src.Read(buf)
-		srcSess.Metrics.TxBytes.Add(uint64(nr))
-		srcSess.Metrics.TxPackets.Add(1)
-		if err = srcSess.quota.AddUsage(int64(nr)); err != nil {
-			return written, err
-		}
-		if err = srcSess.quota.AddUsage(int64(nr)); err != nil {
-			return written, err
-		}
 		if nr > 0 {
-			// equals dst.Write(buf[0:nr]) when control not set
+			// 写入数据
 			nw, ew := dst.Write(buf[0:nr])
+
+			// 平滑限速：只对实际成功写入的字节进行限速控制
+			if limiter != nil && nw > 0 {
+				limiter.WaitN(nw)
+			}
+
+			// 统计和配额检查
+			srcSess.Metrics.TxBytes.Add(uint64(nr))
+			srcSess.Metrics.TxPackets.Add(1)
+			if err = srcSess.quota.AddUsage(int64(nr)); err != nil {
+				return written, err
+			}
+
 			if err = dstSess.quota.AddUsage(int64(nw)); err != nil {
 				return written, err
 			}
 			dstSess.Metrics.RxBytes.Add(uint64(nw))
 			dstSess.Metrics.RxPackets.Add(1)
-			if err = dstSess.quota.AddUsage(int64(nr)); err != nil {
-				return written, err
-			}
-			// fmt.Printf("proxy %d->%d \n", nr, nw)
 			if ew != nil {
 				_ = dst.Close()
 				return written, ew
