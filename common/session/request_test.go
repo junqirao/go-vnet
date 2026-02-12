@@ -66,13 +66,13 @@ func TestClientBuildRequest(t *testing.T) {
 	}
 	t.Logf("req:\n%s", request)
 
-	header, pl, err := ParseRequest(request)
+	header, encryptedPayload, err := ParseRequest(request)
 	if err != nil {
 		t.Fatal(err)
 		return
 	}
 	t.Logf("Header=%+v", header)
-	t.Logf("payload=%+v", pl)
+	t.Logf("encryptedPayload=%+v", encryptedPayload)
 	block, _ := pem.Decode([]byte(pri))
 	if block == nil {
 		t.Fatal("invalid private key")
@@ -83,7 +83,7 @@ func TestClientBuildRequest(t *testing.T) {
 		t.Fatal(err)
 		return
 	}
-	response, err := HandleRequest(context.Background(), header, privateKey, pl, func(ctx context.Context, req map[string]any) (resp map[string]any, err error) {
+	response, err := HandleRequest(context.Background(), header, privateKey, encryptedPayload, func(ctx context.Context, req map[string]any) (resp map[string]any, err error) {
 		t.Logf("[handler] req=%+v", req)
 		return map[string]any{
 			"ok": true,

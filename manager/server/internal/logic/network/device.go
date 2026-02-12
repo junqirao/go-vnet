@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/util/gconv"
 
 	"go-vnet/common/session"
 	"go-vnet/manager/server/internal/service"
@@ -24,6 +25,16 @@ func (s *sNetwork) AcquireDevice(ctx context.Context, ss *server.Session, subDev
 		return
 	}
 	ss.SetNetwork(network)
+
+	if lastSessionId := gconv.String(payload["session"]); lastSessionId != "" {
+		last, ok := network.SessionById(lastSessionId)
+		if ok {
+			// stop last session, use in reconnect case
+			g.Log().Infof(ctx, "stop last session: %s", lastSessionId)
+			last.Stop()
+			last.Release(errors.New("new session login"))
+		}
+	}
 
 	deviceInfo, err := service.Device().GetDeviceById(ctx, subDevice.DeviceId)
 	if err != nil {

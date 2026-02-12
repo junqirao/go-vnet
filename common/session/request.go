@@ -23,13 +23,13 @@ import (
 type (
 	payload struct {
 		Request map[string]any `json:"request"`
-		Secret  string         `json:"secret"`
 	}
 	Header struct {
 		Timestamp   int64  `json:"timestamp"`
 		Nonce       string `json:"nonce"`
 		SubDeviceId uint64 `json:"sub_device_id"`
 		Key         string `json:"key"`
+		Secret      string `json:"secret"`
 	}
 	RequestClient struct {
 		pub *rsa.PublicKey
@@ -105,29 +105,48 @@ func (c *RequestClient) decode(receive []byte, secret, nonce string, ptr any) (e
 	return
 }
 
-func (c *RequestClient) buildRequest(req map[string]any, h Header, secret string) (data []byte, err error) {
-	pl := payload{
-		Request: req,
-		Secret:  secret,
+func buildMessage(h Header, secret string, data any) (msg []byte, err error) {
+	// AES encrypt data
+	bs, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	encrypted, err := gaes.EncryptCBC(bs, []byte(secret), []byte(h.Nonce))
+	if err != nil {
+		return
 	}
 
 	builder := strings.Builder{}
 	builder.WriteString(toBase64(h))
 	builder.WriteString(".")
-
-	encrypted, err := rsa.EncryptOAEP(
-		sha256.New(),
-		rand.Reader,
-		c.pub,
-		[]byte(toBase64(pl)),
-		nil,
-	)
-	builder.WriteString(base64.StdEncoding.EncodeToString(encrypted))
+	builder.WriteString(gbase64.EncodeToString(encrypted))
 	checksum := gmd5.MustEncryptString(builder.String())
 	builder.WriteString(".")
 	builder.WriteString(checksum)
-	data = []byte(builder.String())
+	msg = []byte(builder.String())
 	return
+}
+
+func (c *RequestClient) buildRequest(req map[string]any, h Header, secret string) (data []byte, err error) {
+	pl := payload{
+		Request: req,
+	}
+
+	// RSA encrypt secret and put it in header.Secret
+	encryptedSecret, err := rsa.EncryptOAEP(
+		sha256.New(),
+		rand.Reader,
+		c.pub,
+		[]byte(secret),
+		nil,
+	)
+	if err != nil {
+		return
+	}
+	h.Secret = base64.StdEncoding.EncodeToString(encryptedSecret)
+
+	// build message
+	return buildMessage(h, secret, pl)
 }
 
 func toBase64(m any) (data string) {
@@ -136,23 +155,35 @@ func toBase64(m any) (data string) {
 	return
 }
 
-func HandleRequest(ctx context.Context, header *Header, pri *rsa.PrivateKey, pl string, handler RequestHandler) (data []byte, err error) {
-	p, err := decrypt(pri, pl)
+func HandleRequest(ctx context.Context, header *Header, pri *rsa.PrivateKey, encryptedPayload string, handler RequestHandler) (data []byte, err error) {
+	// RSA decrypt secret from header.Secret
+	secret, err := rsa.DecryptOAEP(
+		sha256.New(),
+		rand.Reader,
+		pri,
+		gbase64.MustDecodeString(header.Secret),
+		nil,
+	)
 	if err != nil {
+		return
+	}
+
+	// AES decrypt payload
+	encryptedPayloadBs := gbase64.MustDecodeString(encryptedPayload)
+	plBs, err := gaes.DecryptCBC(encryptedPayloadBs, secret, []byte(header.Nonce))
+	if err != nil {
+		return
+	}
+	p := &payload{}
+	if err = json.Unmarshal(plBs, p); err != nil {
+		err = errors.New("failed to decode payload")
 		return
 	}
 
 	resp, err := handler(ctx, p.Request)
-	if err != nil {
-		if resp != nil {
-			data, _ = encode(header, p.Secret, resp)
-		}
-		return
-	}
-
 	// refresh timestamp
 	header.Timestamp = time.Now().Unix()
-	data, err = encode(header, p.Secret, resp)
+	data, _ = buildMessage(*header, string(secret), resp)
 	return
 }
 
@@ -203,26 +234,5 @@ func base64ToPtr(data string, ptr any) (err error) {
 		return
 	}
 	err = json.Unmarshal(bs, &ptr)
-	return
-}
-
-func encode(h *Header, secret string, resp any) (res []byte, err error) {
-	bs, err := json.Marshal(resp)
-	if err != nil {
-		return
-	}
-	encrypted, err := gaes.EncryptCBC(bs, []byte(secret), []byte(h.Nonce))
-	if err != nil {
-		return
-	}
-
-	builder := strings.Builder{}
-	builder.WriteString(toBase64(h))
-	builder.WriteString(".")
-	builder.WriteString(gbase64.EncodeToString(encrypted))
-	checksum := gmd5.MustEncryptString(builder.String())
-	builder.WriteString(".")
-	builder.WriteString(checksum)
-	res = []byte(builder.String())
 	return
 }

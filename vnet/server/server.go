@@ -255,22 +255,12 @@ func (s *Server) handleSession(ss *Session) {
 	go s.handleFuncCallLoop(ss)
 
 	defer func() {
-		// submit usage
-		usage := ss.quota.CommitUsage()
-		// release device
-		err := ss.network.ReleaseDevice(ss.DispatchedDevice.CIDR)
-		if err != nil {
-			g.Log().Errorf(ss.Ctx, "release device error: %s", err.Error())
-		}
-		// unregister session
-		s.sessions.Delete(ss.IP)
-		// unregister router
-		ss.network.Router().UnRegister(routeAddress)
-		// close connection
-		ss.CloseWithError(ep)
+		usage := ss.Release(ep)
 		// delete p2p peer mapping
 		// add version make client re-sync
 		s.peerMappingVersion.Add(1)
+		// unregister session
+		s.sessions.Delete(ss.IP)
 		g.Log().Infof(ss.Ctx, "%s session closed: %s, usage=%dbytes", ss.IP, ss.SessionId, usage)
 	}()
 

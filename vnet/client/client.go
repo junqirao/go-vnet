@@ -37,6 +37,7 @@ const (
 
 type (
 	Client struct {
+		id       string
 		state    State
 		hub      *hub.Hub
 		ctx      context.Context
@@ -144,6 +145,7 @@ func (c *Client) run(ctx context.Context) (err error) {
 		g.Log().Errorf(ctx, "run %s client error: %v", c.cfg.Type, err.Error())
 		return
 	}
+	g.Log().Infof(ctx, "connect success")
 
 	// handshake
 	sess, err := c.handshake(ctx, control)
@@ -214,6 +216,7 @@ func (c *Client) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 	payload["hostname"], _ = os.Hostname()
 	payload["encrypt"] = c.cfg.Encrypt
 	payload["compress"] = c.cfg.Compress
+	payload["session"] = c.id
 
 	resp := &handshakeResponse{}
 	if err = c.rc.Do(ctx, sr, session.NewHeader(link.SubDeviceId, link.Key), payload, resp); err != nil {
@@ -224,6 +227,7 @@ func (c *Client) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 		return
 	}
 	ss = resp.Session
+	c.id = resp.Session.SessionId
 	g.Log().Infof(ctx, "handshake success: id=%v,ip=%v", ss.SessionId, ss.IP)
 	return
 }

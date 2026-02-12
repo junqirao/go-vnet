@@ -81,6 +81,18 @@ func (n *Network) ListSessions() (sessions []*Session) {
 	return
 }
 
+func (n *Network) SessionById(id string) (s *Session, ok bool) {
+	n.sessions.Range(func(key, value any) bool {
+		if v := value.(*Session); v.SessionId == id {
+			s = v
+			ok = true
+			return false
+		}
+		return true
+	})
+	return
+}
+
 func (n *Network) Stop() {
 	// stop all sessions
 	n.sessions.Range(func(key, value any) bool {

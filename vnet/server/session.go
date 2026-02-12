@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/quic-go/quic-go"
 
 	"go-vnet/common/metrics"
@@ -83,4 +84,19 @@ func (s *Session) Network() *Network {
 
 func (s *Session) SetNetwork(n *Network) {
 	s.network = n
+}
+
+func (s *Session) Release(e error) int64 {
+	// submit usage
+	usage := s.quota.CommitUsage()
+	// release device
+	err := s.network.ReleaseDevice(s.DispatchedDevice.CIDR)
+	if err != nil {
+		g.Log().Errorf(s.Ctx, "release device error: %s", err.Error())
+	}
+	// unregister router
+	s.network.Router().UnRegister(fmt.Sprintf("%s/32", s.IP))
+	// close connection
+	s.CloseWithError(e)
+	return usage
 }
