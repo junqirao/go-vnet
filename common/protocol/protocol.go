@@ -299,20 +299,25 @@ func (t *Transport) batchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 					finalDataLen = compressedLen
 				}
 			} else {
-				// Data too large to safely reuse buffer, use temp buffer
-				tempMsg := make([]byte, headerLen)
+				// Use cryptoBuffer[7:7+headerLen] as temp buffer
+				// Safe because compression output will be at cryptoBuffer[dataLen+10:] which doesn't overlap
+				if headerLen > len(*t.cryptoBuffer)-7 {
+					return 0, ErrMessageTooLarge
+				}
+				tempMsg := (*t.cryptoBuffer)[7 : 7+headerLen]
 				tempMsg[0] = TypeBatchTransport
 				binary.BigEndian.PutUint16(tempMsg[1:3], uint16(dataLen))
 				copy(tempMsg[3:], finalData)
 
-				compressedLen, err := t.compressor.Compress(tempMsg, (*t.cryptoBuffer)[7:])
+				compressTarget := (*t.cryptoBuffer)[7+headerLen : len(*t.cryptoBuffer)]
+				compressedLen, err := t.compressor.Compress(tempMsg, compressTarget)
 				if err != nil {
 					return 0, err
 				}
 				// Only use compressed data if it's smaller than original
 				if compressedLen < dataLen {
 					finalType = TypeCompress
-					finalData = (*t.cryptoBuffer)[7 : 7+compressedLen]
+					finalData = compressTarget[:compressedLen]
 					finalDataLen = compressedLen
 				}
 			}
@@ -354,8 +359,9 @@ func (t *Transport) batchWrite(buf [][]byte, sizes []int, headerSize int) (n int
 				return t.writeEncryptedMessage(encryptBuf, encryptedLen)
 			}
 
-			// Buffer not large enough, use temp buffer
-			tempMsg := make([]byte, innerMsgLen)
+			// Buffer not large enough, use t.buffer as temp buffer
+			// Safe to reuse because finalData points to buffer[7:7+dataLen] and innerMsgLen < dataLen
+			tempMsg := (*t.buffer)[:innerMsgLen]
 			tempMsg[0] = finalType
 			binary.BigEndian.PutUint16(tempMsg[1:3], uint16(finalDataLen))
 			copy(tempMsg[3:], finalData)
