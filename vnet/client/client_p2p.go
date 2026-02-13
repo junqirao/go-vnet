@@ -106,7 +106,7 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 		serverAddrInfo.Addrs = append(serverAddrInfo.Addrs, ma)
 	}
 
-	g.Log().Infof(ctx, "connecting to p2p signaling server: %s/p2p/%s", serverAddrInfo.String(), serverAddrInfo.ID)
+	g.Log().Infof(ctx, "connecting to p2p signaling server: %s", serverAddrInfo.ID.ShortString())
 
 	err = c.p2p.host.Connect(c.ctx, *serverAddrInfo)
 	if err != nil {
@@ -126,7 +126,7 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("failed to register p2p peer: %v", err)
 	}
-	g.Log().Infof(ctx, "connected to p2p signaling server, local peer info: %s", peerInfoStr)
+	g.Log().Info(ctx, "successfully connected to p2p signaling server")
 	c.backgroundTryDialP2P()
 	return
 }
