@@ -1,6 +1,6 @@
 module go-vnet
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/gogf/gf/contrib/drivers/mysql/v2 v2.10.0
@@ -15,6 +15,7 @@ require (
 	github.com/sagernet/netlink v0.0.0-20240916134442-83396419aa8b
 	github.com/sagernet/sing-tun v0.7.11
 	golang.org/x/crypto v0.47.0
+	golang.org/x/time v0.12.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -130,7 +131,6 @@ require (
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/telemetry v0.0.0-20251203150158-8fff8a5912fc // indirect
 	golang.org/x/text v0.33.0 // indirect
-	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.40.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
