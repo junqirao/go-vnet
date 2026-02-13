@@ -2,19 +2,16 @@ package hub
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"runtime"
 	"sync"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/google/uuid"
 	tun "github.com/sagernet/sing-tun"
 
 	"go-vnet/common/protocol"
-)
-
-var (
-	ErrCancel = errors.New("cancel")
+	"go-vnet/vnet/server"
 )
 
 func (h *Hub) txLoop() {
@@ -141,7 +138,7 @@ func (h *Hub) txLoop() {
 }
 
 func (h *Hub) readDevice() (err error) {
-	h.Infof("read device loop started")
+	g.Log().Infof(h.ctx, "read device loop started")
 	var (
 		n int
 	)
@@ -175,7 +172,7 @@ func (h *Hub) readDeviceLinux() (err error) {
 		offset = dev.FrontHeadroom()
 	)
 
-	h.Infof("batch read device loop started, batch size: %d, header size: %d",
+	g.Log().Infof(h.ctx, "batch read device loop started, batch size: %d, header size: %d",
 		dev.BatchSize(), offset)
 	for {
 		select {
@@ -211,6 +208,7 @@ type (
 		txEventChan chan *txEvent
 		fallback    protocol.ReadWriter
 		hook        TxHook
+		tryP2P      func(ctx context.Context) error
 	}
 	TxError struct {
 		dst *Destination
@@ -279,6 +277,10 @@ func (c *Destination) PushTxEvent(e *txEvent) (err error) {
 	return
 }
 
+func (c *Destination) SetP2PDialFunc(f func(ctx context.Context) error) {
+	c.tryP2P = f
+}
+
 func (c *Destination) negotiate() (err error) {
 	if c.tx != nil {
 		return
@@ -288,7 +290,7 @@ func (c *Destination) negotiate() (err error) {
 		return
 	}
 	ups := tx.Upstream()
-	c.ref.logger.Infof(c.ctx, "[TX] send negotiate packet: %s", c.ip)
+	g.Log().Infof(c.ctx, "[TX] send negotiate packet: %s", c.ip)
 	_, err = ups.Write([]byte(c.ip))
 	if err != nil {
 		return
@@ -297,14 +299,24 @@ func (c *Destination) negotiate() (err error) {
 	if _, err = ups.Read(buf[:]); err != nil {
 		return
 	}
-	if buf[0] != 1 {
-		c.ref.logger.Infof(c.ctx, "[TX] negotiate failed: %d", buf[0])
+	switch buf[0] {
+	case server.NegotiateResponseQuotaExceeded:
+		// try p2p
+		g.Log().Infof(c.ctx, "[TX] negotiate quota exceeded, try dial p2p to dst: %s", c.ip)
+		if c.tryP2P != nil {
+			return c.tryP2P(c.ctx)
+		}
+		err = fmt.Errorf("no connection available to destination: %s", c.ip)
+		return
+	case server.NegotiateResponseSuccess:
+		g.Log().Infof(c.ctx, "[TX] negotiate success")
+		c.tx = tx
+		c.hook.AfterDial(c.ctx, c)
+		return
+	default:
+		g.Log().Infof(c.ctx, "[TX] negotiate failed: %d", buf[0])
 		return fmt.Errorf("negotiate failed: %d", buf[0])
 	}
-	c.ref.logger.Infof(c.ctx, "[TX] negotiate success")
-	c.tx = tx
-	c.hook.AfterDial(c.ctx, c)
-	return
 }
 
 func (c *Destination) txLoop() {
@@ -316,9 +328,9 @@ func (c *Destination) txLoop() {
 	)
 
 	defer func() {
-		c.ref.logger.Infof(c.ctx, "[TX] txLoop exit: dst=%s,err=%v", c.ip, err)
+		g.Log().Infof(c.ctx, "[TX] txLoop exit: dst=%s,err=%v", c.ip, err)
 	}()
-	c.ref.logger.Infof(c.ctx, "[TX] txLoop start: dst=%s", c.ip)
+	g.Log().Infof(c.ctx, "[TX] txLoop start: dst=%s", c.ip)
 
 	for {
 		select {
@@ -343,10 +355,7 @@ func (c *Destination) txLoop() {
 
 			_, err = c.tx.BatchWrite(buf[:batch], sizes[:batch], c.ref.cfg.HeaderSize)
 			if err != nil {
-				c.OnError(c.ctx, &TxError{
-					dst: c,
-					Err: err,
-				})
+				c.fallbackOrReportError(err)
 			}
 			for i := 0; i < batch; i++ {
 				c.ref.putTxEvent(evs[i])
@@ -365,9 +374,9 @@ func (c *Destination) txLoopN() {
 	maxBuf := c.ref.cfg.MaxTxEventBuf
 
 	defer func() {
-		c.ref.logger.Infof(c.ctx, "[TX] txLoopN exit: dst=%s,err=%v", c.ip, err)
+		g.Log().Infof(c.ctx, "[TX] txLoopN exit: dst=%s,err=%v", c.ip, err)
 	}()
-	c.ref.logger.Infof(c.ctx, "[TX] txLoopN start: dst=%s", c.ip)
+	g.Log().Infof(c.ctx, "[TX] txLoopN start: dst=%s", c.ip)
 
 	for {
 		select {
@@ -449,7 +458,9 @@ func (c *Destination) ReplaceTx(fn func(old protocol.ReadWriter) (new protocol.R
 	}
 	newOne, replaced := fn(c.tx)
 	if replaced {
-		c.fallback = c.tx
+		if c.tx != nil {
+			c.fallback = c.tx
+		}
 		c.tx = newOne
 	}
 	return
@@ -471,5 +482,8 @@ func (c *Destination) fallbackOrReportError(err error) {
 }
 
 func (c *Destination) Type() string {
+	if c.tx == nil {
+		return ""
+	}
 	return c.tx.Type()
 }

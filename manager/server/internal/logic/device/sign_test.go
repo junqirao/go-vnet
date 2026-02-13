@@ -1,0 +1,39 @@
+package device
+
+import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/pem"
+	"testing"
+
+	"github.com/gogf/gf/v2/encoding/gbase64"
+)
+
+func TestSignature(t *testing.T) {
+	data := `-----BEGIN RSA PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtC2+U6YF+4sNRJhf70Kq
+LGF85x4qyWCLHt4R0np9Mp04S83YCLfJLX4wIGjIryiT/Kw1jgJDyikl3izJHnko
+bGRJ6RdlsIc6cYVqZaloT2Hnaw+0v2J6DTMeRCTAMgiKuJp6IzBldZYe0SFy6Iu5
+ZJVfQnTNofmSTY9LY3BJJD84Nr1CFs+Z1BFPLi0OYI84Ov2Srs+VJxDdmmxDlINs
+kgX8IxdmxH5q5HzPu46C0Pe+AgkIolhJoumI81g1UejXnruLO6oQXgtmFhNppPv0
+i+KYO4a3reQX7jig1QqVl8X8tlK9BaQD+dflnIE0MfH/VU8zxDxFD7e+a4l2ieyC
+hwIDAQAB
+-----END RSA PUBLIC KEY-----
+`
+	block, _ := pem.Decode([]byte(data))
+	if block == nil {
+		t.Fatal("failed to decode PEM block")
+	}
+	publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bs, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, publicKey.(*rsa.PublicKey), []byte("123456"), []byte("device"))
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+	t.Log(gbase64.EncodeToString(bs))
+}

@@ -6,11 +6,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/quic-go/quic-go"
 
-	"go-vnet/common/auth"
 	"go-vnet/common/config"
-	"go-vnet/common/logger"
 )
 
 var (
@@ -18,12 +17,14 @@ var (
 		return &Config{
 			MappedConfig: config.NewMappedConfig(),
 			Type:         TypeQuic,
-			MTU:          1400,
 			P2P: P2PConfig{
-				Enabled:     true,
-				ListenAddr:  []string{},
-				TryInterval: 30,
+				Enabled:        true,
+				ListenAddr:     []string{},
+				TryInterval:    30,
+				ActiveDialPeer: false,
 			},
+			Encrypt:  true,
+			Compress: false,
 		}
 	}
 )
@@ -37,21 +38,22 @@ type (
 	Type   string
 	Config struct {
 		config.MappedConfig
-		authPayload map[string]any
 
-		NetworkId          string      `yaml:"network_id" json:"network_id"`
-		Port               int         `yaml:"port" json:"port"`
-		Address            string      `yaml:"address" json:"address"`
-		Type               Type        `yaml:"type" json:"type"`
-		MTU                int         `yaml:"mtu" json:"mtu"`
-		InsecureSkipVerify bool        `yaml:"insecure_skip_verify" json:"insecure_skip_verify"`
-		Auth               auth.Config `yaml:"auth" json:"auth"`
-		P2P                P2PConfig   `yaml:"p2p" json:"p2p"`
+		Link               string    `yaml:"link" json:"link"`
+		PublicKey          string    `yaml:"public_key" json:"public_key"`
+		Port               int       `yaml:"port" json:"port"`
+		Address            string    `yaml:"address" json:"address"`
+		Type               Type      `yaml:"type" json:"type"`
+		InsecureSkipVerify bool      `yaml:"insecure_skip_verify" json:"insecure_skip_verify"`
+		P2P                P2PConfig `yaml:"p2p" json:"p2p"`
+		Compress           bool      `json:"compress"`
+		Encrypt            bool      `json:"encrypt"`
 	}
 	P2PConfig struct {
-		Enabled     bool     `yaml:"enabled" json:"enabled"`
-		ListenAddr  []string `yaml:"listen_addr" json:"listen_addr"`
-		TryInterval int      `yaml:"try_interval" json:"try_interval"`
+		Enabled        bool     `yaml:"enabled" json:"enabled"`
+		ListenAddr     []string `yaml:"listen_addr" json:"listen_addr"`
+		TryInterval    int      `yaml:"try_interval" json:"try_interval"`
+		ActiveDialPeer bool     `yaml:"active_dial_peer" json:"active_dial_peer"`
 	}
 	ConfigOption func(cfg *Config)
 )
@@ -89,12 +91,6 @@ func WithAddress(s string) ConfigOption {
 	}
 }
 
-func WithAuthenticationPayload(payload map[string]any) ConfigOption {
-	return func(cfg *Config) {
-		cfg.authPayload = payload
-	}
-}
-
 func WithInsecureSkipVerify(b bool) ConfigOption {
 	return func(cfg *Config) {
 		cfg.InsecureSkipVerify = b
@@ -111,8 +107,7 @@ const (
 func WithQuicClientConfig(c *quic.Config) ConfigOption {
 	return func(cfg *Config) {
 		if cfg.Type != TypeQuic {
-			config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger).
-				Errorf(context.Background(), "WithQuicClientConfig is not working for non-quic client")
+			g.Log().Errorf(context.Background(), "WithQuicClientConfig is not working for non-quic client")
 			return
 		}
 		cfg.Set(ConfigKeyQuicConfig, c)
@@ -124,8 +119,7 @@ func WithQuicClientConfig(c *quic.Config) ConfigOption {
 func WithQuicClientBufferSize(size int) ConfigOption {
 	return func(cfg *Config) {
 		if cfg.Type != TypeQuic {
-			config.GetMappedConfig[logger.Logger](cfg, ConfigKeyLogger, logger.DefaultLogger).
-				Errorf(context.Background(), "WithQuicClientBufferSize is not working for non-quic client")
+			g.Log().Errorf(context.Background(), "WithQuicClientBufferSize is not working for non-quic client")
 			return
 		}
 		cfg.Set(ConfigKeyQuicClientBufferSize, size)

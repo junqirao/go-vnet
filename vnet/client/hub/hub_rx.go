@@ -5,6 +5,7 @@ import (
 	"io"
 	"runtime"
 
+	"github.com/gogf/gf/v2/frame/g"
 	tun "github.com/sagernet/sing-tun"
 
 	"go-vnet/common/protocol"
@@ -32,7 +33,7 @@ func (h *Hub) rxLoop() {
 }
 
 func (h *Hub) writeDeviceLinux() {
-	h.Infof("batch write device loop started")
+	g.Log().Infof(h.ctx, "batch write device loop started")
 	dev := h.dev.(tun.LinuxTUN)
 	for event := range h.rxEventChan {
 		_, err := dev.BatchWrite(event.buf[:event.n], h.cfg.HeaderSize)
@@ -45,7 +46,7 @@ func (h *Hub) writeDeviceLinux() {
 }
 
 func (h *Hub) writeDevice() {
-	h.Infof("write device loop started")
+	g.Log().Infof(h.ctx, "write device loop started")
 	for event := range h.rxEventChan {
 		for i := 0; i < event.n; i++ {
 			// fmt.Printf("rx->%v\n", event.buf[i][:event.sizes[i]])

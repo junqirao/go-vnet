@@ -4,19 +4,18 @@ import (
 	"context"
 	"runtime"
 
+	"github.com/gogf/gf/v2/frame/g"
 	tun "github.com/sagernet/sing-tun"
 
-	"go-vnet/common/logger"
 	"go-vnet/common/protocol"
 	"go-vnet/common/router"
 )
 
 type (
 	Hub struct {
-		ctx    context.Context
-		cfg    Config
-		sig    chan struct{}
-		logger logger.Logger
+		ctx context.Context
+		cfg Config
+		sig chan struct{}
 		// rx
 		rxEventPool *EventPool[*rxEvent]
 		rxEventChan chan *rxEvent
@@ -54,7 +53,6 @@ func NewHub(cfg Config, dev tun.Tun) *Hub {
 		cfg:         cfg,
 		dev:         dev,
 		sig:         make(chan struct{}),
-		logger:      logger.DefaultLogger,
 		router:      router.NewRouter(),
 		rxEventChan: make(chan *rxEvent, cfg.MaxRxEventBuf),
 		txEventChan: make(chan *txEvent, cfg.MaxTxEventBuf),
@@ -101,9 +99,9 @@ func (h *Hub) Stop(reason ...string) {
 	}
 	close(h.sig)
 	if len(reason) > 0 {
-		h.logger.Errorf(h.ctx, "hub stopped reason: %s", reason[0])
+		g.Log().Errorf(h.ctx, "hub stopped reason: %s", reason[0])
 	} else {
-		h.logger.Infof(h.ctx, "hub stopped")
+		g.Log().Infof(h.ctx, "hub stopped")
 	}
 }
 

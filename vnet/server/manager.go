@@ -4,6 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+
+	"github.com/google/uuid"
+)
+
+const (
+	MessageTypeFuncCall    byte = 0x1
+	MessageTypeServerEvent byte = 0x2
 )
 
 type (
@@ -15,19 +22,29 @@ type (
 
 type (
 	FuncCallRequest struct {
-		FuncName string         `json:"func_name"`
-		Args     map[string]any `json:"args"`
+		RequestId string         `json:"request_id"`
+		FuncName  string         `json:"func_name"`
+		Args      map[string]any `json:"args"`
 	}
 	FuncCallResponse struct {
-		Code    int     `json:"code"`
-		Data    any     `json:"data"`
-		Message string  `json:"message"`
-		Cost    float64 `json:"cost"`
+		RequestId string  `json:"request_id"`
+		Code      int     `json:"code"`
+		Data      any     `json:"data"`
+		Message   string  `json:"message"`
+		Cost      float64 `json:"cost"`
 	}
-	FuncCallHandler func(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error)
+	FuncCallHandler func(ctx context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error)
 	FuncCallInfo    struct {
 		Name string
 		Fn   FuncCallHandler
+	}
+)
+
+type (
+	ServersideEvent struct {
+		EventId string `json:"event_id"`
+		Event   string `json:"event"`
+		Data    any    `json:"data"`
 	}
 )
 
@@ -38,22 +55,26 @@ func NewManager() *Manager {
 	return m
 }
 
-func (manager *Manager) Close() error {
-	close(manager.sig)
+func (m *Manager) Close() error {
+	close(m.sig)
 	return nil
 }
 
-func (manager *Manager) handleFuncCall(ctx context.Context, session *serverSession, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
-	value, ok := manager.functions.Load(req.FuncName)
+func (m *Manager) handleFuncCall(ctx context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
+	value, ok := m.functions.Load(req.FuncName)
 	if ok {
 		if f, ok := value.(FuncCallHandler); ok {
-			return f(ctx, session, req)
+			resp, err = f(ctx, session, req)
+			if resp != nil {
+				resp.RequestId = req.RequestId
+			}
+			return
 		}
 	}
-	return &FuncCallResponse{Code: -1, Message: "unknown func name"}, nil
+	return &FuncCallResponse{RequestId: req.RequestId, Code: -1, Message: "unknown func name"}, nil
 }
 
-func (manager *Manager) HandleEvent(ctx context.Context, session *serverSession, data []byte) (err error) {
+func (m *Manager) HandleFuncCallEvent(ctx context.Context, session *Session, data []byte) (err error) {
 	var (
 		req  FuncCallRequest
 		resp *FuncCallResponse
@@ -63,16 +84,25 @@ func (manager *Manager) HandleEvent(ctx context.Context, session *serverSession,
 	if err != nil {
 		return
 	}
-	resp, err = manager.handleFuncCall(ctx, session, &req)
+	resp, err = m.handleFuncCall(ctx, session, &req)
 	if err != nil {
 		return
 	}
-	respBytes, _ := json.Marshal(resp)
-	return session.Send(respBytes)
+	bs, _ := json.Marshal(resp)
+	return session.Send(append([]byte{MessageTypeFuncCall}, bs...))
 }
 
-func (manager *Manager) RegisterHandler(info ...FuncCallInfo) {
+func (m *Manager) RegisterHandler(info ...FuncCallInfo) {
 	for _, callInfo := range info {
-		manager.functions.Store(callInfo.Name, callInfo.Fn)
+		m.functions.Store(callInfo.Name, callInfo.Fn)
 	}
+}
+
+func (m *Manager) PushEvent(session *Session, event string, data any) error {
+	bs, _ := json.Marshal(ServersideEvent{
+		EventId: uuid.NewString(),
+		Event:   event,
+		Data:    data,
+	})
+	return session.Send(append([]byte{MessageTypeServerEvent}, bs...))
 }

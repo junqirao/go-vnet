@@ -3,28 +3,25 @@ package server
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 
-	"github.com/multiformats/go-multiaddr"
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/quic-go/quic-go"
 
-	"go-vnet/common/auth"
 	"go-vnet/common/config"
-	"go-vnet/common/logger"
+	"go-vnet/common/protocol"
 )
 
 var (
 	defaultServerConfig = func() *Config {
 		return &Config{
 			MappedConfig: config.NewMappedConfig(),
-			MTU:          1400,
 		}
 	}
 )
 
 const (
-	TypeQuic Type = "quic"
-	TypeTCP  Type = "tcp"
+	TypeQuic Type = protocol.TransportTypeQuic
+	TypeTCP  Type = protocol.TransportTypeTcp
 )
 
 type (
@@ -33,8 +30,6 @@ type (
 		config.MappedConfig
 		Servers []*TransportConfig `json:"servers"`
 		P2P     *P2PConfig         `json:"p2p"`
-		MTU     int                `json:"mtu"`
-		Auth    auth.Config        `json:"auth"`
 	}
 	ConfigOption    func(cfg *Config)
 	TransportConfig struct {
@@ -47,28 +42,14 @@ type (
 	P2PConfig struct {
 		Addresses []SignalingServerAddress `json:"addresses"`
 	}
-	RelayConfig struct {
-		IP        string `json:"ip"`
-		Transport string `json:"transport"`
-		Port      int    `json:"port"`
-		Version   string `json:"version"` // only for quic
+	NetworkLink struct {
+		SubDeviceId uint64 `json:"sub_device_id"`
+		Key         string `json:"key"`
 	}
 )
 
 func (t Type) String() string {
 	return string(t)
-}
-
-func (c RelayConfig) MultiAddr(network ...string) multiaddr.Multiaddr {
-	n := "ip4"
-	if network != nil {
-		n = network[0]
-	}
-	str := fmt.Sprintf("/%s/%s/%s/%d", n, c.IP, c.Transport, c.Port)
-	if c.Version != "" {
-		str += "/" + c.Version
-	}
-	return multiaddr.StringCast(str)
 }
 
 func NewConfig(opts ...ConfigOption) *Config {
@@ -82,40 +63,19 @@ func NewConfig(opts ...ConfigOption) *Config {
 // -------------------- OPTIONS --------------------
 
 const (
-	ConfigKeyTLS           = "tls"
-	ConfigKeyLogger        = "logger"
-	ConfigKeyAuthChainFunc = "auth_chain_func"
+	ConfigKeyTLS = "tls"
 )
-
-func WithAuthConfig(a auth.Config) ConfigOption {
-	return func(cfg *Config) {
-		cfg.Auth = a
-	}
-}
 
 func WithConfig(config *Config) ConfigOption {
 	return func(cfg *Config) {
 		cfg.MappedConfig = config.MappedConfig
 		cfg.Servers = config.Servers
-		cfg.MTU = config.MTU
 	}
 }
 
 func WithTLSConfig(t *tls.Config) ConfigOption {
 	return func(cfg *Config) {
 		cfg.Set(ConfigKeyTLS, t)
-	}
-}
-
-func WithLogger(l logger.Logger) ConfigOption {
-	return func(cfg *Config) {
-		cfg.Set(ConfigKeyLogger, l)
-	}
-}
-
-func WithAuthenticationChainFunc(f ...auth.ServerAuthChainFunc) ConfigOption {
-	return func(cfg *Config) {
-		cfg.Set(ConfigKeyAuthChainFunc, f)
 	}
 }
 
@@ -127,9 +87,7 @@ const (
 
 func (t *TransportConfig) WithQuicConfig(c *quic.Config) *TransportConfig {
 	if t.Type != TypeQuic {
-		config.GetMappedConfig[logger.Logger](t, ConfigKeyLogger,
-			logger.DefaultLogger).
-			Errorf(context.Background(), "WithQuicConfig is not working for non-quic transportServer")
+		g.Log().Errorf(context.Background(), "WithQuicConfig is not working for non-quic transportServer")
 		return t
 	}
 	t.Set(ConfigKeyQuicConfig, c)

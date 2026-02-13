@@ -2,45 +2,28 @@ package main
 
 import (
 	"context"
-	"fmt"
 
-	"go-vnet/common/auth"
 	"go-vnet/common/config"
-	"go-vnet/common/logger"
+	web "go-vnet/manager/server"
 	"go-vnet/vnet/server"
-	"go-vnet/vnet/server/network"
 )
 
 func main() {
 	// create test network
-	n, err := network.NewNetwork(&network.Config{
-		ID:         "test",
-		CIDR:       "192.168.98.0/24",
-		RouterData: nil,
-		MTU:        1392,
-	})
-	if err != nil {
-		panic(err)
-	}
+	// n, err := server.NewNetwork(&server.NetworkConfig{
+	// 	ID:         "test",
+	// 	CIDR:       "192.168.98.0/24",
+	// 	RouterData: nil,
+	// 	MTU:        1392,
+	// })
+	// if err != nil {
+	// 	panic(err)
+	// }
 
 	// register network
-	network.GetManager().RegisterNetwork(n)
+	// server.GetNetworkManager().RegisterNetwork(n)
 
-	l := logger.NewStdLogger(nil, "transport_server")
-	cfg := server.NewConfig(
-		server.WithLogger(l),
-		server.WithAuthConfig(auth.Config{
-			Type:     auth.TypeSimplePassword,
-			Password: "",
-		}),
-		server.WithAuthenticationChainFunc(func(ctx context.Context, request map[string]any, resp map[string]any) (err error) {
-			fmt.Println("------------")
-			fmt.Println("Auth Chain Func")
-			fmt.Printf("%+v\n", request)
-			fmt.Println("------------")
-			return nil
-		}),
-	)
+	cfg := server.NewConfig()
 	cfg.Servers = append(cfg.Servers,
 		&server.TransportConfig{
 			MappedConfig: config.NewMappedConfig(),
@@ -66,9 +49,20 @@ func main() {
 			},
 		},
 	}
+
+	// run server
 	s := server.NewServer(cfg)
-	err = s.Serve(context.Background())
-	if err != nil {
-		panic(err)
-	}
+	go func() {
+		err := s.Serve(context.Background())
+		if err != nil {
+			panic(err)
+		}
+	}()
+	// register manager server
+	s.RegisterManager(web.ManagerServer())
+
+	// start all networks
+	web.StartAllNetworks()
+	// run web server
+	web.RunServer()
 }

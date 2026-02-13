@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/multiformats/go-multiaddr"
-
-	"go-vnet/common/logger"
 )
 
 type (
@@ -23,7 +22,6 @@ type (
 		ctx       context.Context
 		config    *P2PConfig
 		ref       *Server
-		logger    logger.Logger
 		host      host.Host
 		addresses []string
 		hostId    string
@@ -50,7 +48,6 @@ func newP2PSignalingServer(config *P2PConfig, ref *Server) *p2pSignalingServer {
 	return &p2pSignalingServer{
 		config: config,
 		ref:    ref,
-		logger: ref.logger,
 	}
 }
 
@@ -82,14 +79,14 @@ func (s *p2pSignalingServer) Run(ctx context.Context) (err error) {
 	}
 	s.hostId = s.host.ID().String()
 
-	s.logger.Infof(ctx, "p2p signaling server started: %s", s.ID())
-	s.logger.Infof(ctx, "p2p signaling server addresses: \n%v",
+	g.Log().Infof(ctx, "p2p signaling server started: %s", s.ID())
+	g.Log().Infof(ctx, "p2p signaling server addresses: \n%v",
 		strings.Join(s.Addresses(), "\n"))
 	return
 }
 
 func (s *p2pSignalingServer) Close() (err error) {
-	s.logger.Infof(s.ctx, "p2p signaling server stopped")
+	g.Log().Infof(s.ctx, "p2p signaling server stopped")
 	return s.host.Close()
 }
 

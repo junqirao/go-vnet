@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/panjf2000/ants/v2"
 
 	"go-vnet/common/session"
@@ -63,13 +64,13 @@ func (s *tcpServer) acceptLoop(ctx context.Context) {
 		default:
 			conn, err := s.listener.Accept()
 			if err != nil {
-				s.logger.Errorf(ctx, "%s accept connection error: %s", s.cfg.Name, err.Error())
+				g.Log().Errorf(ctx, "%s accept connection error: %s", s.cfg.Name, err.Error())
 				continue
 			}
 			err = s.workerPool.Submit(func() {
 				err = s.dispatch(ctx, conn)
 				if err != nil {
-					s.logger.Errorf(ctx, "dispatch connection error: %s", err.Error())
+					g.Log().Errorf(ctx, "dispatch connection error: %s", err.Error())
 					// drop err if full
 					select {
 					case s.acceptErr <- err:
@@ -78,7 +79,7 @@ func (s *tcpServer) acceptLoop(ctx context.Context) {
 				}
 			})
 			if err != nil {
-				s.logger.Errorf(ctx, "drop connection, on submit error: %s", err.Error())
+				g.Log().Errorf(ctx, "drop connection, on submit error: %s", err.Error())
 				_ = conn.Close()
 			}
 		}
@@ -107,13 +108,13 @@ func (s *tcpServer) dispatch(ctx context.Context, conn net.Conn) (err error) {
 		err = fmt.Errorf("read first pkg timeout. remote=%v", conn.RemoteAddr().String())
 		return
 	case first = <-ch:
-		s.logger.Infof(ctx, "dispatch connection, packet=%v", first)
+		g.Log().Infof(ctx, "dispatch connection, packet=%v", first)
 	}
 
 	defer func() {
 		// send back ack or close
 		if err != nil {
-			s.logger.Errorf(ctx, "dispatch connection error: %s", err.Error())
+			g.Log().Errorf(ctx, "dispatch connection error: %s", err.Error())
 			_ = conn.Close()
 		}
 		_, err = conn.Write([]byte{1})
@@ -121,7 +122,7 @@ func (s *tcpServer) dispatch(ctx context.Context, conn net.Conn) (err error) {
 
 	switch first[0] {
 	case 1:
-		s.logger.Infof(ctx, "dispatch control connection, remote=%s", conn.RemoteAddr().String())
+		g.Log().Infof(ctx, "dispatch control connection, remote=%s", conn.RemoteAddr().String())
 		s.acceptCh <- conn
 	case 4:
 		src := net.IPv4(first[1], first[2], first[3], first[4]).String()
@@ -133,14 +134,14 @@ func (s *tcpServer) dispatch(ctx context.Context, conn net.Conn) (err error) {
 			return
 		}
 
-		s.logger.Infof(ctx, "dispatch transport connection, dst=%s", dst)
+		g.Log().Infof(ctx, "dispatch transport connection, dst=%s", dst)
 		s.transportConn.Store(dst, conn)
 
-		sess := v.(*serverSession)
+		sess := v.(*Session)
 		if src == dst {
 			// rx only
 			sess.storage.Store("rx", conn)
-			s.logger.Infof(ctx, "dispatch rx connection, src=%s,session=%s", src, sess.SessionId)
+			g.Log().Infof(ctx, "dispatch rx connection, src=%s,session=%s", src, sess.SessionId)
 		} else {
 			// tx
 			v, _ = s.txChs.LoadOrStore(src, make(chan net.Conn))
@@ -157,7 +158,7 @@ func (s *tcpServer) dispatch(ctx context.Context, conn net.Conn) (err error) {
 	return
 }
 
-func (s *tcpServer) Accept(ctx context.Context) (ss *serverSession, err error) {
+func (s *tcpServer) Accept(ctx context.Context) (ss *Session, err error) {
 	select {
 	case <-s.Server.sig:
 		err = errors.New("server closed")
@@ -174,7 +175,7 @@ func (s *tcpServer) Close() error {
 	return s.listener.Close()
 }
 
-func (s *tcpServer) AcceptTransport(session *serverSession) (rwc io.ReadWriteCloser, err error) {
+func (s *tcpServer) AcceptTransport(session *Session) (rwc io.ReadWriteCloser, err error) {
 	v, _ := s.txChs.LoadOrStore(session.IP, make(chan net.Conn))
 	ch, ok := v.(chan net.Conn)
 	if !ok {
@@ -196,7 +197,7 @@ func (s *tcpServer) AcceptTransport(session *serverSession) (rwc io.ReadWriteClo
 	}
 }
 
-func (s *tcpServer) GetDstTransportWriter(_ *serverSession, dst *serverSession) (rwc io.ReadWriteCloser, err error) {
+func (s *tcpServer) GetDstTransportWriter(_ *Session, dst *Session) (rwc io.ReadWriteCloser, err error) {
 	v, ok := dst.storage.Load("rx")
 	if !ok {
 		err = fmt.Errorf("transport connection not found: refer=%s", dst.IP)

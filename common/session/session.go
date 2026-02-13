@@ -5,10 +5,6 @@ import (
 	"fmt"
 )
 
-const (
-	TypeQuic Type = "quic"
-)
-
 type (
 	SendReceiveCloser interface {
 		Closer
@@ -18,11 +14,10 @@ type (
 	Closer interface {
 		CloseWithError(err error)
 	}
-	Type    string
 	Session struct {
 		Ctx              context.Context `json:"-"`
 		IP               string          `json:"ip"`
-		Type             Type            `json:"type"`
+		Type             string          `json:"type"`
 		SessionId        string          `json:"session_id"`
 		NetworkId        string          `json:"network_id"`
 		NetworkInfo      map[string]any  `json:"network_info"`
@@ -39,16 +34,21 @@ type (
 		cause error
 	}
 	Device struct {
-		Id   string `json:"id"`
-		Name string `json:"name"`
-		CIDR string `json:"cidr"`
-		MTU  int    `json:"mtu"`
+		Id               string `json:"id"`                 // device id
+		Name             string `json:"name"`               // name
+		CIDR             string `json:"cidr"`               // cidr
+		MTU              int    `json:"mtu"`                // mtu
+		Key              string `json:"key,omitempty"`      // network encrypt key
+		DataTrafficQuota *Quota `json:"data_traffic_quota"` // data traffic quota
+		BandwidthQuota   *Quota `json:"bandwidth_quota"`    // bandwidth quota
+	}
+	Quota struct {
+		Id     int    `json:"id"`
+		Unit   string `json:"unit"`
+		Value  int64  `json:"value"`
+		Period string `json:"period"`
 	}
 )
-
-func (t Type) String() string {
-	return string(t)
-}
 
 func NewError(msg string, code int) *Error {
 	return &Error{
@@ -79,5 +79,17 @@ func (e *Error) Clone() *Error {
 		msg:   e.msg,
 		code:  e.code,
 		cause: e.cause,
+	}
+}
+
+func (d *Device) Clone() *Device {
+	return &Device{
+		Id:               d.Id,
+		Name:             d.Name,
+		CIDR:             d.CIDR,
+		MTU:              d.MTU,
+		Key:              d.Key,
+		DataTrafficQuota: d.DataTrafficQuota,
+		BandwidthQuota:   d.BandwidthQuota,
 	}
 }
