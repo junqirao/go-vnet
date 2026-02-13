@@ -338,7 +338,7 @@ func (s *Server) handleFuncCallLoop(ss *Session) {
 			if err != nil {
 				return
 			}
-			err = s.manager.HandleEvent(ss.Ctx, ss, datagram)
+			err = s.manager.HandleFuncCallEvent(ss.Ctx, ss, datagram)
 			if err != nil {
 				g.Log().Errorf(ss.Ctx, "handle func call error: %s", err.Error())
 			}

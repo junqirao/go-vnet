@@ -271,6 +271,9 @@ func (c *Client) ReleaseAll() {
 		c.p2p.host = nil
 	}
 	c.p2p.hostId = ""
+	if c.manager != nil {
+		c.manager.Close()
+	}
 	c.manager = nil
 	c.session = nil
 	c.ctx = nil
