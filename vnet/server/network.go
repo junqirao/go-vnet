@@ -9,7 +9,6 @@ import (
 	"github.com/gogf/gf/v2/util/grand"
 
 	"go-vnet/common/addresses"
-	"go-vnet/common/flow"
 	"go-vnet/common/metrics"
 	"go-vnet/common/router"
 	"go-vnet/common/session"
@@ -22,7 +21,6 @@ type (
 		sessions      sync.Map                  // cidr : *Session
 		router        *router.Router
 		pool          *addresses.IPAllocator
-		control       *flow.Control
 		StartedAt     time.Time
 		key           string
 	}
@@ -58,14 +56,6 @@ func (n *Network) Router() *router.Router {
 func (n *Network) ReleaseDevice(cidr string) (err error) {
 	n.sessions.Delete(cidr)
 	return n.pool.ReleaseIP(cidr)
-}
-
-func (n *Network) Control() *flow.Control {
-	return n.control
-}
-
-func (n *Network) SetControl(control *flow.Control) {
-	n.control = control
 }
 
 func (n *Network) ListSessions() (sessions []*Session) {
