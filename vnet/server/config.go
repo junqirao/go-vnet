@@ -33,11 +33,11 @@ type (
 	}
 	ConfigOption    func(cfg *Config)
 	TransportConfig struct {
-		config.MappedConfig
-		Name    string `json:"name"`
-		Port    int    `json:"port"`
-		Address string `json:"address"`
-		Type    Type   `json:"type"`
+		config.MappedConfig `json:"-"`
+		Name                string `json:"name"`
+		Port                int    `json:"port"`
+		Address             string `json:"address"`
+		Type                Type   `json:"type"`
 	}
 	P2PConfig struct {
 		Addresses []SignalingServerAddress `json:"addresses"`

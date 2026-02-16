@@ -14,6 +14,7 @@ import (
 
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/google/uuid"
+	"github.com/libp2p/go-libp2p/core/host"
 
 	"go-vnet/common/protocol"
 	"go-vnet/common/quota"
@@ -43,6 +44,7 @@ type (
 		ms ManagerServer
 	}
 	ManagerServer interface {
+		Bind(srv *Server)
 		AcquireDevice(ctx context.Context, ss *Session, subDeviceId uint64, payload map[string]any) (dev *session.Device, err error)
 		PrivateKeyBySubDeviceId(ctx context.Context, id uint64, key string) (pri *rsa.PrivateKey, err error)
 		GetQuotaAdaptor(ctx context.Context, id int, target string, targetType string) (a quota.Adaptor, err error)
@@ -107,8 +109,9 @@ func (s *Server) Serve(ctx context.Context) (err error) {
 	}
 }
 
-func (s *Server) RegisterManager(ms ManagerServer) {
+func (s *Server) BindManager(ms ManagerServer) {
 	s.ms = ms
+	ms.Bind(s)
 }
 
 func (s *Server) checkStatusLoop() {
@@ -347,6 +350,15 @@ func (s *Server) handleFuncCallLoop(ss *Session) {
 }
 
 func (s *Server) proxy(ctx context.Context, name string, dstSess, srcSess *Session, dst io.WriteCloser, src io.ReadCloser) (written int64, err error) {
+	dstDirection := fmt.Sprintf("%s->%s", srcSess.IP, dstSess.IP)
+	srcDirection := fmt.Sprintf("%s->%s", dstSess.IP, srcSess.IP)
+	dstSess.Proxying.Store(dstDirection, src)
+	srcSess.Proxying.Store(srcDirection, dst)
+	defer func() {
+		dstSess.Proxying.Delete(dstDirection)
+		srcSess.Proxying.Delete(srcDirection)
+	}()
+
 	var (
 		buf = make([]byte, protocol.MaxTransportByteSize)
 		nr  int
@@ -555,4 +567,12 @@ func (s *Server) negotiation(_ context.Context, sess *Session, src io.ReadWriter
 		return
 	}
 	return
+}
+
+func (s *Server) P2PSignalingServerHost() host.Host {
+	return s.p2pSignalingServer.host
+}
+
+func (s *Server) Config() *Config {
+	return s.cfg
 }

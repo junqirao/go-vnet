@@ -32,6 +32,7 @@ type (
 
 		ClientInfo ClientInfo                `json:"client_info"`
 		Metrics    *metrics.TransportMetrics `json:"metrics"`
+		Proxying   sync.Map                  `json:"-"`
 		CreatedAt  time.Time                 `json:"created_at"`
 	}
 	ClientInfo struct {
@@ -50,8 +51,9 @@ func newServerSession(sr session.SendReceiveCloser, conn any) *Session {
 	return &Session{
 		SendReceiveCloser: sr,
 		conn:              conn,
-		storage:           sync.Map{},
 		sig:               make(chan struct{}),
+		storage:           sync.Map{},
+		Proxying:          sync.Map{},
 		CreatedAt:         time.Now(),
 		Metrics:           metrics.NewTransportMetrics(),
 	}

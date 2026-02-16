@@ -9,20 +9,7 @@ import (
 )
 
 func main() {
-	// create test network
-	// n, err := server.NewNetwork(&server.NetworkConfig{
-	// 	ID:         "test",
-	// 	CIDR:       "192.168.98.0/24",
-	// 	RouterData: nil,
-	// 	MTU:        1392,
-	// })
-	// if err != nil {
-	// 	panic(err)
-	// }
-
-	// register network
-	// server.GetNetworkManager().RegisterNetwork(n)
-
+	// todo load from manager server
 	cfg := server.NewConfig()
 	cfg.Servers = append(cfg.Servers,
 		&server.TransportConfig{
@@ -59,7 +46,7 @@ func main() {
 		}
 	}()
 	// register manager server
-	s.RegisterManager(web.ManagerServer())
+	s.BindManager(web.ManagerServer())
 
 	// start all networks
 	web.StartAllNetworks()

@@ -9,6 +9,7 @@ import (
 	"github.com/junqirao/gocomponents/response"
 
 	"go-vnet/manager/server/internal/controller/device"
+	"go-vnet/manager/server/internal/controller/generic"
 	"go-vnet/manager/server/internal/controller/middleware"
 	"go-vnet/manager/server/internal/controller/network"
 	"go-vnet/manager/server/internal/controller/quota"
@@ -28,6 +29,7 @@ var (
 						network.NewV1(),
 						device.NewV1(),
 						quota.NewV1(),
+						generic.NewV1(),
 					)
 				})
 			})

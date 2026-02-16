@@ -17,6 +17,7 @@ type (
 		service.INetwork
 		service.IDevice
 		service.IQuota
+		service.IGeneric
 	}
 )
 
@@ -52,5 +53,6 @@ func ManagerServer() server.ManagerServer {
 		INetwork: service.Network(),
 		IDevice:  service.Device(),
 		IQuota:   service.Quota(),
+		IGeneric: service.Generic(),
 	}
 }
