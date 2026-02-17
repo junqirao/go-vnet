@@ -13,6 +13,7 @@ type Network struct {
 	g.Meta      `orm:"table:network, do:true"`
 	Id          interface{} //
 	Name        interface{} //
+	Enabled     interface{} //
 	Cidr        interface{} //
 	Mtu         interface{} //
 	Description interface{} //

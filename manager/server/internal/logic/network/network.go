@@ -81,6 +81,13 @@ func (s *sNetwork) StopNetwork(ctx context.Context, networkId string) (err error
 
 	network.Stop()
 	mgr.RemoveNetwork(networkId)
+	_, err = dao.Network.Ctx(ctx).Where(dao.Network.Columns().Id, networkId).Update(g.Map{
+		dao.Network.Columns().Enabled: false,
+	})
+	if err != nil {
+		return
+	}
+	g.Log().Infof(ctx, "network %s stopped", networkId)
 	return
 }
 
@@ -96,6 +103,13 @@ func (s *sNetwork) StartNetwork(ctx context.Context, networkId string) (err erro
 		return
 	}
 
+	_, err = dao.Network.Ctx(ctx).Where(dao.Network.Columns().Id, networkId).Update(g.Map{
+		dao.Network.Columns().Enabled: true,
+	})
+	if err != nil {
+		return
+	}
+
 	n, err := server.NewNetwork(&server.NetworkConfig{
 		ID:   en.Id,
 		CIDR: en.Cidr,
@@ -105,6 +119,7 @@ func (s *sNetwork) StartNetwork(ctx context.Context, networkId string) (err erro
 		return
 	}
 	server.GetNetworkManager().RegisterNetwork(n)
+	g.Log().Infof(ctx, "network %s started", networkId)
 	return
 }
 

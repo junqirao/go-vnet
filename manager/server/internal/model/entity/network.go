@@ -8,6 +8,7 @@ package entity
 type Network struct {
 	Id          string `json:"id"          orm:"id"          ` //
 	Name        string `json:"name"        orm:"name"        ` //
+	Enabled     int    `json:"enabled"     orm:"enabled"     ` //
 	Cidr        string `json:"cidr"        orm:"cidr"        ` //
 	Mtu         int    `json:"mtu"         orm:"mtu"         ` //
 	Description string `json:"description" orm:"description" ` //

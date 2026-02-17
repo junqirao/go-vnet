@@ -22,6 +22,7 @@ type NetworkDao struct {
 type NetworkColumns struct {
 	Id          string //
 	Name        string //
+	Enabled     string //
 	Cidr        string //
 	Mtu         string //
 	Description string //
@@ -32,6 +33,7 @@ type NetworkColumns struct {
 var networkColumns = NetworkColumns{
 	Id:          "id",
 	Name:        "name",
+	Enabled:     "enabled",
 	Cidr:        "cidr",
 	Mtu:         "mtu",
 	Description: "description",

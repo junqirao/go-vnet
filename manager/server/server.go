@@ -34,6 +34,10 @@ func StartAllNetworks() {
 	}
 	mgr := server.GetNetworkManager()
 	for _, info := range infos {
+		if info.Enabled != 1 {
+			g.Log().Infof(ctx, "network %s is not enabled, skip", info.Id)
+			continue
+		}
 		n, err := server.NewNetwork(&server.NetworkConfig{
 			ID:   info.Id,
 			CIDR: info.Cidr,
