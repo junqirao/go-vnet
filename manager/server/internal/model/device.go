@@ -24,6 +24,11 @@ type (
 		CreatedAt *gtime.Time  `json:"created_at"`
 		Sub       []*SubDevice `json:"sub"`
 	}
+	DeviceInfo struct {
+		Id        string      `json:"id"`
+		Name      string      `json:"name"`
+		CreatedAt *gtime.Time `json:"created_at"`
+	}
 	SubDeviceBrief struct {
 		Id          int                `json:"id"`
 		QuotaId     int                `json:"quota_id"`

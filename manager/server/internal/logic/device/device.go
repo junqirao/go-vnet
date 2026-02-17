@@ -183,3 +183,35 @@ func (d *sDevice) buildEncryptKey(key string) []byte {
 	}
 	return res[:16]
 }
+
+func (d *sDevice) GetDeviceInfoListPagination(ctx context.Context, page, pageSize int, name ...string) (list []*model.DeviceInfo, total int, err error) {
+	m := dao.Device.Ctx(ctx)
+	if len(name) > 0 && name[0] != "" {
+		m = m.WhereLike(dao.Device.Columns().Name, "%"+name[0]+"%")
+	}
+
+	total, err = m.Count()
+	if err != nil {
+		return
+	}
+
+	offset := (page - 1) * pageSize
+	results, err := m.Page(offset, pageSize).OrderDesc(dao.Device.Columns().CreatedAt).All()
+	if err != nil {
+		return
+	}
+
+	list = make([]*model.DeviceInfo, 0, len(results))
+	for _, result := range results {
+		dev := new(entity.Device)
+		if err = result.Struct(&dev); err != nil {
+			return
+		}
+		list = append(list, &model.DeviceInfo{
+			Id:        dev.Id,
+			Name:      dev.Name,
+			CreatedAt: dev.CreatedAt,
+		})
+	}
+	return
+}

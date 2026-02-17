@@ -110,3 +110,32 @@ func (d *sDevice) SetSubDeviceQuota(ctx context.Context, subDeviceId uint64, quo
 	})
 	return
 }
+
+func (d *sDevice) GetSubDeviceListByDeviceId(ctx context.Context, deviceId string) (list []*model.SubDevice, err error) {
+	// check device exists
+	_, err = service.Device().GetDeviceById(ctx, deviceId)
+	if err != nil {
+		return
+	}
+
+	results, err := dao.NetworkDevice.Ctx(ctx).
+		Where(dao.NetworkDevice.Columns().DeviceId, deviceId).
+		All()
+	if err != nil {
+		return
+	}
+
+	list = make([]*model.SubDevice, 0, len(results))
+	for _, result := range results {
+		dev := new(entity.NetworkDevice)
+		if err = result.Struct(&dev); err != nil {
+			return
+		}
+		sub, err := d.fillSubDeviceQuotaDetails(ctx, d.buildSubDeviceBrief(ctx, dev))
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, sub)
+	}
+	return
+}
