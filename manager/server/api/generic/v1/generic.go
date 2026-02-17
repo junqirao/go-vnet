@@ -10,6 +10,8 @@ import (
 type GetGenericInfoReq struct {
 	g.Meta `path:"/generic" tags:"Generic" method:"get" summary:"Get Generic Info"`
 	middleware.RequiredAuthHeader
+
+	Period string `json:"period"`
 }
 
 type GetGenericInfoRes model.GenericInfo

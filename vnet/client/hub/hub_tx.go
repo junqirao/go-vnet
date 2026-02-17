@@ -2,7 +2,9 @@ package hub
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"sync"
 
@@ -266,6 +268,11 @@ func NewDestination(ctx context.Context, ip string, a TxAdaptor, ref *Hub, h ...
 func (c *Destination) PushTxEvent(e *txEvent) (err error) {
 	if c.tx == nil {
 		if err = c.negotiate(); err != nil {
+			if errors.Is(err, P2PNotEnabled) {
+				g.Log().Error(c.ctx, "p2p not enabled and quota exceeded, please turn on p2p or increase quota")
+				os.Exit(1)
+				return
+			}
 			c.OnError(c.ctx, &TxError{
 				dst: c,
 				Err: err,
@@ -418,7 +425,8 @@ func (c *Destination) txLoopN() {
 			}
 
 			// Write all collected packets
-			if totalPackets > 0 {
+			// c.tx == nil when quota exceeded and p2p is not enabled
+			if totalPackets > 0 && c.tx != nil {
 				_, err = c.tx.BatchWrite(buf[:totalPackets], sizes[:totalPackets], c.ref.cfg.HeaderSize)
 				if err != nil {
 					c.fallbackOrReportError(err)

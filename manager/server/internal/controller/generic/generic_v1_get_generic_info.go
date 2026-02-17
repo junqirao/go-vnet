@@ -7,8 +7,8 @@ import (
 	"go-vnet/manager/server/internal/service"
 )
 
-func (c *ControllerV1) GetGenericInfo(ctx context.Context, _ *v1.GetGenericInfoReq) (res *v1.GetGenericInfoRes, err error) {
-	data, err := service.Generic().GetGenericInfo(ctx)
+func (c *ControllerV1) GetGenericInfo(ctx context.Context, req *v1.GetGenericInfoReq) (res *v1.GetGenericInfoRes, err error) {
+	data, err := service.Generic().GetGenericInfo(ctx, req.Period)
 	if err != nil {
 		return
 	}

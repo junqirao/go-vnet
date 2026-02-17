@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"errors"
 	"runtime"
 
 	"github.com/gogf/gf/v2/frame/g"
@@ -9,6 +10,10 @@ import (
 
 	"go-vnet/common/protocol"
 	"go-vnet/common/router"
+)
+
+var (
+	P2PNotEnabled = errors.New("p2p not enabled")
 )
 
 type (

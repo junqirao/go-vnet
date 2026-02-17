@@ -287,6 +287,7 @@ func (c *Client) replaceP2P(ctx context.Context, stream network.Stream, dst *hub
 func (c *Client) tryP2P(ctx context.Context, dst *hub.Destination) (err error) {
 	if !c.cfg.P2P.Enabled {
 		g.Log().Infof(ctx, "p2p is not enabled, skip dial p2p to %s", dst.Ip())
+		err = hub.P2PNotEnabled
 		return
 	}
 	if dst.Type() == protocol.TransportTypeP2P {

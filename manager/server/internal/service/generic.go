@@ -13,7 +13,7 @@ import (
 
 type (
 	IGeneric interface {
-		GetGenericInfo(ctx context.Context) (info *model.GenericInfo, err error)
+		GetGenericInfo(ctx context.Context, period string) (info *model.GenericInfo, err error)
 		Bind(srv *server.Server)
 	}
 )
