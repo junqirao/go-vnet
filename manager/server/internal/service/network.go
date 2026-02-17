@@ -24,6 +24,7 @@ type (
 		DeleteNetwork(ctx context.Context, networkId string) (err error)
 		UpdateNetwork(ctx context.Context, networkId string, fields map[string]any) (err error)
 		ListNetworkInfos(ctx context.Context) (ns []*entity.Network, err error)
+		ListNetworks(ctx context.Context, page int, pageSize int, name string) (list []*model.NetworkBrief, total int, err error)
 		ListSessionByNetwork(_ context.Context, networkId string) (sessions []*model.Session, err error)
 	}
 )

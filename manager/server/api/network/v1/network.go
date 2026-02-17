@@ -68,3 +68,18 @@ type UpdateNetworkReq struct {
 }
 
 type UpdateNetworkRes struct{}
+
+type ListNetworksReq struct {
+	g.Meta `path:"/networks" tags:"Network" method:"get" summary:"List networks"`
+	middleware.RequiredAuthHeader
+
+	Page     int    `json:"page" d:"1"`
+	PageSize int    `json:"page_size" d:"10"`
+	Name     string `json:"name"`
+}
+
+type ListNetworksRes struct {
+	List  []*model.NetworkBrief `json:"list"`
+	Total int                   `json:"total"`
+	Page  int                   `json:"page"`
+}

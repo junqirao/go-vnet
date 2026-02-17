@@ -9,6 +9,10 @@ import (
 )
 
 type (
+	NetworkBrief struct {
+		entity.Network
+		Running bool `json:"running"`
+	}
 	NetworkRuntime struct {
 		Running      bool                      `json:"running"`
 		StartedAt    time.Time                 `json:"started_at"`

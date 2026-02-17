@@ -75,7 +75,7 @@ func (s *sNetwork) StopNetwork(ctx context.Context, networkId string) (err error
 	mgr := server.GetNetworkManager()
 	network, ok := mgr.GetNetwork(networkId)
 	if !ok {
-		err = response.CodeBadGateway.WithDetail(fmt.Sprintf("instance not exist or not running: %s", networkId))
+		err = response.CodeConflict.WithDetail(fmt.Sprintf("instance not exist or not running: %s", networkId))
 		return
 	}
 
@@ -87,7 +87,7 @@ func (s *sNetwork) StopNetwork(ctx context.Context, networkId string) (err error
 func (s *sNetwork) StartNetwork(ctx context.Context, networkId string) (err error) {
 	_, ok := server.GetNetworkManager().GetNetwork(networkId)
 	if ok {
-		err = response.CodeBadGateway.WithDetail(fmt.Sprintf("instance already started: %s", networkId))
+		err = response.CodeConflict.WithDetail(fmt.Sprintf("instance already started: %s", networkId))
 		return
 	}
 
@@ -189,5 +189,44 @@ func (s *sNetwork) ListNetworkInfos(ctx context.Context) (ns []*entity.Network, 
 		_ = record.Struct(&n)
 		ns = append(ns, n)
 	}
+	return
+}
+
+func (s *sNetwork) ListNetworks(ctx context.Context, page, pageSize int, name string) (list []*model.NetworkBrief, total int, err error) {
+	// Build query
+	m := dao.Network.Ctx(ctx)
+
+	// Filter by name if provided
+	if name != "" {
+		m = m.WhereLike(dao.Network.Columns().Name, "%"+name+"%")
+	}
+
+	// Count total
+	total, err = m.Count()
+	if err != nil {
+		err = response.CodeFromHttpStatus(http.StatusInternalServerError).WithDetail(err.Error())
+		return
+	}
+
+	// Pagination
+	result, err := m.Page(page, pageSize).All()
+	if err != nil {
+		err = response.CodeFromHttpStatus(http.StatusInternalServerError).WithDetail(err.Error())
+		return
+	}
+
+	// Parse results
+	list = make([]*model.NetworkBrief, 0)
+	networks := server.GetNetworkManager().GetAllNetworks()
+	for _, record := range result {
+		n := &entity.Network{}
+		_ = record.Struct(&n)
+		_, running := networks[n.Id]
+		list = append(list, &model.NetworkBrief{
+			Network: *n,
+			Running: running,
+		})
+	}
+
 	return
 }
