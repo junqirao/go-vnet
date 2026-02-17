@@ -75,3 +75,21 @@ type GetSubDeviceListByDeviceIdReq struct {
 type GetSubDeviceListByDeviceIdRes struct {
 	List []*model.SubDevice `json:"list"`
 }
+
+type DeleteDeviceReq struct {
+	g.Meta `path:"/device/:device_id" tags:"Device" method:"delete" summary:"Delete Device"`
+	middleware.RequiredAuthHeader
+
+	DeviceId string `json:"device_id" v:"required" in:"path"`
+}
+
+type DeleteDeviceRes struct{}
+
+type DeleteSubDeviceReq struct {
+	g.Meta `path:"/sub/:sub_device_id" tags:"Device" method:"delete" summary:"Delete Sub Device"`
+	middleware.RequiredAuthHeader
+
+	SubDeviceId uint64 `json:"sub_device_id" v:"required" in:"path"`
+}
+
+type DeleteSubDeviceRes struct{}

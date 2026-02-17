@@ -73,6 +73,7 @@ func (s *sNetwork) AcquireDevice(ctx context.Context, ss *server.Session, subDev
 	}
 
 	dev.Id = subDevice.DeviceId
+	dev.Sid = subDevice.Id
 	dev.Name = deviceInfo.Name
 	dev.CIDR = cidr
 	dev.MTU = network.MTU

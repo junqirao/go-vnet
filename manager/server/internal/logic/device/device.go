@@ -83,6 +83,30 @@ func (d *sDevice) CreateDevice(ctx context.Context, deviceKey string, dev *entit
 	return
 }
 
+func (d *sDevice) DeleteDevice(ctx context.Context, deviceId string) (err error) {
+	// check device exists
+	_, err = d.GetDeviceById(ctx, deviceId)
+	if err != nil {
+		return
+	}
+
+	// check if device has sub devices
+	count, err := dao.NetworkDevice.Ctx(ctx).
+		Where(dao.NetworkDevice.Columns().DeviceId, deviceId).
+		Count()
+	if err != nil {
+		return
+	}
+	if count > 0 {
+		err = response.CodeInvalidParameter.WithDetail("cannot delete device with sub devices")
+		return
+	}
+
+	// delete device
+	_, err = dao.Device.Ctx(ctx).Where(dao.Device.Columns().Id, deviceId).Delete()
+	return
+}
+
 func (d *sDevice) GetDeviceInfo(ctx context.Context, deviceId string, sub ...uint64) (dev *model.Device, err error) {
 	device, err := d.GetDeviceById(ctx, deviceId)
 	if err != nil {

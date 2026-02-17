@@ -3,6 +3,7 @@ package device
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/util/gconv"
@@ -13,6 +14,7 @@ import (
 	"go-vnet/manager/server/internal/model"
 	"go-vnet/manager/server/internal/model/entity"
 	"go-vnet/manager/server/internal/service"
+	"go-vnet/vnet/server"
 )
 
 func (d *sDevice) CreateSubDevice(ctx context.Context,
@@ -137,5 +139,23 @@ func (d *sDevice) GetSubDeviceListByDeviceId(ctx context.Context, deviceId strin
 		}
 		list = append(list, sub)
 	}
+	return
+}
+
+func (d *sDevice) DeleteSubDeviceById(ctx context.Context, id uint64) (err error) {
+	sub, err := d.GetSubDeviceById(ctx, id)
+	if err != nil {
+		return
+	}
+	network, ok := server.GetNetworkManager().GetNetwork(sub.NetworkId)
+	if ok {
+		for _, session := range network.ListSessions() {
+			if session.Session.DispatchedDevice.Sid == sub.Id {
+				err = response.CodeInvalidParameter.WithDetail(fmt.Sprintf("sub device is in use: %s", session.Session.SessionId))
+				return
+			}
+		}
+	}
+	_, err = dao.NetworkDevice.Ctx(ctx).Where(dao.NetworkDevice.Columns().Id, id).Delete()
 	return
 }

@@ -8,6 +8,7 @@ package service
 import (
 	"context"
 	"crypto/rsa"
+
 	"go-vnet/manager/server/internal/model"
 	"go-vnet/manager/server/internal/model/entity"
 )
@@ -15,6 +16,7 @@ import (
 type (
 	IDevice interface {
 		CreateDevice(ctx context.Context, deviceKey string, dev *entity.Device) (id string, err error)
+		DeleteDevice(ctx context.Context, deviceId string) (err error)
 		GetDeviceInfo(ctx context.Context, deviceId string, sub ...uint64) (dev *model.Device, err error)
 		GetDeviceById(ctx context.Context, id string) (dev *entity.Device, err error)
 		GetDeviceByName(ctx context.Context, name string) (dev *entity.Device, err error)
@@ -25,6 +27,7 @@ type (
 		GetSubDeviceById(ctx context.Context, id uint64) (sub *model.SubDeviceBrief, err error)
 		SetSubDeviceQuota(ctx context.Context, subDeviceId uint64, quota int) (err error)
 		GetSubDeviceListByDeviceId(ctx context.Context, deviceId string) (list []*model.SubDevice, err error)
+		DeleteSubDeviceById(ctx context.Context, id uint64) (err error)
 	}
 )
 

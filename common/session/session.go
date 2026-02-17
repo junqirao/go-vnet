@@ -35,6 +35,7 @@ type (
 	}
 	Device struct {
 		Id               string `json:"id"`                 // device id
+		Sid              int    `json:"sid"`                // device sub id
 		Name             string `json:"name"`               // name
 		CIDR             string `json:"cidr"`               // cidr
 		MTU              int    `json:"mtu"`                // mtu
