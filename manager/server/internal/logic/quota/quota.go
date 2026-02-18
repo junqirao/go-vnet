@@ -45,28 +45,23 @@ func (s *sQuota) GetById(ctx context.Context, id int) (q *model.Quota, err error
 			return
 		}
 	}
-	value := eq.Value
-	switch eq.Type {
-	case quota.ResourceTypeMegabytes:
-		value = eq.Value * 1024 * 1024
-	case quota.ResourceTypeGigabytes:
-		value = eq.Value * 1024 * 1024 * 1024
-	case quota.ResourceTypeTerabytes:
-		value = eq.Value * 1024 * 1024 * 1024 * 1024
-	}
 	q = &model.Quota{
 		Id:     eq.Id,
 		Name:   eq.Name,
 		Type:   eq.Type,
 		Unit:   eq.Unit,
-		Value:  int64(value),
+		Value:  int64(eq.Value),
 		Period: eq.Period,
 	}
 	return
 }
 
-func (s *sQuota) List(ctx context.Context) (quotas []*entity.Quota, err error) {
-	result, err := dao.Quota.Ctx(ctx).All()
+func (s *sQuota) List(ctx context.Context, typ string) (quotas []*entity.Quota, err error) {
+	m := dao.Quota.Ctx(ctx)
+	if typ != "" {
+		m = m.Where(dao.Quota.Columns().Type, typ)
+	}
+	result, err := m.All()
 	if err != nil {
 		return
 	}
@@ -167,7 +162,20 @@ func (s *sQuota) GetQuotaDetails(ctx context.Context, id int, target string, tar
 		if err != nil {
 			return
 		}
-		d.IsExceed = d.Usage > d.Quota.Value
+		if d.Quota.Value == quota.ValueNoLimit {
+			d.IsExceed = false
+		} else {
+			var maxUsage int64
+			switch d.Quota.Unit {
+			case quota.ResourceTypeMegabytes:
+				maxUsage = d.Quota.Value * 1024 * 1024
+			case quota.ResourceTypeGigabytes:
+				maxUsage = d.Quota.Value * 1024 * 1024 * 1024
+			case quota.ResourceTypeTerabytes:
+				maxUsage = d.Quota.Value * 1024 * 1024 * 1024 * 1024
+			}
+			d.IsExceed = d.Usage > maxUsage
+		}
 	}
 	return
 }

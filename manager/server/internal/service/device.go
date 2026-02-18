@@ -8,7 +8,6 @@ package service
 import (
 	"context"
 	"crypto/rsa"
-
 	"go-vnet/manager/server/internal/model"
 	"go-vnet/manager/server/internal/model/entity"
 )
@@ -22,10 +21,11 @@ type (
 		GetDeviceByName(ctx context.Context, name string) (dev *entity.Device, err error)
 		PrivateKeyBySubDeviceId(ctx context.Context, id uint64, key string) (pri *rsa.PrivateKey, err error)
 		GetDeviceInfoListPagination(ctx context.Context, page int, pageSize int, name ...string) (list []*model.DeviceInfo, total int, err error)
-		CreateSubDevice(ctx context.Context, deviceId string, networkId string, quota int, settings *model.SubDeviceSettings) (err error)
+		CreateSubDevice(ctx context.Context, deviceId string, networkId string, quota int, bandwidthQuota int, settings *model.SubDeviceSettings) (err error)
 		GetSubDeviceWithUsageById(ctx context.Context, id uint64) (sub *model.SubDevice, err error)
 		GetSubDeviceById(ctx context.Context, id uint64) (sub *model.SubDeviceBrief, err error)
 		SetSubDeviceQuota(ctx context.Context, subDeviceId uint64, quota int) (err error)
+		SetSubDeviceBandwidthQuota(ctx context.Context, subDeviceId uint64, bandwidthQuota int) (err error)
 		GetSubDeviceListByDeviceId(ctx context.Context, deviceId string) (list []*model.SubDevice, err error)
 		DeleteSubDeviceById(ctx context.Context, id uint64) (err error)
 	}

@@ -18,7 +18,7 @@ type (
 		SubmitUsage(ctx context.Context, id int, target string, targetType string, usage int64, startTime time.Time)
 		LoadUsage(ctx context.Context, id int, target string, targetType string) (usage int64, flow []*model.QuotaFlowBrief, err error)
 		GetById(ctx context.Context, id int) (q *model.Quota, err error)
-		List(ctx context.Context) (quotas []*entity.Quota, err error)
+		List(ctx context.Context, typ string) (quotas []*entity.Quota, err error)
 		Create(ctx context.Context, quota *entity.Quota) (err error)
 		Update(ctx context.Context, id int, fields map[string]any) (err error)
 		Delete(ctx context.Context, id int) (err error)

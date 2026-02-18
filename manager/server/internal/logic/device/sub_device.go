@@ -18,7 +18,7 @@ import (
 )
 
 func (d *sDevice) CreateSubDevice(ctx context.Context,
-	deviceId, networkId string, quota int,
+	deviceId, networkId string, quota int, bandwidthQuota int,
 	settings *model.SubDeviceSettings) (err error) {
 	network, err := service.Network().GetNetworkById(ctx, networkId)
 	if err != nil {
@@ -46,6 +46,7 @@ func (d *sDevice) CreateSubDevice(ctx context.Context,
 		DeviceId:  device.Id,
 		NetworkId: network.Id,
 		Quota:     quota,
+		Bandwidth: bandwidthQuota,
 		Settings:  gconv.String(settings),
 	})
 	return
@@ -109,6 +110,20 @@ func (d *sDevice) SetSubDeviceQuota(ctx context.Context, subDeviceId uint64, quo
 	// update quota
 	_, err = dao.NetworkDevice.Ctx(ctx).Where(dao.NetworkDevice.Columns().Id, subDeviceId).Update(g.Map{
 		dao.NetworkDevice.Columns().Quota: quota,
+	})
+	return
+}
+
+func (d *sDevice) SetSubDeviceBandwidthQuota(ctx context.Context, subDeviceId uint64, bandwidthQuota int) (err error) {
+	// check sub device exists
+	_, err = d.GetSubDeviceById(ctx, subDeviceId)
+	if err != nil {
+		return
+	}
+
+	// update bandwidth quota
+	_, err = dao.NetworkDevice.Ctx(ctx).Where(dao.NetworkDevice.Columns().Id, subDeviceId).Update(g.Map{
+		dao.NetworkDevice.Columns().Bandwidth: bandwidthQuota,
 	})
 	return
 }

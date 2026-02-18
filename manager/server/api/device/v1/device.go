@@ -23,10 +23,11 @@ type CreateSubDeviceReq struct {
 	g.Meta `path:"/device/:device_id/sub" tags:"Device" method:"post" summary:"Create Sub Device"`
 	middleware.RequiredAuthHeader
 
-	DeviceId  string                   `json:"device_id" v:"required" in:"path"`
-	NetworkId string                   `json:"network_id" v:"required"`
-	Quota     int                      `json:"quota"`
-	Settings  *model.SubDeviceSettings `json:"settings"`
+	DeviceId       string                   `json:"device_id" v:"required" in:"path"`
+	NetworkId      string                   `json:"network_id" v:"required"`
+	Quota          int                      `json:"quota"`
+	BandwidthQuota int                      `json:"bandwidth_quota"`
+	Settings       *model.SubDeviceSettings `json:"settings"`
 }
 
 type CreateSubDeviceRes struct{}
@@ -50,6 +51,16 @@ type SetSubDeviceQuotaReq struct {
 }
 
 type SetSubDeviceQuotaRes struct{}
+
+type SetSubDeviceBandwidthQuotaReq struct {
+	g.Meta `path:"/sub/:sub_device_id/bandwidth" tags:"Device" method:"post" summary:"Set sub device bandwidth quota"`
+	middleware.RequiredAuthHeader
+
+	SubDeviceId    uint64 `json:"sub_device_id" v:"required" in:"path"`
+	BandwidthQuota int    `json:"bandwidth_quota" v:"required"`
+}
+
+type SetSubDeviceBandwidthQuotaRes struct{}
 
 type GetDeviceListReq struct {
 	g.Meta `path:"/devices" tags:"Device" method:"get" summary:"Get Device List with Pagination"`

@@ -9,6 +9,6 @@ import (
 
 func (c *ControllerV1) CreateSubDevice(ctx context.Context, req *v1.CreateSubDeviceReq) (res *v1.CreateSubDeviceRes, err error) {
 	res = new(v1.CreateSubDeviceRes)
-	err = service.Device().CreateSubDevice(ctx, req.DeviceId, req.NetworkId, req.Quota, req.Settings)
+	err = service.Device().CreateSubDevice(ctx, req.DeviceId, req.NetworkId, req.Quota, req.BandwidthQuota, req.Settings)
 	return
 }

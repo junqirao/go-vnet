@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"go-vnet/common/quota"
 	"go-vnet/manager/server/internal/model"
 )
 
@@ -27,7 +28,19 @@ func (a *adaptor) LoadUsage(ctx context.Context) (int64, error) {
 func (a *adaptor) GetQuotaMaxUsage() int64 {
 	// Return the maximum quota limit value from the quota configuration
 	// -1 represents unlimited quota
-	return int64(a.quota.Value)
+	if a.quota.Value == quota.ValueNoLimit {
+		return quota.ValueNoLimit
+	}
+	var value int64
+	switch a.quota.Unit {
+	case quota.ResourceTypeMegabytes:
+		value = a.quota.Value * 1024 * 1024
+	case quota.ResourceTypeGigabytes:
+		value = a.quota.Value * 1024 * 1024 * 1024
+	case quota.ResourceTypeTerabytes:
+		value = a.quota.Value * 1024 * 1024 * 1024 * 1024
+	}
+	return value
 }
 
 func (a *adaptor) SubmitUsage(ctx context.Context, usage int64) {

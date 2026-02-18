@@ -20,6 +20,8 @@ type GetQuotaRes model.Quota
 type ListQuotaReq struct {
 	g.Meta `path:"/quota" tags:"Quota" method:"get" summary:"List all quotas"`
 	middleware.RequiredAuthHeader
+
+	Type string `json:"type"`
 }
 
 type ListQuotaRes struct {
