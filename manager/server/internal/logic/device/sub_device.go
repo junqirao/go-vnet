@@ -70,6 +70,53 @@ func (d *sDevice) GetSubDeviceById(ctx context.Context, id uint64) (sub *model.S
 	return
 }
 
+func (d *sDevice) GetSubDeviceByIds(ctx context.Context, ids []uint64) (list []*model.SubDeviceBrief, err error) {
+	if len(ids) == 0 {
+		return []*model.SubDeviceBrief{}, nil
+	}
+	results, err := dao.NetworkDevice.Ctx(ctx).
+		WhereIn(dao.NetworkDevice.Columns().Id, ids).
+		All()
+	if err != nil {
+		return
+	}
+	list = make([]*model.SubDeviceBrief, 0, len(results))
+	for _, result := range results {
+		dev := new(entity.NetworkDevice)
+		if err = result.Struct(dev); err != nil {
+			return
+		}
+		list = append(list, d.buildSubDeviceBrief(ctx, dev))
+	}
+	return
+}
+
+func (d *sDevice) GetSubDevicesWithUsageByIds(ctx context.Context, ids []uint64) (list []*model.SubDevice, err error) {
+	if len(ids) == 0 {
+		return []*model.SubDevice{}, nil
+	}
+	results, err := dao.NetworkDevice.Ctx(ctx).
+		WhereIn(dao.NetworkDevice.Columns().Id, ids).
+		All()
+	if err != nil {
+		return
+	}
+	list = make([]*model.SubDevice, 0, len(results))
+	for _, result := range results {
+		dev := new(entity.NetworkDevice)
+		if err = result.Struct(dev); err != nil {
+			return
+		}
+		brief := d.buildSubDeviceBrief(ctx, dev)
+		sub, err := d.fillSubDeviceQuotaDetails(ctx, brief)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, sub)
+	}
+	return
+}
+
 func (d *sDevice) buildSubDeviceBrief(ctx context.Context, dev *entity.NetworkDevice) *model.SubDeviceBrief {
 	sub := &model.SubDeviceBrief{
 		Id:          dev.Id,

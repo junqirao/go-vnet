@@ -208,10 +208,10 @@ func (d *sDevice) buildEncryptKey(key string) []byte {
 	return res[:16]
 }
 
-func (d *sDevice) GetDeviceInfoListPagination(ctx context.Context, page, pageSize int, name ...string) (list []*model.DeviceInfo, total int, err error) {
+func (d *sDevice) GetDeviceInfoListPagination(ctx context.Context, page, pageSize int, nameOrId ...string) (list []*model.DeviceInfo, total int, err error) {
 	m := dao.Device.Ctx(ctx)
-	if len(name) > 0 && name[0] != "" {
-		m = m.WhereLike(dao.Device.Columns().Name, "%"+name[0]+"%")
+	if len(nameOrId) > 0 && nameOrId[0] != "" {
+		m = m.WhereLike(dao.Device.Columns().Name, "%"+nameOrId[0]+"%").WhereOr(dao.Device.Columns().Id, nameOrId[0])
 	}
 
 	total, err = m.Count()

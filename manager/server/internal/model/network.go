@@ -21,8 +21,9 @@ type (
 		Metrics      *metrics.TransportMetrics `json:"metrics"`
 	}
 	NetworkDetails struct {
-		Info    *entity.Network `json:"info"`
-		Runtime *NetworkRuntime `json:"runtime"`
+		Info       *entity.Network `json:"info"`
+		Runtime    *NetworkRuntime `json:"runtime"`
+		SubDevices []*SubDevice    `json:"sub_devices"`
 	}
 	NetworkConfig struct {
 		AllowAnonymousDevice bool `json:"allow_anonymous_device"`

@@ -35,11 +35,13 @@ func (s *sNetwork) GetNetworkDetails(ctx context.Context, networkId string) (det
 		Info:    info,
 		Runtime: &model.NetworkRuntime{},
 	}
+	var ids []uint64
 	n, ok := server.GetNetworkManager().GetNetwork(networkId)
 	if ok {
 		sessions := s.listSession(n)
 		for _, session := range sessions {
 			session.DispatchedDevice.Key = ""
+			ids = append(ids, uint64(session.DispatchedDevice.Sid))
 		}
 		details.Runtime = &model.NetworkRuntime{
 			Running:      true,
@@ -48,6 +50,10 @@ func (s *sNetwork) GetNetworkDetails(ctx context.Context, networkId string) (det
 			SessionCount: len(sessions),
 			Metrics:      n.Metrics,
 		}
+	}
+
+	if len(ids) > 0 {
+		details.SubDevices, err = service.Device().GetSubDevicesWithUsageByIds(ctx, ids)
 	}
 	return
 }

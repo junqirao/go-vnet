@@ -14,6 +14,7 @@ type (
 		Transports []*server.TransportConfig `json:"transports"`
 	}
 	NetworkGenericInfo struct {
+		Total               int    `json:"total"`
 		Running             int    `json:"running"`
 		Sessions            int    `json:"sessions"`
 		Connections         int    `json:"connections"`

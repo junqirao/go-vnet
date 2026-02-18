@@ -24,6 +24,8 @@ type (
 		CreateSubDevice(ctx context.Context, deviceId string, networkId string, quota int, bandwidthQuota int, settings *model.SubDeviceSettings) (err error)
 		GetSubDeviceWithUsageById(ctx context.Context, id uint64) (sub *model.SubDevice, err error)
 		GetSubDeviceById(ctx context.Context, id uint64) (sub *model.SubDeviceBrief, err error)
+		GetSubDeviceByIds(ctx context.Context, ids []uint64) (list []*model.SubDeviceBrief, err error)
+		GetSubDevicesWithUsageByIds(ctx context.Context, ids []uint64) (list []*model.SubDevice, err error)
 		SetSubDeviceQuota(ctx context.Context, subDeviceId uint64, quota int) (err error)
 		SetSubDeviceBandwidthQuota(ctx context.Context, subDeviceId uint64, bandwidthQuota int) (err error)
 		GetSubDeviceListByDeviceId(ctx context.Context, deviceId string) (list []*model.SubDevice, err error)

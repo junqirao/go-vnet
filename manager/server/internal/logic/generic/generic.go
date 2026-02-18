@@ -30,11 +30,17 @@ type sGeneric struct {
 func (s *sGeneric) GetGenericInfo(ctx context.Context, period string) (info *model.GenericInfo, err error) {
 	networks := server.GetNetworkManager().GetAllNetworks()
 
+	total, err := dao.Network.Ctx(ctx).Count()
+	if err != nil {
+		return nil, err
+	}
+
 	info = &model.GenericInfo{
 		Server: model.ServerGenericInfo{},
 		P2P:    model.P2PGenericInfo{},
 		Network: model.NetworkGenericInfo{
 			Running: len(networks),
+			Total:   total,
 		},
 	}
 

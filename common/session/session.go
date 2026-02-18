@@ -86,6 +86,7 @@ func (e *Error) Clone() *Error {
 func (d *Device) Clone() *Device {
 	return &Device{
 		Id:               d.Id,
+		Sid:              d.Sid,
 		Name:             d.Name,
 		CIDR:             d.CIDR,
 		MTU:              d.MTU,
