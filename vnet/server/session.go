@@ -39,6 +39,7 @@ type (
 		Hostname any `json:"hostname"`
 		Encrypt  any `json:"encrypt"`
 		Compress any `json:"compress"`
+		P2P      any `json:"p2p"`
 	}
 )
 
