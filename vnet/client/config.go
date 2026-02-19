@@ -37,17 +37,23 @@ const (
 type (
 	Type   string
 	Config struct {
-		config.MappedConfig
+		config.MappedConfig `json:"-"`
 
-		Link               string    `yaml:"link" json:"link"`
-		PublicKey          string    `yaml:"public_key" json:"public_key"`
-		Port               int       `yaml:"port" json:"port"`
-		Address            string    `yaml:"address" json:"address"`
-		Type               Type      `yaml:"type" json:"type"`
-		InsecureSkipVerify bool      `yaml:"insecure_skip_verify" json:"insecure_skip_verify"`
-		P2P                P2PConfig `yaml:"p2p" json:"p2p"`
-		Compress           bool      `json:"compress"`
-		Encrypt            bool      `json:"encrypt"`
+		Link               string        `yaml:"link" json:"link"`
+		PublicKey          string        `yaml:"public_key" json:"public_key"`
+		Port               int           `yaml:"port" json:"port"`
+		Address            string        `yaml:"address" json:"address"`
+		Type               Type          `yaml:"type" json:"type"`
+		InsecureSkipVerify bool          `yaml:"insecure_skip_verify" json:"insecure_skip_verify"`
+		P2P                P2PConfig     `yaml:"p2p" json:"p2p"`
+		Compress           bool          `yaml:"compress" json:"compress"`
+		Encrypt            bool          `yaml:"encrypt" json:"encrypt"`
+		Manager            ManagerConfig `yaml:"manager" json:"manager"`
+	}
+	ManagerConfig struct {
+		Enabled bool   `yaml:"enabled" json:"enabled"`
+		Listen  string `yaml:"listen" json:"listen"`
+		Port    int    `yaml:"port" json:"port"`
 	}
 	P2PConfig struct {
 		Enabled        bool     `yaml:"enabled" json:"enabled"`

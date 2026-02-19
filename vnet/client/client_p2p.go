@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"time"
 
@@ -256,15 +257,18 @@ func (c *Client) evaluateAndReplaceP2PRx(ctx context.Context, stream network.Str
 }
 
 func (c *Client) replaceP2P(ctx context.Context, stream network.Stream, dst *hub.Destination) {
-	transportOptions := append(c.transport.opts, protocol.WithType(protocol.TransportTypeP2P))
+	metrics := protocol.WithWrappers(func(upstream io.ReadWriteCloser) io.ReadWriteCloser {
+		return protocol.NewMetricsWrapper(stream, c.p2p.metrics)
+	})
+	transportOptions := append(c.transport.opts, metrics, protocol.WithType(protocol.TransportTypeP2P))
 	t := protocol.NewTransport(stream, transportOptions...)
 	cancel := c.hub.HandleRx(stream, transportOptions, &p2pHandleRxHook{c: c, dst: dst.Ip()})
 	cancelAll := func() {
 		cancel()
 		_ = t.Close()
 	}
-	// replace tx
-	replaced := dst.ReplaceTx(func(old protocol.ReadWriter) (new protocol.ReadWriter, replaced bool) {
+	// replace
+	replaced := dst.Replace(func(old protocol.ReadWriter) (new protocol.ReadWriter, replaced bool) {
 		if old != nil && old.Type() == protocol.TransportTypeP2P {
 			return
 		}

@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,6 +20,7 @@ import (
 	tun "github.com/sagernet/sing-tun"
 
 	"go-vnet/common/grace"
+	"go-vnet/common/metrics"
 	"go-vnet/common/protocol"
 	"go-vnet/common/session"
 	"go-vnet/vnet/client/hub"
@@ -35,6 +38,17 @@ const (
 	StateReconnecting State = 2
 )
 
+func (s State) String() string {
+	switch s {
+	case StateRunning:
+		return "running"
+	case StateReconnecting:
+		return "reconnecting"
+	default:
+		return "unknown"
+	}
+}
+
 type (
 	Client struct {
 		id       string
@@ -51,10 +65,12 @@ type (
 		ip       string
 
 		transport struct {
-			opts []protocol.TransportOpt
+			opts    []protocol.TransportOpt
+			metrics *metrics.TransportMetrics
 		}
 
 		p2p struct {
+			metrics                *metrics.TransportMetrics
 			signalingServerAddress *server.AddressInfo
 			connections            sync.Map // dst:*p2pConnInfo
 			peerMappingVersion     *atomic.Uint64
@@ -73,7 +89,30 @@ type (
 		Session *session.Session `json:"session"`
 		Error   string           `json:"error"`
 	}
-	State uint8
+	State       uint8
+	RuntimeInfo struct {
+		State       string                    `json:"state"`
+		Session     *session.Session          `json:"session"`
+		Metrics     *metrics.TransportMetrics `json:"metrics"`
+		Router      *RouterRuntimeInfo        `json:"router"`
+		P2P         *P2PRuntimeInfo           `json:"p2p"`
+		Connections []*ConnectionInfo         `json:"connections"`
+		Config      *Config                   `json:"config"`
+	}
+	RouterRuntimeInfo struct {
+		Routers []string `json:"routers"`
+		Version string   `json:"version"`
+	}
+	P2PRuntimeInfo struct {
+		HostId         string                    `json:"host_id"`
+		MappingVersion uint64                    `json:"mapping_version"`
+		Connections    []string                  `json:"connections"`
+		Metrics        *metrics.TransportMetrics `json:"metrics"`
+	}
+	ConnectionInfo struct {
+		Dst  string `json:"dst"`
+		Type string `json:"type"`
+	}
 )
 
 func NewClient(cfg *Config) *Client {
@@ -101,13 +140,16 @@ func NewClient(cfg *Config) *Client {
 	}
 
 	c := &Client{
-		ctx:       context.Background(),
-		cfg:       cfg,
-		rc:        rc,
-		sig:       make(chan struct{}),
-		transport: struct{ opts []protocol.TransportOpt }{opts: opts},
+		ctx: context.Background(),
+		cfg: cfg,
+		rc:  rc,
+		sig: make(chan struct{}),
 	}
 
+	// create once and run non-stop update loop
+	c.transport.metrics = metrics.NewTransportMetrics()
+	go c.nonStopUpdateMetricsLoop()
+	c.transport.opts = opts
 	c.p2p.peerMappingVersion = &atomic.Uint64{}
 	return c
 }
@@ -167,7 +209,10 @@ func (c *Client) run(ctx context.Context) (err error) {
 		return
 	}
 
-	c.transport.opts = append(c.transport.opts, protocol.WithEncryptor(encryptor))
+	// transport options
+	c.transport.opts = append(c.transport.opts,
+		protocol.WithMetrics(c.transport.metrics),
+		protocol.WithEncryptor(encryptor))
 
 	// create manager for control connection
 	c.manager = NewManager(sess, control)
@@ -194,6 +239,7 @@ func (c *Client) run(ctx context.Context) (err error) {
 
 	// setup p2p
 	if c.cfg.P2P.Enabled {
+		c.p2p.metrics = metrics.NewTransportMetrics()
 		if err := c.connectP2PSignalingServer(ctx); err != nil {
 			g.Log().Errorf(ctx, "failed to setup p2p: %s", err.Error())
 		}
@@ -216,6 +262,7 @@ func (c *Client) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 	payload["hostname"], _ = os.Hostname()
 	payload["encrypt"] = c.cfg.Encrypt
 	payload["compress"] = c.cfg.Compress
+	payload["p2p"] = c.cfg.P2P.Enabled
 	payload["session"] = c.id
 
 	resp := &handshakeResponse{}
@@ -279,4 +326,57 @@ func (c *Client) ReleaseAll() {
 	c.ctx = nil
 	// force GC
 	runtime.GC()
+}
+
+func (c *Client) nonStopUpdateMetricsLoop() {
+	ticker := time.NewTicker(time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			if c.transport.metrics != nil {
+				c.transport.metrics.UpdateAll()
+			}
+		}
+	}
+}
+
+func (c *Client) CollectRuntimeInfo() (info *RuntimeInfo) {
+	info = &RuntimeInfo{
+		State: c.state.String(),
+	}
+	if c.state != StateRunning {
+		return
+	}
+	info.Session = c.session
+	info.P2P = &P2PRuntimeInfo{
+		HostId:         c.p2p.hostId,
+		MappingVersion: c.p2p.peerMappingVersion.Load(),
+		Metrics:        c.p2p.metrics,
+		Connections:    []string{},
+	}
+	c.p2p.connections.Range(func(key, value any) bool {
+		info.P2P.Connections = append(info.P2P.Connections, key.(string))
+		return true
+	})
+	info.Metrics = c.transport.metrics
+	info.Router = &RouterRuntimeInfo{}
+	router := c.hub.Router()
+	info.Router.Version = router.MD5()
+	router.Range(func(addr string, val any) {
+		if dst, ok := val.(*hub.Destination); ok {
+			info.Router.Routers = append(info.Router.Routers, dst.Ip())
+			info.Connections = append(info.Connections, &ConnectionInfo{
+				Dst:  dst.Ip(),
+				Type: dst.Type(),
+			})
+		}
+	})
+	info.Config = c.cfg
+	slices.SortFunc(info.Router.Routers, func(a, b string) int {
+		return strings.Compare(a, b)
+	})
+	slices.SortFunc(info.Connections, func(a, b *ConnectionInfo) int {
+		return strings.Compare(a.Dst, b.Dst)
+	})
+	return
 }

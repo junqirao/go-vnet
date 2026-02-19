@@ -457,7 +457,7 @@ func (c *Destination) Close() error {
 	return nil
 }
 
-func (c *Destination) ReplaceTx(fn func(old protocol.ReadWriter) (new protocol.ReadWriter, replaced bool)) (replaced bool) {
+func (c *Destination) Replace(fn func(old protocol.ReadWriter) (new protocol.ReadWriter, replaced bool)) (replaced bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// use c.tx as fall back

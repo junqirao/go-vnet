@@ -5,13 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
 
+	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/os/gcfg"
 	"gopkg.in/yaml.v3"
 
+	web "go-vnet/manager/client"
 	"go-vnet/vnet/client"
 )
 
@@ -19,20 +19,27 @@ func main() {
 	configFile := flag.String("c", "config.yaml", "config file path")
 	flag.Parse()
 
+	ctx := context.Background()
+
 	config, err := loadConfigFromFile(*configFile)
 	if err != nil {
-		fmt.Printf("failed to read config file: %v\n", err)
+		g.Log().Errorf(ctx, "failed to read config file: %v", err)
 		os.Exit(1)
 	}
 
-	go func() {
-		log.Println("start pprof at :6060")
-		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
-	}()
-
 	// create client
 	c := client.NewClient(config)
-	ctx := context.Background()
+
+	// run manager server
+	if config.Manager.Enabled {
+		// set adaptor for manager client
+		adaptor, _ := gcfg.NewAdapterFile(*configFile)
+		g.Cfg().SetAdapter(adaptor)
+
+		web.RegisterClientInstance(c)
+		go web.RunServer()
+		g.Log().Infof(ctx, "manager server started at %s:%d", config.Manager.Listen, config.Manager.Port)
+	}
 
 	// run
 	c.Run(ctx)

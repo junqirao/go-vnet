@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"go-vnet/common/metrics"
 )
 
 const (
@@ -84,6 +86,8 @@ type (
 		compressor        Compressor
 		encryptor         Encryptor
 		compressThreshold int // threshold in bytes for compression
+		metrics           *metrics.TransportMetrics
+		wrapFunc          []func(io.ReadWriteCloser) io.ReadWriteCloser
 	}
 	TransportOpt func(o *TransportOptions)
 )
@@ -133,13 +137,32 @@ var (
 			o.compressThreshold = threshold
 		}
 	}
+	WithMetrics = func(m *metrics.TransportMetrics) TransportOpt {
+		return func(o *TransportOptions) {
+			o.metrics = m
+		}
+	}
+	WithWrappers = func(wrapFunc ...func(io.ReadWriteCloser) io.ReadWriteCloser) TransportOpt {
+		return func(o *TransportOptions) {
+			o.wrapFunc = append(o.wrapFunc, wrapFunc...)
+		}
+	}
 )
 
 // NewTransport creates a new Transport protocol read writer
 func NewTransport(upstream io.ReadWriteCloser, opts ...TransportOpt) ReadWriter {
+	// accept options
 	options := defaultTransportOptions()
 	for _, opt := range opts {
 		opt(options)
+	}
+	// metrics
+	if options.metrics != nil {
+		upstream = NewMetricsWrapper(upstream, options.metrics)
+	}
+	// wrapper
+	for _, wrapFunc := range options.wrapFunc {
+		upstream = wrapFunc(upstream)
 	}
 	return &Transport{
 		upstream:         upstream,
