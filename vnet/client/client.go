@@ -336,6 +336,9 @@ func (c *Client) nonStopUpdateMetricsLoop() {
 			if c.transport.metrics != nil {
 				c.transport.metrics.UpdateAll()
 			}
+			if c.p2p.metrics != nil {
+				c.p2p.metrics.UpdateAll()
+			}
 		}
 	}
 }
@@ -355,7 +358,7 @@ func (c *Client) CollectRuntimeInfo() (info *RuntimeInfo) {
 		Connections:    []string{},
 	}
 	c.p2p.connections.Range(func(key, value any) bool {
-		info.P2P.Connections = append(info.P2P.Connections, key.(string))
+		info.P2P.Connections = append(info.P2P.Connections, key.(*hub.Destination).Ip())
 		return true
 	})
 	info.Metrics = c.transport.metrics
