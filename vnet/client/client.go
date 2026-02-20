@@ -34,8 +34,10 @@ const (
 )
 
 const (
+	StateStopped      State = 0
 	StateRunning      State = 1
 	StateReconnecting State = 2
+	StateConnecting   State = 3
 )
 
 func (s State) String() string {
@@ -44,6 +46,10 @@ func (s State) String() string {
 		return "running"
 	case StateReconnecting:
 		return "reconnecting"
+	case StateStopped:
+		return "stopped"
+	case StateConnecting:
+		return "connecting"
 	default:
 		return "unknown"
 	}
@@ -155,8 +161,13 @@ func NewClient(cfg *Config) *Client {
 }
 
 func (c *Client) Run(ctx context.Context) {
+	c.state = StateConnecting
 	if err := c.run(ctx); err != nil {
-		return
+		// wait 100ms make sure client is under reconnecting state or not
+		time.Sleep(time.Millisecond * 100)
+		if c.state != StateReconnecting {
+			c.state = StateStopped
+		}
 	}
 
 	// register grace exit
@@ -185,6 +196,14 @@ func (c *Client) run(ctx context.Context) (err error) {
 	// run internal client
 	if control, err = c.internal.Setup(ctx); err != nil {
 		g.Log().Errorf(ctx, "run %s client error: %v", c.cfg.Type, err.Error())
+		// already under retry loop do not make new loop
+		if v := ctx.Value("retry"); v != nil && v.(bool) {
+			return
+		}
+		// mostly is network error, retry
+		go c.reconnectLoop()
+		// reset error
+		err = nil
 		return
 	}
 	g.Log().Infof(ctx, "connect success")
@@ -279,10 +298,10 @@ func (c *Client) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 	return
 }
 
-func (c *Client) Reconnect() (err error) {
+func (c *Client) Reconnect(ctx context.Context) (err error) {
 	g.Log().Infof(c.ctx, "reconnecting...")
 	c.ReleaseAll()
-	return c.run(context.Background())
+	return c.run(ctx)
 }
 
 func (c *Client) ReleaseAll() {
@@ -345,7 +364,9 @@ func (c *Client) nonStopUpdateMetricsLoop() {
 
 func (c *Client) CollectRuntimeInfo() (info *RuntimeInfo) {
 	info = &RuntimeInfo{
-		State: c.state.String(),
+		State:   c.state.String(),
+		Config:  c.cfg,
+		Metrics: c.transport.metrics,
 	}
 	if c.state != StateRunning {
 		return
@@ -374,7 +395,6 @@ func (c *Client) CollectRuntimeInfo() (info *RuntimeInfo) {
 			})
 		}
 	})
-	info.Config = c.cfg
 	slices.SortFunc(info.Router.Routers, func(a, b string) int {
 		return strings.Compare(a, b)
 	})
@@ -382,4 +402,19 @@ func (c *Client) CollectRuntimeInfo() (info *RuntimeInfo) {
 		return strings.Compare(a.Dst, b.Dst)
 	})
 	return
+}
+
+func (c *Client) Stop(ctx context.Context) (err error) {
+	g.Log().Infof(ctx, "stopping client...")
+	c.state = StateStopped
+	c.ReleaseAll()
+	return
+}
+
+func (c *Client) Resume(ctx context.Context) (err error) {
+	g.Log().Infof(ctx, "resuming client...")
+	// set state to reconnecting to avoid reconnecting loop
+	// break on stopped state
+	c.state = StateReconnecting
+	return c.Reconnect(ctx)
 }

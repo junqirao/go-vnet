@@ -27,6 +27,24 @@ func (s *sClient) GetRuntimeInfo(_ context.Context) (res *client.RuntimeInfo, er
 		return
 	}
 	res = s.ins.CollectRuntimeInfo()
-	res.Session.DispatchedDevice.Key = ""
+	if res.Session != nil {
+		res.Session.DispatchedDevice.Key = ""
+	}
 	return
+}
+
+func (s *sClient) Stop(ctx context.Context) (err error) {
+	if s.ins == nil {
+		err = response.CodeNotFound.WithDetail("client instance not registered")
+		return
+	}
+	return s.ins.Stop(ctx)
+}
+
+func (s *sClient) Resume(ctx context.Context) (err error) {
+	if s.ins == nil {
+		err = response.CodeNotFound.WithDetail("client instance not registered")
+		return
+	}
+	return s.ins.Resume(ctx)
 }

@@ -220,6 +220,10 @@ func (c *Client) syncRouterLoop() {
 }
 
 func (c *Client) reconnectLoop() {
+	if c.state == StateStopped {
+		return
+	}
+	g.Log().Infof(c.ctx, "reconnect loop started")
 	c.state = StateReconnecting
 	var (
 		tries    = 0
@@ -244,8 +248,12 @@ func (c *Client) reconnectLoop() {
 		// delay before reconnect to avoid busy loop
 		time.Sleep(time.Duration(interval) * time.Second)
 
+		// stop loop if client is stopped or running
+		if c.state == StateStopped || c.state == StateRunning {
+			return
+		}
 		// reconnect
-		err := c.Reconnect()
+		err := c.Reconnect(context.WithValue(context.Background(), "retry", true))
 		if err == nil {
 			g.Log().Infof(c.ctx, "reconnected successfully")
 			return

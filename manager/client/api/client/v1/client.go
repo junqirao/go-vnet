@@ -11,3 +11,15 @@ type GetRuntimeInfoReq struct {
 }
 
 type GetRuntimeInfoRes client.RuntimeInfo
+
+type StopReq struct {
+	g.Meta `path:"/client/stop" tags:"Client" method:"post" summary:"Stop Client"`
+}
+
+type StopRes struct{}
+
+type ResumeReq struct {
+	g.Meta `path:"/client/resume" tags:"Client" method:"post" summary:"Resume Client"`
+}
+
+type ResumeRes struct{}
