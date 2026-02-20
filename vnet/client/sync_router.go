@@ -16,6 +16,10 @@ import (
 )
 
 func (c *Client) syncRouter(ctx context.Context) (err error) {
+	// check if manager is initialized
+	if c.manager == nil {
+		return nil
+	}
 	// ping
 	resp, err := c.manager.CallFunc(ctx, server.FuncNamePing)
 	if err != nil {
@@ -49,6 +53,10 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 }
 
 func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
+	// check if manager is initialized
+	if c.manager == nil {
+		return nil
+	}
 	resp, err := c.manager.CallFunc(ctx, server.FuncNameGetP2PPeerMapping)
 	if err != nil {
 		g.Log().Errorf(ctx, "failed to execute get peer mapping data from server: %s", err.Error())
@@ -110,6 +118,10 @@ func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 }
 
 func (c *Client) updateRouter(ctx context.Context) (err error) {
+	// check if manager is initialized
+	if c.manager == nil {
+		return nil
+	}
 	resp, err := c.manager.CallFunc(ctx, server.FuncNameGetRouterData)
 	if err != nil {
 		g.Log().Errorf(ctx, "failed to execute get router data from server: %s", err.Error())
@@ -201,6 +213,10 @@ func (c *Client) syncRouterLoop() {
 			g.Log().Infof(c.ctx, "context cancelled")
 			return
 		case <-ticker.C:
+			// check if client is stopped before syncing router
+			if c.state == StateStopped {
+				return
+			}
 			// sync router with client context instead of Background
 			if err := c.syncRouter(c.ctx); err != nil {
 				g.Log().Errorf(c.ctx, "failed to sync router: %s", err.Error())
