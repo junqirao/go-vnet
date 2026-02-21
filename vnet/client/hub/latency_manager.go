@@ -12,34 +12,36 @@ import (
 // LatencyManager 延迟监控管理器
 // 使用单一协程管理所有Destination的ping，避免启动过多goroutine
 type LatencyManager struct {
-	mu      sync.RWMutex
-	ctx     context.Context
-	cancel  context.CancelFunc
-	hub     *Hub
-	slots   map[string]*LatencySlot // key: destination IP
-	stopped bool
-	ticker  *time.Ticker
-	wg      sync.WaitGroup
+	mu                   sync.RWMutex
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	hub                  *Hub
+	slots                map[string]*LatencySlot // key: destination IP
+	stopped              bool
+	ticker               *time.Ticker
+	wg                   sync.WaitGroup
+	cacheRefreshInterval time.Duration // 缓存刷新间隔，默认10秒
 }
 
 // LatencySlot 延迟监控槽
 // 记录单个Destination的延迟监控状态和统计数据
 type LatencySlot struct {
-	ip             string
-	pingAddr       string
-	client         *PingClient
-	samples        []time.Duration
-	index          int
-	count          int
-	minLatency     time.Duration
-	maxLatency     time.Duration
-	avgLatency     time.Duration
-	currentLatency time.Duration
-	totalLatency   time.Duration
-	config         *LatencyMonitorConfig
-	lastPingTime   time.Time
-	lastSuccess    bool
-	errorCount     int
+	ip              string
+	pingAddr        string
+	client          *PingClient
+	samples         []time.Duration
+	index           int
+	count           int
+	minLatency      time.Duration
+	maxLatency      time.Duration
+	avgLatency      time.Duration
+	currentLatency  time.Duration
+	totalLatency    time.Duration
+	config          *LatencyMonitorConfig
+	lastPingTime    time.Time
+	lastSuccess     bool
+	errorCount      int
+	lastRefreshTime time.Time // 最后刷新时间（用于缓存）
 }
 
 // LatencyMonitorConfig 延迟监控配置
@@ -93,18 +95,35 @@ func NewLatencyManager(ctx context.Context, hub *Hub, cfg *LatencyManagerConfig)
 	managerCtx, cancel := context.WithCancel(ctx)
 
 	m := &LatencyManager{
-		ctx:     managerCtx,
-		cancel:  cancel,
-		hub:     hub,
-		slots:   make(map[string]*LatencySlot),
-		stopped: true,
+		ctx:                  managerCtx,
+		cancel:               cancel,
+		hub:                  hub,
+		slots:                make(map[string]*LatencySlot),
+		stopped:              true,
+		cacheRefreshInterval: 10 * time.Second, // 默认缓存刷新间隔10秒
 	}
 
 	return m, nil
 }
 
 // Start 启动延迟监控管理器
+// 注意：现在 Start 不再启动后台协程，ping 操作由 RefreshAll 手动触发
 func (m *LatencyManager) Start(cfg *LatencyManagerConfig) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.stopped {
+		return
+	}
+
+	// 不再启动后台协程，只标记为已启动
+	m.stopped = false
+
+	g.Log().Infof(m.ctx, "[LATENCY-MANAGER] started (manual refresh mode)")
+}
+
+// StartWithAutoRefresh 启动延迟监控管理器并启用自动刷新（后台协程）
+func (m *LatencyManager) StartWithAutoRefresh(cfg *LatencyManagerConfig) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -124,7 +143,7 @@ func (m *LatencyManager) Start(cfg *LatencyManagerConfig) {
 	m.wg.Add(1)
 	go m.monitorLoop(cfg)
 
-	g.Log().Infof(m.ctx, "[LATENCY-MANAGER] started: interval=%v", cfg.CheckInterval)
+	g.Log().Infof(m.ctx, "[LATENCY-MANAGER] started with auto-refresh: interval=%v", cfg.CheckInterval)
 }
 
 // Stop 停止延迟监控管理器
@@ -293,7 +312,13 @@ func (m *LatencyManager) pingAllDestinations(cfg *LatencyManagerConfig) {
 	stopped := m.stopped
 	// 复制slots列表，避免在锁中执行ping
 	slotsCopy := make([]*LatencySlot, 0, len(m.slots))
+	now := time.Now()
 	for _, slot := range m.slots {
+		// 检查缓存是否过期
+		if !slot.lastRefreshTime.IsZero() && now.Sub(slot.lastRefreshTime) < m.cacheRefreshInterval {
+			// 缓存未过期，跳过ping
+			continue
+		}
 		slotsCopy = append(slotsCopy, slot)
 	}
 	m.mu.RUnlock()
@@ -306,6 +331,11 @@ func (m *LatencyManager) pingAllDestinations(cfg *LatencyManagerConfig) {
 	// 在锁外执行ping
 	for _, slot := range slotsCopy {
 		m.pingDestination(slot, cfg)
+
+		// 更新最后刷新时间
+		m.mu.Lock()
+		slot.lastRefreshTime = time.Now()
+		m.mu.Unlock()
 	}
 }
 
@@ -429,4 +459,48 @@ func (m *LatencyManager) IsRegistered(ip string) bool {
 
 	_, exists := m.slots[ip]
 	return exists
+}
+
+// RefreshAll 手动刷新所有注册Destination的延迟统计
+// 该方法会立即对所有目标执行一次ping并更新统计数据
+// 使用本地缓存：每个destination最多每10秒重新检测一次
+func (m *LatencyManager) RefreshAll() {
+	m.mu.RLock()
+	// 检查是否已停止
+	stopped := m.stopped
+	// 复制slots列表，避免在锁中执行ping
+	slotsCopy := make([]*LatencySlot, 0, len(m.slots))
+	now := time.Now()
+	for _, slot := range m.slots {
+		// 检查缓存是否过期
+		if !slot.lastRefreshTime.IsZero() && now.Sub(slot.lastRefreshTime) < m.cacheRefreshInterval {
+			// 缓存未过期，跳过ping，使用缓存数据
+			continue
+		}
+		slotsCopy = append(slotsCopy, slot)
+	}
+	m.mu.RUnlock()
+
+	// 如果已停止，不执行ping
+	if stopped {
+		return
+	}
+
+	// 在锁外执行ping
+	for _, slot := range slotsCopy {
+		m.pingDestination(slot, nil)
+
+		// 更新最后刷新时间
+		m.mu.Lock()
+		slot.lastRefreshTime = time.Now()
+		m.mu.Unlock()
+	}
+}
+
+// SetCacheRefreshInterval 设置缓存刷新间隔
+func (m *LatencyManager) SetCacheRefreshInterval(interval time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cacheRefreshInterval = interval
+	g.Log().Infof(m.ctx, "[LATENCY-MANAGER] cache refresh interval set to: %v", interval)
 }

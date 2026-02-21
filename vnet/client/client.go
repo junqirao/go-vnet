@@ -475,6 +475,10 @@ func (c *Client) CollectRuntimeInfo(recordDuration time.Duration) (info *Runtime
 	router := c.hub.Router()
 	info.Router.Version = router.MD5()
 	lm := c.hub.LatencyManager()
+
+	// 手动刷新所有延迟统计（避免后台持续ping造成资源浪费）
+	lm.RefreshAll()
+
 	router.Range(func(addr string, val any) {
 		if dst, ok := val.(*hub.Destination); ok {
 			info.Router.Routers = append(info.Router.Routers, dst.Ip())
