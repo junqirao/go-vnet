@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/google/uuid"
@@ -211,6 +212,10 @@ type (
 		fallback    protocol.ReadWriter
 		hook        TxHook
 		tryP2P      func(ctx context.Context) error
+
+		// 延迟监控相关（现在由Hub的LatencyManager统一管理）
+		pingAddr      string
+		pingMonitorMu sync.Mutex
 	}
 	TxError struct {
 		dst *Destination
@@ -319,6 +324,14 @@ func (c *Destination) negotiate() (err error) {
 		g.Log().Infof(c.ctx, "[TX] negotiate success")
 		c.tx = tx
 		c.hook.AfterDial(c.ctx, c)
+
+		// 启动延迟监控（固定使用15000端口）
+		// 注意：这里使用固定端口，实际应用中可能需要从session或配置中获取
+		if err := c.StartLatencyMonitor(15000); err != nil {
+			g.Log().Warningf(c.ctx, "[LATENCY] start monitor failed: %v", err)
+			// 不影响主流程
+		}
+
 		return
 	default:
 		g.Log().Infof(c.ctx, "[TX] negotiate failed: %d", buf[0])
@@ -446,6 +459,9 @@ func (c *Destination) Ip() string {
 }
 
 func (c *Destination) Close() error {
+	// 停止延迟监控
+	c.StopLatencyMonitor()
+
 	close(c.sig)
 	if c.fallback != nil {
 		_ = c.fallback.Close()
@@ -494,4 +510,79 @@ func (c *Destination) Type() string {
 		return ""
 	}
 	return c.tx.Type()
+}
+
+// SetPingInfo 设置对端ping地址
+func (c *Destination) SetPingInfo(pingAddr string) {
+	c.pingMonitorMu.Lock()
+	defer c.pingMonitorMu.Unlock()
+	c.pingAddr = pingAddr
+}
+
+// StartLatencyMonitor 启动延迟监控
+// 注册到Hub的全局LatencyManager中
+func (c *Destination) StartLatencyMonitor(pingPort int) error {
+	c.pingMonitorMu.Lock()
+	defer c.pingMonitorMu.Unlock()
+
+	if c.pingAddr == "" {
+		// 如果没有设置ping地址，使用默认地址
+		c.pingAddr = fmt.Sprintf("%s:%d", c.ip, pingPort)
+	}
+
+	// 获取Hub的LatencyManager
+	manager := c.ref.LatencyManager()
+	if manager == nil {
+		g.Log().Debugf(c.ctx, "[LATENCY] latency manager not available, skip registration")
+		return nil
+	}
+
+	// 注册到管理器
+	if err := manager.Register(c.ip, c.pingAddr, DefaultLatencyMonitorConfig()); err != nil {
+		return fmt.Errorf("register to latency manager failed: %w", err)
+	}
+
+	g.Log().Infof(c.ctx, "[LATENCY] registered to manager: ip=%s, pingAddr=%s", c.ip, c.pingAddr)
+	return nil
+}
+
+// StopLatencyMonitor 停止延迟监控
+// 从Hub的全局LatencyManager中注销
+func (c *Destination) StopLatencyMonitor() {
+	c.pingMonitorMu.Lock()
+	defer c.pingMonitorMu.Unlock()
+
+	// 从管理器注销
+	manager := c.ref.LatencyManager()
+	if manager != nil {
+		manager.Unregister(c.ip)
+	}
+
+	c.pingAddr = ""
+}
+
+// GetLatencyStats 获取延迟统计
+func (c *Destination) GetLatencyStats() LatencyStats {
+	c.pingMonitorMu.Lock()
+	defer c.pingMonitorMu.Unlock()
+
+	// 从管理器获取统计
+	manager := c.ref.LatencyManager()
+	if manager == nil {
+		return LatencyStats{}
+	}
+	return manager.GetStats(c.ip)
+}
+
+// GetLatencyPercentile 获取百分位数延迟
+func (c *Destination) GetLatencyPercentile(p float64) time.Duration {
+	c.pingMonitorMu.Lock()
+	defer c.pingMonitorMu.Unlock()
+
+	// 从管理器获取百分位数
+	manager := c.ref.LatencyManager()
+	if manager == nil {
+		return 0
+	}
+	return manager.GetPercentile(c.ip, p)
 }

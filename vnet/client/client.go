@@ -86,6 +86,11 @@ type (
 			host                   host.Host
 			hostId                 string
 		}
+
+		ping struct {
+			server *hub.PingServer
+			port   int
+		}
 	}
 	internal interface {
 		io.Closer
@@ -120,8 +125,9 @@ type (
 		MetricsRecords []*metrics.TransportMetricsRecord `json:"metrics_records"`
 	}
 	ConnectionInfo struct {
-		Dst  string `json:"dst"`
-		Type string `json:"type"`
+		Dst     string           `json:"dst"`
+		Type    string           `json:"type"`
+		Latency hub.LatencyStats `json:"latency"`
 	}
 )
 
@@ -264,6 +270,12 @@ func (c *Client) run(ctx context.Context) (err error) {
 	// after hook
 	c.internal.AfterHandshake(ctx, sess)
 
+	// 启动ping服务器
+	if err := c.startPingServer(ctx); err != nil {
+		g.Log().Warningf(ctx, "failed to start ping server: %s", err.Error())
+		// 不影响主流程
+	}
+
 	// setup p2p
 	if c.cfg.P2P.Enabled {
 		c.p2p.metrics = metrics.NewTransportMetrics()
@@ -345,6 +357,13 @@ func (c *Client) ReleaseAll() {
 		c.p2p.host = nil
 	}
 	c.p2p.hostId = ""
+
+	// 关闭ping服务器
+	if c.ping.server != nil {
+		_ = c.ping.server.Close()
+		c.ping.server = nil
+	}
+
 	if c.manager != nil {
 		c.manager.Close()
 	}
@@ -353,6 +372,20 @@ func (c *Client) ReleaseAll() {
 	c.ctx = nil
 	// force GC
 	runtime.GC()
+}
+
+func (c *Client) startPingServer(ctx context.Context) error {
+	// 固定使用15000端口
+	c.ping.port = 15000
+
+	s, err := hub.NewPingServer(ctx, fmt.Sprintf("0.0.0.0:%d", c.ping.port))
+	if err != nil {
+		return fmt.Errorf("start ping server failed: %w", err)
+	}
+
+	c.ping.server = s
+	g.Log().Infof(ctx, "[PING] server started: port=%d", c.ping.port)
+	return nil
 }
 
 func (c *Client) nonStopUpdateMetricsLoop() {
@@ -404,12 +437,14 @@ func (c *Client) CollectRuntimeInfo(recordDuration time.Duration) (info *Runtime
 	info.Router = &RouterRuntimeInfo{}
 	router := c.hub.Router()
 	info.Router.Version = router.MD5()
+	lm := c.hub.LatencyManager()
 	router.Range(func(addr string, val any) {
 		if dst, ok := val.(*hub.Destination); ok {
 			info.Router.Routers = append(info.Router.Routers, dst.Ip())
 			info.Connections = append(info.Connections, &ConnectionInfo{
-				Dst:  dst.Ip(),
-				Type: dst.Type(),
+				Latency: lm.GetStats(dst.Ip()),
+				Dst:     dst.Ip(),
+				Type:    dst.Type(),
 			})
 		}
 	})

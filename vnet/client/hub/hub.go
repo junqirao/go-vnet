@@ -31,6 +31,8 @@ type (
 		dev tun.Tun
 		// router
 		router *router.Router
+		// latency
+		latencyManager *LatencyManager
 	}
 	Config struct {
 		Name          string `json:"-"`
@@ -86,10 +88,24 @@ func NewHub(cfg Config, dev tun.Tun) *Hub {
 		return e
 	})
 
+	// 初始化延迟监控管理器
+	latencyManager, err := NewLatencyManager(ctx, hub, DefaultLatencyManagerConfig())
+	if err != nil {
+		g.Log().Warningf(ctx, "create latency manager failed: %v", err)
+		latencyManager = nil
+	} else {
+		hub.latencyManager = latencyManager
+	}
+
 	return hub
 }
 
 func (h *Hub) Start() {
+	// 启动延迟监控管理器
+	if h.latencyManager != nil {
+		h.latencyManager.Start(DefaultLatencyManagerConfig())
+	}
+
 	go h.txLoop()
 	h.rxLoop()
 }
@@ -102,6 +118,12 @@ func (h *Hub) Stop(reason ...string) {
 		}
 	default:
 	}
+
+	// 停止延迟监控管理器
+	if h.latencyManager != nil {
+		h.latencyManager.Stop()
+	}
+
 	close(h.sig)
 	if len(reason) > 0 {
 		g.Log().Errorf(h.ctx, "hub stopped reason: %s", reason[0])
@@ -112,4 +134,8 @@ func (h *Hub) Stop(reason ...string) {
 
 func (h *Hub) Router() *router.Router {
 	return h.router
+}
+
+func (h *Hub) LatencyManager() *LatencyManager {
+	return h.latencyManager
 }
