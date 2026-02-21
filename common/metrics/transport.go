@@ -23,6 +23,23 @@ type (
 		Last  atomic.Uint64 // 上次上报值
 		Speed atomic.Uint64 // 当前速度
 	}
+	TransportMetricsRecord struct {
+		RecordTime int64                `json:"record_time,omitempty"`
+		RxBytes    *BytesCounterRecord  `json:"rx_bytes,omitempty"`
+		RxPackets  *PacketCounterRecord `json:"rx_packets,omitempty"`
+		TxBytes    *BytesCounterRecord  `json:"tx_bytes,omitempty"`
+		TxPackets  *PacketCounterRecord `json:"tx_packets,omitempty"`
+	}
+	BytesCounterRecord struct {
+		Total uint64 `json:"total"`
+		Last  uint64 `json:"last"`
+		Speed uint64 `json:"speed"`
+	}
+	PacketCounterRecord struct {
+		Total uint64 `json:"total"`
+		Last  uint64 `json:"last"`
+		Speed uint64 `json:"speed"`
+	}
 )
 
 // NewTransportMetrics 创建新的传输指标
@@ -75,6 +92,14 @@ func (c *BytesCounter) UpdateStats() {
 	c.Last.Store(total)
 }
 
+func (c *BytesCounter) Record() *BytesCounterRecord {
+	return &BytesCounterRecord{
+		Total: c.Total.Load(),
+		Last:  c.Last.Load(),
+		Speed: c.Speed.Load(),
+	}
+}
+
 // Add 增加包数（原子操作，无锁，极致性能）
 func (c *PacketCounter) Add(delta uint64) {
 	c.Total.Add(delta)
@@ -105,12 +130,34 @@ func (c *PacketCounter) UpdateStats() {
 	c.Last.Store(total)
 }
 
+func (c *PacketCounter) Record() *PacketCounterRecord {
+	return &PacketCounterRecord{
+		Total: c.Total.Load(),
+		Last:  c.Last.Load(),
+		Speed: c.Speed.Load(),
+	}
+}
+
 // UpdateAll 更新所有传输指标的统计信息
 func (t *TransportMetrics) UpdateAll() {
 	t.RxBytes.UpdateStats()
 	t.RxPackets.UpdateStats()
 	t.TxBytes.UpdateStats()
 	t.TxPackets.UpdateStats()
+}
+
+func (t *TransportMetrics) Record() *TransportMetricsRecord {
+	return &TransportMetricsRecord{
+		RecordTime: time.Now().Unix(),
+		RxBytes:    t.RxBytes.Record(),
+		RxPackets:  t.RxPackets.Record(),
+		TxBytes:    t.TxBytes.Record(),
+		TxPackets:  t.TxPackets.Record(),
+	}
+}
+
+func (t *TransportMetricsRecord) Timestamp() int64 {
+	return t.RecordTime
 }
 
 // Reset 重置所有计数器

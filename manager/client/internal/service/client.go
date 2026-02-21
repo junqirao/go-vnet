@@ -8,12 +8,13 @@ package service
 import (
 	"context"
 	"go-vnet/vnet/client"
+	"time"
 )
 
 type (
 	IClient interface {
 		RegisterInstance(c *client.Client)
-		GetRuntimeInfo(_ context.Context) (res *client.RuntimeInfo, err error)
+		GetRuntimeInfo(_ context.Context, duration time.Duration) (res *client.RuntimeInfo, err error)
 		Stop(ctx context.Context) (err error)
 		Resume(ctx context.Context) (err error)
 	}

@@ -71,12 +71,14 @@ type (
 		ip       string
 
 		transport struct {
-			opts    []protocol.TransportOpt
-			metrics *metrics.TransportMetrics
+			opts           []protocol.TransportOpt
+			metrics        *metrics.TransportMetrics
+			localMetricsDB *metrics.TimeSeriesDB[*metrics.TransportMetricsRecord]
 		}
 
 		p2p struct {
 			metrics                *metrics.TransportMetrics
+			localMetricsDB         *metrics.TimeSeriesDB[*metrics.TransportMetricsRecord]
 			signalingServerAddress *server.AddressInfo
 			connections            sync.Map // dst:*p2pConnInfo
 			peerMappingVersion     *atomic.Uint64
@@ -97,23 +99,25 @@ type (
 	}
 	State       uint8
 	RuntimeInfo struct {
-		State       string                    `json:"state"`
-		Session     *session.Session          `json:"session"`
-		Metrics     *metrics.TransportMetrics `json:"metrics"`
-		Router      *RouterRuntimeInfo        `json:"router"`
-		P2P         *P2PRuntimeInfo           `json:"p2p"`
-		Connections []*ConnectionInfo         `json:"connections"`
-		Config      *Config                   `json:"config"`
+		State          string                            `json:"state"`
+		Session        *session.Session                  `json:"session"`
+		Metrics        *metrics.TransportMetrics         `json:"metrics"`
+		MetricsRecords []*metrics.TransportMetricsRecord `json:"metrics_records"`
+		Router         *RouterRuntimeInfo                `json:"router"`
+		P2P            *P2PRuntimeInfo                   `json:"p2p"`
+		Connections    []*ConnectionInfo                 `json:"connections"`
+		Config         *Config                           `json:"config"`
 	}
 	RouterRuntimeInfo struct {
 		Routers []string `json:"routers"`
 		Version string   `json:"version"`
 	}
 	P2PRuntimeInfo struct {
-		HostId         string                    `json:"host_id"`
-		MappingVersion uint64                    `json:"mapping_version"`
-		Connections    []string                  `json:"connections"`
-		Metrics        *metrics.TransportMetrics `json:"metrics"`
+		HostId         string                            `json:"host_id"`
+		MappingVersion uint64                            `json:"mapping_version"`
+		Connections    []string                          `json:"connections"`
+		Metrics        *metrics.TransportMetrics         `json:"metrics"`
+		MetricsRecords []*metrics.TransportMetricsRecord `json:"metrics_records"`
 	}
 	ConnectionInfo struct {
 		Dst  string `json:"dst"`
@@ -154,9 +158,13 @@ func NewClient(cfg *Config) *Client {
 
 	// create once and run non-stop update loop
 	c.transport.metrics = metrics.NewTransportMetrics()
+	// only record last 30 minutes
+	c.transport.localMetricsDB = metrics.NewTimeSeriesDB[*metrics.TransportMetricsRecord](1800)
 	go c.nonStopUpdateMetricsLoop()
 	c.transport.opts = opts
 	c.p2p.peerMappingVersion = &atomic.Uint64{}
+	// only record last 30 minutes
+	c.p2p.localMetricsDB = metrics.NewTimeSeriesDB[*metrics.TransportMetricsRecord](1800)
 	return c
 }
 
@@ -354,19 +362,28 @@ func (c *Client) nonStopUpdateMetricsLoop() {
 		case <-ticker.C:
 			if c.transport.metrics != nil {
 				c.transport.metrics.UpdateAll()
+				c.transport.localMetricsDB.Append(c.transport.metrics.Record())
 			}
 			if c.p2p.metrics != nil {
 				c.p2p.metrics.UpdateAll()
+				c.p2p.localMetricsDB.Append(c.p2p.metrics.Record())
 			}
 		}
 	}
 }
 
-func (c *Client) CollectRuntimeInfo() (info *RuntimeInfo) {
+func (c *Client) CollectRuntimeInfo(recordDuration time.Duration) (info *RuntimeInfo) {
+	now := time.Now()
+	if recordDuration == 0 {
+		recordDuration = time.Minute * 5
+	}
+	start := now.Add(-recordDuration).Unix()
+	end := now.Unix()
 	info = &RuntimeInfo{
-		State:   c.state.String(),
-		Config:  c.cfg,
-		Metrics: c.transport.metrics,
+		State:          c.state.String(),
+		Config:         c.cfg,
+		Metrics:        c.transport.metrics,
+		MetricsRecords: c.transport.localMetricsDB.GetRange(start, end),
 	}
 	if c.state != StateRunning {
 		return
@@ -377,6 +394,7 @@ func (c *Client) CollectRuntimeInfo() (info *RuntimeInfo) {
 		MappingVersion: c.p2p.peerMappingVersion.Load(),
 		Metrics:        c.p2p.metrics,
 		Connections:    []string{},
+		MetricsRecords: c.p2p.localMetricsDB.GetRange(start, end),
 	}
 	c.p2p.connections.Range(func(key, value any) bool {
 		info.P2P.Connections = append(info.P2P.Connections, key.(*hub.Destination).Ip())

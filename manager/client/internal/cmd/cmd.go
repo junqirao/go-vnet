@@ -45,7 +45,7 @@ var (
 				g.Cfg().MustGet(ctx, "manager.listen").String(),
 				g.Cfg().MustGet(ctx, "manager.port").Int()))
 			s.Group("/", func(group *ghttp.RouterGroup) {
-				group.Middleware(ghttp.MiddlewareCORS, response.Middleware)
+				group.Middleware(ghttp.MiddlewareCORS, ghttp.MiddlewareGzip, response.Middleware)
 				if allows := g.Cfg().MustGet(ctx, "manager.allowed_ip", []string{}).Strings(); len(allows) > 0 {
 					g.Log().Infof(ctx, "manager server allowed ip: %v", allows)
 					group.Middleware(middieware.WhiteList(allows))
