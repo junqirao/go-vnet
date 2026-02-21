@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/util/gconv"
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p/core/host"
 
@@ -233,7 +234,7 @@ func (s *Server) handleSession(ss *Session) {
 	ss.network.Router().Register(routeAddress, ss)
 
 	// get quota
-	qa, err := s.ms.GetQuotaAdaptor(ctx, ss.DispatchedDevice.DataTrafficQuota.Id, ss.DispatchedDevice.Id, quota.TargetTypeDeviceTraffic)
+	qa, err := s.ms.GetQuotaAdaptor(ctx, ss.DispatchedDevice.DataTrafficQuota.Id, gconv.String(ss.DispatchedDevice.Sid), quota.TargetTypeDeviceTraffic)
 	if err != nil {
 		return
 	}

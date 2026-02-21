@@ -136,11 +136,12 @@ func (d *sDevice) fillSubDeviceQuotaDetails(ctx context.Context, brief *model.Su
 	sub = &model.SubDevice{
 		SubDeviceBrief: brief,
 	}
-	sub.Quota, err = service.Quota().GetQuotaDetails(ctx, sub.QuotaId, sub.DeviceId, quota.TargetTypeDeviceTraffic, true)
+	target := gconv.String(sub.Id)
+	sub.Quota, err = service.Quota().GetQuotaDetails(ctx, sub.QuotaId, target, quota.TargetTypeDeviceTraffic, true)
 	if err != nil {
 		return
 	}
-	sub.Bandwidth, err = service.Quota().GetQuotaDetails(ctx, sub.BandwidthId, sub.DeviceId, quota.TargetTypeDeviceBandwidth, false)
+	sub.Bandwidth, err = service.Quota().GetQuotaDetails(ctx, sub.BandwidthId, target, quota.TargetTypeDeviceBandwidth, false)
 	if err != nil {
 		return
 	}

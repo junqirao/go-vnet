@@ -8,6 +8,7 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/util/gconv"
 
+	"go-vnet/common/quota"
 	"go-vnet/common/session"
 	"go-vnet/manager/server/internal/service"
 	"go-vnet/vnet/server"
@@ -72,12 +73,17 @@ func (s *sNetwork) AcquireDevice(ctx context.Context, ss *server.Session, subDev
 		err = fmt.Errorf("get bandwidth quota failed: %w", err)
 		return
 	}
+	usage, _, err := service.Quota().LoadUsage(ctx, dt.Id, gconv.String(subDeviceId), quota.TargetTypeDeviceTraffic)
+	if err != nil {
+		return
+	}
 
 	dev.Id = subDevice.DeviceId
 	dev.Sid = subDevice.Id
 	dev.Name = deviceInfo.Name
 	dev.CIDR = cidr
 	dev.MTU = network.MTU
+	dev.DataTrafficUsed = usage
 
 	// quota
 	dev.BandwidthQuota = &session.Quota{

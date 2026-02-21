@@ -41,6 +41,7 @@ type (
 		MTU              int    `json:"mtu"`                // mtu
 		Key              string `json:"key,omitempty"`      // network encrypt key
 		DataTrafficQuota *Quota `json:"data_traffic_quota"` // data traffic quota
+		DataTrafficUsed  int64  `json:"data_traffic_used"`  // data traffic used
 		BandwidthQuota   *Quota `json:"bandwidth_quota"`    // bandwidth quota
 	}
 	Quota struct {
@@ -92,6 +93,7 @@ func (d *Device) Clone() *Device {
 		MTU:              d.MTU,
 		Key:              d.Key,
 		DataTrafficQuota: d.DataTrafficQuota,
+		DataTrafficUsed:  d.DataTrafficUsed,
 		BandwidthQuota:   d.BandwidthQuota,
 	}
 }
