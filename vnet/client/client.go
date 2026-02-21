@@ -374,17 +374,53 @@ func (c *Client) ReleaseAll() {
 	runtime.GC()
 }
 
+// cidrToIP 从 CIDR 字符串中提取 IP 地址
+// 例如: "192.168.98.3/24" -> "192.168.98.3"
+func cidrToIP(cidr string) (string, error) {
+	if cidr == "" {
+		return "", fmt.Errorf("cidr is empty")
+	}
+
+	// CIDR 格式为 "IP/网段"，提取 IP 部分
+	slashIndex := strings.Index(cidr, "/")
+	if slashIndex == -1 {
+		return cidr, nil // 如果没有斜杠，可能本身就是 IP
+	}
+
+	ip := cidr[:slashIndex]
+	if ip == "" {
+		return "", fmt.Errorf("invalid cidr format: %s", cidr)
+	}
+
+	return ip, nil
+}
+
 func (c *Client) startPingServer(ctx context.Context) error {
 	// 固定使用15000端口
 	c.ping.port = 15000
 
-	s, err := hub.NewPingServer(ctx, fmt.Sprintf("0.0.0.0:%d", c.ping.port))
+	// 从 Session 中获取 CIDR 并转换为 IP
+	var listenAddr string
+	if c.session != nil && c.session.DispatchedDevice.CIDR != "" {
+		ip, err := cidrToIP(c.session.DispatchedDevice.CIDR)
+		if err != nil {
+			g.Log().Warningf(ctx, "failed to extract ip from cidr: %v, using 0.0.0.0", err)
+			listenAddr = fmt.Sprintf("0.0.0.0:%d", c.ping.port)
+		} else {
+			listenAddr = fmt.Sprintf("%s:%d", ip, c.ping.port)
+		}
+	} else {
+		g.Log().Warningf(ctx, "session or cidr is empty, using 0.0.0.0")
+		listenAddr = fmt.Sprintf("0.0.0.0:%d", c.ping.port)
+	}
+
+	s, err := hub.NewPingServer(ctx, listenAddr)
 	if err != nil {
 		return fmt.Errorf("start ping server failed: %w", err)
 	}
 
 	c.ping.server = s
-	g.Log().Infof(ctx, "[PING] server started: port=%d", c.ping.port)
+	g.Log().Infof(ctx, "[PING] server started: listenAddr=%s, port=%d", listenAddr, c.ping.port)
 	return nil
 }
 
