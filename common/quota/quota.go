@@ -132,3 +132,7 @@ func (q *Quota) GetMaxLimit() int64 {
 func (q *Quota) Reset() {
 	q.usage.Store(0)
 }
+
+func (q *Quota) Adaptor() Adaptor {
+	return q.adaptor
+}

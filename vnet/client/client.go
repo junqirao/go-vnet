@@ -249,6 +249,7 @@ func (c *Client) run(ctx context.Context) (err error) {
 
 	// create manager for control connection
 	c.manager = NewManager(sess, control)
+	c.manager.SetEventHandler(c.serverEventHandler)
 
 	// setup hub
 	c.hub = hub.NewHub(hub.Config{

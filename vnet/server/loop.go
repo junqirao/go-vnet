@@ -6,16 +6,20 @@ import (
 
 const (
 	updateSessionMetricsInterval = time.Second * 1
+	activeThresholdSpeed         = 1024 // 1kb/s
 )
 
 func (s *Server) backgroundLoop() {
 	metricsTicker := time.NewTicker(updateSessionMetricsInterval)
 	updateUsageTicker := time.NewTicker(time.Minute)
+	pushUsageToActiveSessionsTicker := time.NewTicker(time.Minute * 5)
 	go func() {
 		for {
 			select {
 			case <-s.sig:
 				return
+			case <-pushUsageToActiveSessionsTicker.C:
+				s.pushQuotaUsageUpdateEvent()
 			case <-updateUsageTicker.C:
 				// session
 				s.sessions.Range(func(key, value any) bool {
@@ -23,11 +27,16 @@ func (s *Server) backgroundLoop() {
 					s.updateUsage(ss)
 					return true
 				})
-			case <-metricsTicker.C:
+			case now := <-metricsTicker.C:
 				// session
 				s.sessions.Range(func(key, value any) bool {
 					ss := value.(*Session)
 					s.updateSessionMetrics(ss)
+					rx := ss.Metrics.RxBytes.Speed.Load()
+					tx := ss.Metrics.TxBytes.Speed.Load()
+					if rx+tx > activeThresholdSpeed {
+						ss.LastActive = now
+					}
 					return true
 				})
 				// network

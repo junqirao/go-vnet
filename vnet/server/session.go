@@ -34,6 +34,7 @@ type (
 		Metrics    *metrics.TransportMetrics `json:"metrics"`
 		Proxying   sync.Map                  `json:"-"`
 		CreatedAt  time.Time                 `json:"created_at"`
+		LastActive time.Time                 `json:"last_active"`
 	}
 	ClientInfo struct {
 		Hostname any `json:"hostname"`
