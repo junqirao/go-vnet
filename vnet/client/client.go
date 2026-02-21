@@ -434,5 +434,5 @@ func (c *Client) Resume(ctx context.Context) (err error) {
 	// set state to reconnecting to avoid reconnecting loop
 	// break on stopped state
 	c.state = StateReconnecting
-	return c.Reconnect(ctx)
+	return c.Reconnect(context.Background())
 }
