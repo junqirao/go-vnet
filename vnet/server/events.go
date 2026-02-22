@@ -77,7 +77,7 @@ func (s *Server) BroadcastPeer(ctx context.Context, eventName string, from *Sess
 		push++
 		data := P2PPeerEventData{
 			Peer: peer,
-			Ip:   sess.IP,
+			Ip:   from.IP,
 		}
 		s.manager.PushEventAsync(sess, eventName, data, errorFunc)
 		return true
