@@ -25,6 +25,22 @@ type (
 	ServerEventHandler func(ctx context.Context, event *server.ServersideEvent)
 )
 
+var (
+	WithManagerCallOption = func(ctx context.Context, opts ...func(ctx context.Context) context.Context) context.Context {
+		for _, opt := range opts {
+			ctx = opt(ctx)
+		}
+		return ctx
+	}
+	ManagerCallNoResponse = func(ctx context.Context) context.Context {
+		return context.WithValue(ctx, managerCallCtxKeyNoResponse, true)
+	}
+)
+
+const (
+	managerCallCtxKeyNoResponse = "no_response"
+)
+
 func NewManager(session *session.Session, sr session.SendReceiveCloser) *Manager {
 	m := &Manager{
 		session:          session,
@@ -107,6 +123,11 @@ func (m *Manager) CallFunc(ctx context.Context, name string, args ...map[string]
 	// marshal and send
 	req, _ := json.Marshal(request)
 	if err = m.sr.Send(req); err != nil {
+		return
+	}
+
+	if ctx.Value(managerCallCtxKeyNoResponse) != nil {
+		// no response
 		return
 	}
 

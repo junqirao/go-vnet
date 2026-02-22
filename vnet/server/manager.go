@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"runtime"
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/panjf2000/ants/v2"
 )
 
 const (
@@ -17,6 +19,7 @@ type (
 	Manager struct {
 		sig       chan struct{}
 		functions sync.Map // name :  FuncCallHandler
+		worker    *ants.Pool
 	}
 )
 
@@ -49,8 +52,10 @@ type (
 )
 
 func NewManager() *Manager {
+	worker, _ := ants.NewPool(runtime.NumCPU())
 	m := &Manager{
-		sig: make(chan struct{}),
+		sig:    make(chan struct{}),
+		worker: worker,
 	}
 	return m
 }
@@ -105,4 +110,20 @@ func (m *Manager) PushEvent(session *Session, event string, data any) error {
 		Data:    data,
 	})
 	return session.Send(append([]byte{MessageTypeServerEvent}, bs...))
+}
+
+func (m *Manager) PushEventAsync(session *Session, event string, data any, onerror ...func(session *Session, event string, data any, err error)) {
+	err := m.worker.Submit(func() {
+		err := m.PushEvent(session, event, data)
+		if err != nil {
+			for _, f := range onerror {
+				f(session, event, data, err)
+			}
+		}
+	})
+	if err != nil {
+		for _, f := range onerror {
+			f(session, event, data, err)
+		}
+	}
 }

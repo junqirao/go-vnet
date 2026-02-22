@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,8 +31,8 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 	data := strings.Split(resp.Data.(string), ",")
 	current := c.hub.Router().MD5()
 	remote := data[0]
-	v, _ := strconv.Atoi(data[1])
-	latestVer := uint64(v)
+	// v, _ := strconv.Atoi(data[1])
+	// latestVer := uint64(v)
 	// sync router
 	if remote != current {
 		g.Log().Infof(ctx, "router hash changed, current: %s, server: %s", current, remote)
@@ -42,13 +41,13 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 		}
 	}
 	// sync p2p peers
-	currentVer := c.p2p.peerMappingVersion.Load()
-	if currentVer != latestVer && c.cfg.P2P.Enabled {
-		if err := c.syncP2PPeerMapping(ctx); err != nil {
-			g.Log().Errorf(ctx, "failed to sync peer mapping: %s", err.Error())
-		}
-		c.p2p.peerMappingVersion.CompareAndSwap(currentVer, latestVer)
-	}
+	// currentVer := c.p2p.peerMappingVersion.Load()
+	// if currentVer != latestVer && c.cfg.P2P.Enabled {
+	// 	if err := c.syncP2PPeerMapping(ctx); err != nil {
+	// 		g.Log().Errorf(ctx, "failed to sync peer mapping: %s", err.Error())
+	// 	}
+	// 	c.p2p.peerMappingVersion.CompareAndSwap(currentVer, latestVer)
+	// }
 	return
 }
 

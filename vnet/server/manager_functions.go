@@ -19,6 +19,7 @@ const (
 	FuncNameRegisterP2PPeer   = "register_p2p_peer"
 	FuncNameGetP2PPeerInfo    = "get_p2p_peer_info"
 	FuncNameGetP2PPeerMapping = "get_p2p_relay_mapping"
+	FuncNameCloseSession      = "close_session"
 )
 
 var (
@@ -109,8 +110,17 @@ var (
 				if !ok {
 					g.Log().Infof(ctx, "registered p2p peer from %s: %s", session.IP, peer)
 					server.peerMappingVersion.Add(1)
+					server.BroadcastPeer(ctx, EventNameP2PPeerUpdate, session, peer)
 				}
 			}
+			return &FuncCallResponse{Code: 0, Data: nil}, nil
+		},
+	}
+	funcCloseSession = FuncCallInfo{
+		Name: FuncNameCloseSession,
+		Fn: func(ctx context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
+			session.Stop()
+			session.Release(errors.New("client active close"))
 			return &FuncCallResponse{Code: 0, Data: nil}, nil
 		},
 	}

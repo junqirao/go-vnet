@@ -82,7 +82,7 @@ type (
 			signalingServerAddress *server.AddressInfo
 			connections            sync.Map // dst:*p2pConnInfo
 			peerMappingVersion     *atomic.Uint64
-			peerMapping            sync.Map
+			peerMapping            sync.Map // ip : peer.AddrInfo
 			host                   host.Host
 			hostId                 string
 		}
@@ -326,6 +326,10 @@ func (c *Client) Reconnect(ctx context.Context) (err error) {
 }
 
 func (c *Client) ReleaseAll() {
+	if c.state == StateRunning {
+		_, _ = c.manager.CallFunc(WithManagerCallOption(c.ctx, ManagerCallNoResponse), server.FuncNameCloseSession)
+		g.Log().Infof(c.ctx, "close session")
+	}
 	if c.hub != nil {
 		c.hub.Stop("client release all")
 		c.hub.Router().Range(func(key string, value any) {

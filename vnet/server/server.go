@@ -73,6 +73,7 @@ func NewServer(cfg *Config) *Server {
 		funcGetP2PRelayInfo,
 		funcGetP2PRelayMapping,
 		funcRegisterP2PPeer,
+		funcCloseSession,
 	)
 
 	// chainFunc := config.GetMappedConfig[[]auth.ServerAuthChainFunc](cfg,
@@ -232,6 +233,8 @@ func (s *Server) handleSession(ss *Session) {
 
 	// register router
 	ss.network.Router().Register(routeAddress, ss)
+	// broadcast router add event
+	s.BroadcastRouter(ctx, EventNameRouterUpdate, ss, ss.IP)
 
 	// get quota
 	qa, err := s.ms.GetQuotaAdaptor(ctx, ss.DispatchedDevice.DataTrafficQuota.Id, gconv.String(ss.DispatchedDevice.Sid), quota.TargetTypeDeviceTraffic)
@@ -259,11 +262,19 @@ func (s *Server) handleSession(ss *Session) {
 	go s.handleFuncCallLoop(ss)
 
 	defer func() {
+		// broadcast peer delete event
+		if gconv.Bool(ss.ClientInfo.P2P) {
+			if peer, ok := ss.storage.Load(sessionStorageKeyP2PPeer); ok {
+				s.BroadcastPeer(ctx, EventNameP2PPeerDelete, ss, gconv.String(peer))
+				// add version make cli
+				// unregister session
+				s.peerMappingVersion.Add(1)
+			}
+		}
+		// broadcast router delete event
+		s.BroadcastRouter(ctx, EventNameRouterDelete, ss, ss.IP)
 		usage := ss.Release(ep)
 		// delete p2p peer mapping
-		// add version make client re-sync
-		s.peerMappingVersion.Add(1)
-		// unregister session
 		s.sessions.Delete(ss.IP)
 		g.Log().Infof(ss.Ctx, "%s session closed: %s, usage=%dbytes", ss.IP, ss.SessionId, usage)
 	}()
