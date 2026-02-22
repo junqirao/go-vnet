@@ -52,6 +52,9 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 }
 
 func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
+	if !c.cfg.P2P.Enabled {
+		return nil
+	}
 	// check if manager is initialized
 	if c.manager == nil {
 		return nil
@@ -201,7 +204,13 @@ func (c *Client) syncRouterLoop() {
 	errCount := 0
 
 	// sync router once
-	_ = c.syncRouter(c.ctx)
+	if err := c.syncRouter(c.ctx); err != nil {
+		g.Log().Errorf(c.ctx, "failed to sync router: %s", err.Error())
+	}
+	// sync p2p peer mapping once
+	if err := c.syncP2PPeerMapping(c.ctx); err != nil {
+		g.Log().Errorf(c.ctx, "failed to sync p2p peer mapping: %s", err.Error())
+	}
 
 	for {
 		select {
