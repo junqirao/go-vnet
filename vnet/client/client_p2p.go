@@ -149,12 +149,11 @@ func (c *Client) getPeerInfo(ctx context.Context) (info *server.AddressInfo, err
 func (c *Client) handleP2PStreamRx(stream network.Stream) {
 	ctx := c.ctx
 	exist := false
-	c.p2p.peerMapping.Range(func(key, value any) bool {
+	c.p2p.router.Range(func(key string, value any) {
 		pi := value.(*peer.AddrInfo)
 		if pi.ID == stream.Conn().RemotePeer() {
 			exist = true
 		}
-		return true
 	})
 
 	if !exist {
@@ -298,7 +297,7 @@ func (c *Client) tryP2P(ctx context.Context, dst *hub.Destination) (err error) {
 		return
 	}
 
-	v, ok := c.p2p.peerMapping.Load(dst.Ip())
+	v, ok := c.p2p.router.RouteString(dst.Ip())
 	if !ok {
 		return
 	}

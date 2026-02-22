@@ -14,7 +14,7 @@ import (
 	"go-vnet/vnet/server"
 )
 
-func (c *Client) syncRouter(ctx context.Context) (err error) {
+func (c *Client) heartbeatAndSync(ctx context.Context) (err error) {
 	// check if manager is initialized
 	if c.manager == nil {
 		return nil
@@ -40,14 +40,19 @@ func (c *Client) syncRouter(ctx context.Context) (err error) {
 			g.Log().Errorf(ctx, "failed to update router: %s", err.Error())
 		}
 	}
+
+	if !c.cfg.P2P.Enabled {
+		return
+	}
 	// sync p2p peers
-	// currentVer := c.p2p.peerMappingVersion.Load()
-	// if currentVer != latestVer && c.cfg.P2P.Enabled {
-	// 	if err := c.syncP2PPeerMapping(ctx); err != nil {
-	// 		g.Log().Errorf(ctx, "failed to sync peer mapping: %s", err.Error())
-	// 	}
-	// 	c.p2p.peerMappingVersion.CompareAndSwap(currentVer, latestVer)
-	// }
+	current = c.p2p.router.MD5()
+	remote = data[1]
+	if remote != current {
+		g.Log().Infof(ctx, "p2p peer router mismatch, current: %s, server: %s", current, remote)
+		if err := c.syncP2PPeerMapping(ctx); err != nil {
+			g.Log().Errorf(ctx, "failed to sync peer mapping: %s", err.Error())
+		}
+	}
 	return
 }
 
@@ -84,37 +89,43 @@ func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 			if k == c.session.IP {
 				continue
 			}
-
 			pi := &peer.AddrInfo{}
 			if err = json.Unmarshal([]byte(v), pi); err != nil {
 				g.Log().Infof(ctx, "failed to parse p2p address: %v", err)
 				continue
 			}
 
-			if v, ok := c.p2p.peerMapping.Load(k); ok {
+			// ignore exists
+			if v, ok := c.p2p.router.RouteString(k); ok {
 				curr := v.(*peer.AddrInfo)
 				if curr.ID == c.p2p.host.ID() || curr.ID == pi.ID {
 					continue
 				}
 			}
-			c.p2p.peerMapping.Store(k, pi)
-			g.Log().Infof(ctx, "add peer: %s", k)
+			// don't ignore self otherwise will cause an update loop
+			// md5 will never be the same, it's ok to leave it here
+			c.p2p.router.Register(k, pi)
+			g.Log().Infof(ctx, "add p2p peer: %s", k)
 			upsert++
 		}
-		c.p2p.peerMapping.Range(func(key, value any) bool {
-			if _, ok := mapping[key.(string)]; !ok {
-				c.p2p.peerMapping.Delete(key)
-				del++
-				g.Log().Infof(ctx, "remove peer: %s", key)
-				conn, ok := c.p2p.connections.Load(key)
-				if ok && conn != nil {
-					conn.(*p2pConnInfo).cancel()
-				}
+		toDel := map[string]struct{}{}
+		c.p2p.router.Range(func(key string, value any) {
+			if _, ok := mapping[key]; !ok {
+				toDel[key] = struct{}{}
 			}
-			return true
 		})
-		g.Log().Infof(ctx, "synced p2p peer mapping from server, version: %d, upsert: %d, delete: %d",
-			c.p2p.peerMappingVersion.Load(), upsert, del)
+		for key := range toDel {
+			c.p2p.router.UnRegister(key)
+			del++
+			conn, ok := c.p2p.connections.Load(key)
+			if ok && conn != nil {
+				conn.(*p2pConnInfo).cancel()
+			}
+			g.Log().Infof(ctx, "remove peer: %s", key)
+		}
+
+		g.Log().Infof(ctx, "synced p2p peer mapping from server, version: %s, upsert: %d, delete: %d",
+			c.p2p.router.MD5(), upsert, del)
 	}
 	return
 }
@@ -192,24 +203,22 @@ func (c *Client) updateRouter(ctx context.Context) (err error) {
 	return
 }
 
-func (c *Client) syncRouterLoop() {
+func (c *Client) heartbeatAndSyncLoop() {
 	c.state = StateRunning
 
 	g.Log().Infof(c.ctx, "sync router loop started")
 	defer g.Log().Infof(c.ctx, "sync router loop stopped")
 
-	ticker := time.NewTicker(SyncRouterInterval)
-	defer ticker.Stop()
+	heartbeat := time.NewTicker(HeartbeatInterval)
+	defer func() {
+		heartbeat.Stop()
+	}()
 
 	errCount := 0
 
-	// sync router once
-	if err := c.syncRouter(c.ctx); err != nil {
+	// do first sync
+	if err := c.heartbeatAndSync(c.ctx); err != nil {
 		g.Log().Errorf(c.ctx, "failed to sync router: %s", err.Error())
-	}
-	// sync p2p peer mapping once
-	if err := c.syncP2PPeerMapping(c.ctx); err != nil {
-		g.Log().Errorf(c.ctx, "failed to sync p2p peer mapping: %s", err.Error())
 	}
 
 	for {
@@ -220,17 +229,17 @@ func (c *Client) syncRouterLoop() {
 		case <-c.ctx.Done():
 			g.Log().Infof(c.ctx, "context cancelled")
 			return
-		case <-ticker.C:
+		case <-heartbeat.C:
 			// check if client is stopped before syncing router
 			if c.state == StateStopped {
 				return
 			}
 			// sync router with client context instead of Background
-			if err := c.syncRouter(c.ctx); err != nil {
+			if err := c.heartbeatAndSync(c.ctx); err != nil {
 				g.Log().Errorf(c.ctx, "failed to sync router: %s", err.Error())
 				errCount++
 				if errCount >= MaxErrorToReconnect {
-					ticker.Stop()
+					heartbeat.Stop()
 					g.Log().Infof(c.ctx, "max errors reached (%d), attempting reconnect", errCount)
 					go c.reconnectLoop()
 					return

@@ -27,15 +27,9 @@ var (
 		Name: FuncNamePing,
 		Fn: func(ctx context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
 			session.storage.Store(sessionStorageKeyLastPing, time.Now())
-			s := ctx.Value(consts.CtxKeyServer)
-			server, ok := s.(*Server)
-			if !ok {
-				err = errors.New("internal type error of value 'server'")
-				return
-			}
-			return &FuncCallResponse{Code: 0, Data: fmt.Sprintf("%s,%d",
+			return &FuncCallResponse{Code: 0, Data: fmt.Sprintf("%s,%s",
 				session.network.Router().MD5(),
-				server.peerMappingVersion.Load())}, nil
+				session.network.p2pRouter.MD5())}, nil
 		},
 	}
 	funcGetRouteData = FuncCallInfo{
@@ -67,28 +61,9 @@ var (
 	funcGetP2PRelayMapping = FuncCallInfo{
 		Name: FuncNameGetP2PPeerMapping,
 		Fn: func(ctx context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
-			s := ctx.Value(consts.CtxKeyServer)
-			server, ok := s.(*Server)
-			if !ok {
-				err = errors.New("internal type error of value 'server'")
-				return
-			}
 			res := map[string]string{}
-			server.sessions.Range(func(_, value any) bool {
-				session, ok := value.(*Session)
-				if !ok {
-					return true
-				}
-				v, ok := session.storage.Load(sessionStorageKeyP2PPeer)
-				if !ok {
-					return true
-				}
-				hostId, ok := v.(string)
-				if !ok || hostId == "" {
-					return true
-				}
-				res[session.IP] = hostId
-				return true
+			session.network.p2pRouter.Range(func(key string, value any) {
+				res[key] = value.(string)
 			})
 			bs, _ := json.Marshal(res)
 			return &FuncCallResponse{Code: 0, Data: base64.StdEncoding.EncodeToString(bs)}, nil
@@ -111,6 +86,7 @@ var (
 					g.Log().Infof(ctx, "registered p2p peer from %s: %s", session.IP, peer)
 					server.peerMappingVersion.Add(1)
 					server.BroadcastPeer(ctx, EventNameP2PPeerUpdate, session, peer)
+					session.network.p2pRouter.Register(fmt.Sprintf("%s/32", session.IP), peer)
 				}
 			}
 			return &FuncCallResponse{Code: 0, Data: nil}, nil

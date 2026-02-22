@@ -9,6 +9,8 @@ import (
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/multiformats/go-multiaddr"
+
+	"go-vnet/common/router"
 )
 
 type (
@@ -25,6 +27,7 @@ type (
 		host      host.Host
 		addresses []string
 		hostId    string
+		router    *router.Router
 	}
 	AddressInfo struct {
 		Id        string   `json:"id"`
@@ -48,6 +51,7 @@ func newP2PSignalingServer(config *P2PConfig, ref *Server) *p2pSignalingServer {
 	return &p2pSignalingServer{
 		config: config,
 		ref:    ref,
+		router: router.NewRouter(),
 	}
 }
 

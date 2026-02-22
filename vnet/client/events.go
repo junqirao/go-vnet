@@ -40,6 +40,7 @@ func (c *Client) handleP2PPeerEvent(ctx context.Context, event *server.Serversid
 		g.Log().Errorf(ctx, "parse p2p peer event data error: %s", err.Error())
 		return
 	}
+	cidr := fmt.Sprintf("%s/32", data.Ip)
 	switch event.Event {
 	case server.EventNameP2PPeerUpdate:
 		pi := &peer.AddrInfo{}
@@ -47,11 +48,12 @@ func (c *Client) handleP2PPeerEvent(ctx context.Context, event *server.Serversid
 			g.Log().Infof(ctx, "failed to parse p2p address: %v", err)
 			return
 		}
-		g.Log().Infof(ctx, "p2p peer update: %s,%s", data.Ip, data.Peer)
-		c.p2p.peerMapping.Store(data.Ip, pi)
+		g.Log().Infof(ctx, "p2p peer update: %s,%s", cidr, data.Peer)
+		c.p2p.router.Register(cidr, pi)
 	case server.EventNameP2PPeerDelete:
-		g.Log().Infof(ctx, "p2p peer delete: %s", data.Peer)
-		c.p2p.peerMapping.Delete(data.Ip)
+		g.Log().Infof(ctx, "p2p peer delete: %s", cidr)
+		c.p2p.router.UnRegister(cidr)
+
 	}
 }
 

@@ -266,6 +266,7 @@ func (s *Server) handleSession(ss *Session) {
 		if gconv.Bool(ss.ClientInfo.P2P) {
 			if peer, ok := ss.storage.Load(sessionStorageKeyP2PPeer); ok {
 				s.BroadcastPeer(ctx, EventNameP2PPeerDelete, ss, gconv.String(peer))
+				ss.network.p2pRouter.UnRegister(ss.DispatchedDevice.CIDR)
 				// add version make cli
 				// unregister session
 				s.peerMappingVersion.Add(1)

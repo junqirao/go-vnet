@@ -20,6 +20,7 @@ type (
 		Metrics       *metrics.TransportMetrics `json:"metrics"`
 		sessions      sync.Map                  // cidr : *Session
 		router        *router.Router
+		p2pRouter     *router.Router // ip : peer addr info (string)
 		pool          *addresses.IPAllocator
 		StartedAt     time.Time
 		key           string
@@ -42,6 +43,7 @@ func NewNetwork(cfg *NetworkConfig) (n *Network, err error) {
 		NetworkConfig: *cfg,
 		Metrics:       metrics.NewTransportMetrics(),
 		router:        router.NewRouter(),
+		p2pRouter:     router.NewRouter(),
 		pool:          allocator,
 		StartedAt:     time.Now(),
 		key:           grand.S(32),

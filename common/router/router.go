@@ -10,8 +10,9 @@ import (
 type (
 	// Router 高性能无锁路由器，支持 IPv4 和 IPv6
 	Router struct {
-		v4 *TrieNode // IPv4 路由树
-		v6 *TrieNode // IPv6 路由树
+		v4        *TrieNode    // IPv4 路由树
+		v6        *TrieNode    // IPv6 路由树
+		cachedMD5 atomic.Value // MD5 缓存，存储 string 或 nil
 	}
 
 	// TrieNode 前缀树节点
@@ -109,6 +110,7 @@ func (r *Router) Register(addr string, val any) {
 	if ip4 != nil {
 		// IPv4 路由
 		r.insertIPv4(ip4, ones, val)
+		r.invalidateCache()
 		return
 	}
 
@@ -116,6 +118,7 @@ func (r *Router) Register(addr string, val any) {
 	if ip6 != nil {
 		// IPv6 路由
 		r.insertIPv6(ip6, ones, val)
+		r.invalidateCache()
 	}
 }
 
@@ -133,21 +136,41 @@ func (r *Router) UnRegister(addr string) {
 	ip4 := ip.To4()
 	if ip4 != nil {
 		r.removeIPv4(ip4, ones)
+		r.invalidateCache()
 		return
 	}
 
 	ip6 := ip.To16()
 	if ip6 != nil {
 		r.removeIPv6(ip6, ones)
+		r.invalidateCache()
 	}
 }
 
 // MD5 返回路由表的 MD5 哈希值
 func (r *Router) MD5() string {
+	if r == nil {
+		return ""
+	}
+	// 尝试从缓存获取
+	if cached, ok := r.cachedMD5.Load().(string); ok && cached != "" {
+		return cached
+	}
+
+	// 缓存未命中，重新计算
 	h := md5.New()
 	collectMD5(h.(hashWriter), r.v4, "", 0, 128)
 	collectMD5(h.(hashWriter), r.v6, "", 0, 128)
-	return hex.EncodeToString(h.Sum(nil))
+	result := hex.EncodeToString(h.Sum(nil))
+
+	// 更新缓存
+	r.cachedMD5.Store(result)
+	return result
+}
+
+// invalidateCache 使 MD5 缓存失效
+func (r *Router) invalidateCache() {
+	r.cachedMD5.Store("")
 }
 
 // RouteBatch 批量路由查询，减少循环开销
