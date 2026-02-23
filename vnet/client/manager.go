@@ -47,8 +47,16 @@ func (c *Client) CollectRuntimeInfo(recordDuration time.Duration) (info *Runtime
 		MetricsRecords: c.p2p.localMetricsDB.GetRange(start, end),
 	}
 	if c.p2p.router != nil {
+		keys := c.p2p.router.Keys()
+		// remove self
+		for i, key := range keys {
+			if strings.HasPrefix(key, c.session.IP) {
+				keys = slices.Delete(keys, i, i+1)
+				break
+			}
+		}
 		info.P2P.Router = &RouterRuntimeInfo{
-			Routers: c.p2p.router.Keys(),
+			Routers: keys,
 			Version: c.p2p.router.MD5WithValue(),
 		}
 	}
