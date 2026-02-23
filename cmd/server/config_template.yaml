@@ -39,7 +39,7 @@ vnet:
       type: "tcp"
   p2p:
     addresses:
-      - ip: "0.0.0.0"
+      - ip: "your_real_ip" # 必须是真实ip不要使用0.0.0.0
         port: 9900
         transport: "tcp"
         version: ""
