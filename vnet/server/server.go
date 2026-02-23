@@ -9,7 +9,6 @@ import (
 	"net"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
@@ -40,7 +39,6 @@ type (
 		sessions  sync.Map // src : *Session
 		// p2p
 		p2pSignalingServer *p2pSignalingServer
-		peerMappingVersion *atomic.Uint64
 		// manager server
 		ms ManagerServer
 	}
@@ -61,10 +59,9 @@ type (
 
 func NewServer(cfg *Config) *Server {
 	s := &Server{
-		cfg:                cfg,
-		sig:                make(chan struct{}),
-		manager:            NewManager(),
-		peerMappingVersion: &atomic.Uint64{},
+		cfg:     cfg,
+		sig:     make(chan struct{}),
+		manager: NewManager(),
 	}
 
 	s.manager.RegisterHandler(
@@ -267,9 +264,6 @@ func (s *Server) handleSession(ss *Session) {
 			if peer, ok := ss.storage.Load(sessionStorageKeyP2PPeer); ok {
 				s.BroadcastPeer(ctx, EventNameP2PPeerDelete, ss, gconv.String(peer))
 				ss.network.p2pRouter.UnRegister(fmt.Sprintf("%s/32", ss.IP))
-				// add version make cli
-				// unregister session
-				s.peerMappingVersion.Add(1)
 			}
 		}
 		// broadcast router delete event

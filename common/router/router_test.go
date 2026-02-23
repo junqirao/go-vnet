@@ -745,3 +745,341 @@ func BenchmarkConcurrentRegister(b *testing.B) {
 		}
 	})
 }
+
+// ========== MD5WithValue 测试 ==========
+
+func TestMD5WithValue(t *testing.T) {
+	r := NewRouter()
+
+	// 空路由表
+	hash1 := r.MD5WithValue()
+	if len(hash1) != 32 {
+		t.Errorf("Expected MD5 hash length 32, got %d", len(hash1))
+	}
+
+	// 添加路由
+	r.Register("192.168.1.0/24", "target1")
+	hash2 := r.MD5WithValue()
+
+	// Hash 应该改变
+	if hash1 == hash2 {
+		t.Error("MD5WithValue hash should change after adding route")
+	}
+
+	// 相同的路由表和value应该有相同的hash
+	r2 := NewRouter()
+	r2.Register("192.168.1.0/24", "target1")
+	hash3 := r2.MD5WithValue()
+
+	if hash2 != hash3 {
+		t.Errorf("Same routes and values should have same hash: %s vs %s", hash2, hash3)
+	}
+
+	// 添加更多路由
+	r.Register("10.0.0.0/8", "target2")
+	hash4 := r.MD5WithValue()
+
+	if hash3 == hash4 {
+		t.Error("MD5WithValue hash should change after adding more routes")
+	}
+}
+
+func TestMD5WithValueDifferentValues(t *testing.T) {
+	r1 := NewRouter()
+	r1.Register("192.168.1.0/24", "value1")
+
+	r2 := NewRouter()
+	r2.Register("192.168.1.0/24", "value2")
+
+	hash1 := r1.MD5WithValue()
+	hash2 := r2.MD5WithValue()
+
+	// 不同的值应该产生不同的hash
+	if hash1 == hash2 {
+		t.Error("MD5WithValue should differ for different values")
+	}
+}
+
+func TestMD5WithValuevsMD5(t *testing.T) {
+	r := NewRouter()
+	r.Register("192.168.1.0/24", "target1")
+	r.Register("10.0.0.0/8", "target2")
+
+	hashWithoutValue := r.MD5()
+	hashWithValue := r.MD5WithValue()
+
+	// 包含value的hash应该不同
+	if hashWithoutValue == hashWithValue {
+		t.Error("MD5 and MD5WithValue should produce different hashes")
+	}
+}
+
+func TestMD5WithValueAfterUnRegister(t *testing.T) {
+	r := NewRouter()
+	r.Register("192.168.1.0/24", "target1")
+	r.Register("10.0.0.0/8", "target2")
+
+	hash1 := r.MD5WithValue()
+
+	r.UnRegister("192.168.1.0/24")
+	hash2 := r.MD5WithValue()
+
+	if hash1 == hash2 {
+		t.Error("MD5WithValue hash should change after unregister")
+	}
+}
+
+func TestMD5WithValueComplexTypes(t *testing.T) {
+	r := NewRouter()
+
+	// 测试不同类型的值
+	r.Register("192.168.1.0/24", 123)
+	r.Register("10.0.0.0/8", "string")
+	r.Register("172.16.0.0/16", struct{ Name string }{"test"})
+
+	hash1 := r.MD5WithValue()
+	if len(hash1) != 32 {
+		t.Errorf("Expected MD5 hash length 32, got %d", len(hash1))
+	}
+
+	// 修改值后hash应该改变
+	r.UnRegister("192.168.1.0/24")
+	r.Register("192.168.1.0/24", 456)
+
+	hash2 := r.MD5WithValue()
+	if hash1 == hash2 {
+		t.Error("MD5WithValue should change when value changes")
+	}
+}
+
+func TestMD5WithValueIPv6(t *testing.T) {
+	r := NewRouter()
+
+	// IPv6 路由
+	r.Register("2001:db8::/32", "ipv6-target")
+	r.Register("fe80::/10", "link-local")
+
+	hash1 := r.MD5WithValue()
+	if len(hash1) != 32 {
+		t.Errorf("Expected MD5 hash length 32, got %d", len(hash1))
+	}
+
+	// 相同配置的router应该有相同hash
+	r2 := NewRouter()
+	r2.Register("2001:db8::/32", "ipv6-target")
+	r2.Register("fe80::/10", "link-local")
+
+	hash2 := r2.MD5WithValue()
+
+	if hash1 != hash2 {
+		t.Errorf("Same IPv6 routes should have same hash: %s vs %s", hash1, hash2)
+	}
+}
+
+func TestMD5WithValueCache(t *testing.T) {
+	r := NewRouter()
+	r.Register("192.168.1.0/24", "target1")
+
+	// 第一次计算
+	hash1 := r.MD5WithValue()
+	hash2 := r.MD5WithValue()
+
+	// 应该从缓存读取，结果相同
+	if hash1 != hash2 {
+		t.Error("Cached MD5WithValue should return same hash")
+	}
+
+	// 修改路由表
+	r.Register("10.0.0.0/8", "target2")
+	hash3 := r.MD5WithValue()
+
+	// hash应该改变
+	if hash1 == hash3 {
+		t.Error("MD5WithValue should change after route modification")
+	}
+}
+
+func TestMD5WithValueMixedIPVersions(t *testing.T) {
+	r := NewRouter()
+
+	// 混合IPv4和IPv6路由
+	r.Register("192.168.1.0/24", "v4-target")
+	r.Register("2001:db8::/32", "v6-target")
+	r.Register("10.0.0.0/8", "v4-target2")
+	r.Register("fe80::/10", "v6-target2")
+
+	hash1 := r.MD5WithValue()
+
+	// 相同配置的router应该有相同hash
+	r2 := NewRouter()
+	r2.Register("192.168.1.0/24", "v4-target")
+	r2.Register("2001:db8::/32", "v6-target")
+	r2.Register("10.0.0.0/8", "v4-target2")
+	r2.Register("fe80::/10", "v6-target2")
+
+	hash2 := r2.MD5WithValue()
+
+	if hash1 != hash2 {
+		t.Errorf("Same mixed routes should have same hash: %s vs %s", hash1, hash2)
+	}
+}
+
+// ========== MD5WithValue Benchmark ==========
+
+func BenchmarkMD5WithValue(b *testing.B) {
+	r := NewRouter()
+	for i := 0; i < 1000; i++ {
+		r.Register("192.168."+intToString(i%256)+".0/24", i)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r.MD5WithValue()
+	}
+}
+
+func BenchmarkMD5WithValueCache(b *testing.B) {
+	r := NewRouter()
+	for i := 0; i < 1000; i++ {
+		r.Register("192.168."+intToString(i%256)+".0/24", i)
+	}
+
+	// 预先计算一次，填充缓存
+	r.MD5WithValue()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r.MD5WithValue()
+	}
+}
+
+func BenchmarkMD5WithValueLargeRoutes(b *testing.B) {
+	r := NewRouter()
+	for i := 0; i < 10000; i++ {
+		r.Register("192.168."+intToString(i%256)+"."+intToString((i/256)%256)+"/32", i)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r.MD5WithValue()
+	}
+}
+
+func BenchmarkMD5WithValueIPv6(b *testing.B) {
+	r := NewRouter()
+	for i := 0; i < 1000; i++ {
+		r.Register("2001:db8:"+uint16ToHex(uint16(i))+"::/64", i)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r.MD5WithValue()
+	}
+}
+
+func BenchmarkMD5WithValueMixedIPVersions(b *testing.B) {
+	r := NewRouter()
+	for i := 0; i < 500; i++ {
+		r.Register("192.168."+intToString(i%256)+".0/24", i)
+	}
+	for i := 0; i < 500; i++ {
+		r.Register("2001:db8:"+uint16ToHex(uint16(i))+"::/64", i+500)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r.MD5WithValue()
+	}
+}
+
+func BenchmarkMD5VsMD5WithValue(b *testing.B) {
+	r := NewRouter()
+	for i := 0; i < 1000; i++ {
+		r.Register("192.168."+intToString(i%256)+".0/24", i)
+	}
+
+	b.Run("MD5", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			r.MD5()
+		}
+	})
+
+	b.Run("MD5WithValue", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			r.MD5WithValue()
+		}
+	})
+}
+
+func BenchmarkMD5WithValueConcurrent(b *testing.B) {
+	r := NewRouter()
+	for i := 0; i < 1000; i++ {
+		r.Register("192.168."+intToString(i%256)+".0/24", i)
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			r.MD5WithValue()
+		}
+	})
+}
+
+// ========== MD5WithValue 压力测试 ==========
+
+func BenchmarkMD5WithValueStress(b *testing.B) {
+	r := NewRouter()
+	// 注册大量路由，模拟真实场景
+	for i := 0; i < 65536; i++ {
+		cidr := "10." + intToString(i/256) + "." + intToString(i%256) + ".0/24"
+		r.Register(cidr, "target-"+intToString(i))
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r.MD5WithValue()
+	}
+}
+
+func BenchmarkMD5WithValueDynamicRoutes(b *testing.B) {
+	r := NewRouter()
+
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			// 动态注册和计算
+			cidr := "192.168." + intToString(i%256) + "." + intToString((i/256)%256) + "/24"
+			r.Register(cidr, i)
+			r.MD5WithValue()
+			if i%100 == 0 {
+				// 偶尔删除一些路由
+				r.UnRegister("192.168." + intToString((i-100)%256) + ".0/24")
+			}
+			i++
+		}
+	})
+}
+
+func BenchmarkMD5WithValueDifferentValueTypes(b *testing.B) {
+	r := NewRouter()
+
+	// 不同类型的值
+	for i := 0; i < 1000; i++ {
+		cidr := "192.168." + intToString(i%256) + "." + intToString((i/256)%256) + "/24"
+		switch i % 3 {
+		case 0:
+			r.Register(cidr, i) // int
+		case 1:
+			r.Register(cidr, intToString(i)) // string
+		case 2:
+			r.Register(cidr, struct{ Val int }{i}) // struct
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r.MD5WithValue()
+	}
+}

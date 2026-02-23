@@ -49,7 +49,7 @@ func (c *Client) CollectRuntimeInfo(recordDuration time.Duration) (info *Runtime
 	if c.p2p.router != nil {
 		info.P2P.Router = &RouterRuntimeInfo{
 			Routers: c.p2p.router.Keys(),
-			Version: c.p2p.router.MD5(),
+			Version: c.p2p.router.MD5WithValue(),
 		}
 	}
 	c.p2p.connections.Range(func(key, value any) bool {

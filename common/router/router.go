@@ -3,6 +3,8 @@ package router
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"net"
 	"sync/atomic"
 )
@@ -10,9 +12,10 @@ import (
 type (
 	// Router 高性能无锁路由器，支持 IPv4 和 IPv6
 	Router struct {
-		v4        *TrieNode    // IPv4 路由树
-		v6        *TrieNode    // IPv6 路由树
-		cachedMD5 atomic.Value // MD5 缓存，存储 string 或 nil
+		v4             *TrieNode    // IPv4 路由树
+		v6             *TrieNode    // IPv6 路由树
+		cachedMD5      atomic.Value // MD5 缓存，存储 string 或 nil
+		cachedMD5Value atomic.Value // MD5WithValue 缓存，存储 string 或 nil
 	}
 
 	// TrieNode 前缀树节点
@@ -110,7 +113,7 @@ func (r *Router) Register(addr string, val any) {
 	if ip4 != nil {
 		// IPv4 路由
 		r.insertIPv4(ip4, ones, val)
-		r.invalidateCache()
+		r.invalidateCacheWithValue()
 		return
 	}
 
@@ -118,7 +121,7 @@ func (r *Router) Register(addr string, val any) {
 	if ip6 != nil {
 		// IPv6 路由
 		r.insertIPv6(ip6, ones, val)
-		r.invalidateCache()
+		r.invalidateCacheWithValue()
 	}
 }
 
@@ -136,18 +139,18 @@ func (r *Router) UnRegister(addr string) {
 	ip4 := ip.To4()
 	if ip4 != nil {
 		r.removeIPv4(ip4, ones)
-		r.invalidateCache()
+		r.invalidateCacheWithValue()
 		return
 	}
 
 	ip6 := ip.To16()
 	if ip6 != nil {
 		r.removeIPv6(ip6, ones)
-		r.invalidateCache()
+		r.invalidateCacheWithValue()
 	}
 }
 
-// MD5 返回路由表的 MD5 哈希值
+// MD5 返回路由表的 MD5 哈希值（不包含 value）
 func (r *Router) MD5() string {
 	if r == nil {
 		return ""
@@ -168,9 +171,36 @@ func (r *Router) MD5() string {
 	return result
 }
 
+// MD5WithValue 返回路由表的 MD5 哈希值（包含 value）
+func (r *Router) MD5WithValue() string {
+	if r == nil {
+		return ""
+	}
+	// 尝试从缓存获取
+	if cached, ok := r.cachedMD5Value.Load().(string); ok && cached != "" {
+		return cached
+	}
+
+	// 缓存未命中，重新计算
+	h := md5.New()
+	collectMD5WithValue(h.(hashWriter), r.v4, "", 0, 128)
+	collectMD5WithValue(h.(hashWriter), r.v6, "", 0, 128)
+	result := hex.EncodeToString(h.Sum(nil))
+
+	// 更新缓存
+	r.cachedMD5Value.Store(result)
+	return result
+}
+
 // invalidateCache 使 MD5 缓存失效
 func (r *Router) invalidateCache() {
 	r.cachedMD5.Store("")
+}
+
+// invalidateCacheWithValue 使 MD5 和 MD5WithValue 缓存失效
+func (r *Router) invalidateCacheWithValue() {
+	r.cachedMD5.Store("")
+	r.cachedMD5Value.Store("")
 }
 
 // RouteBatch 批量路由查询，减少循环开销
@@ -459,7 +489,7 @@ func (r *Router) removeIPv6(ip []byte, ones int) {
 
 // ========== 辅助函数 ==========
 
-// collectMD5 递归收集路由信息计算 MD5
+// collectMD5 递归收集路由信息计算 MD5（不包含 value）
 func collectMD5(h hashWriter, node *TrieNode, prefix string, depth, maxDepth int) {
 	if node == nil || depth >= maxDepth {
 		return
@@ -479,6 +509,52 @@ func collectMD5(h hashWriter, node *TrieNode, prefix string, depth, maxDepth int
 	one := node.one.Load()
 	if one != nil && (one.leaf.Load() || one.zero.Load() != nil || one.one.Load() != nil) {
 		collectMD5(h, one, prefix+"1", depth+1, maxDepth)
+	}
+}
+
+// collectMD5WithValue 递归收集路由信息计算 MD5（包含 value）
+func collectMD5WithValue(h hashWriter, node *TrieNode, prefix string, depth, maxDepth int) {
+	if node == nil || depth >= maxDepth {
+		return
+	}
+
+	// 写入活跃的路由节点和其 value
+	if node.leaf.Load() {
+		if target := node.target.Load(); target != nil {
+			h.Write([]byte(prefix))
+			// 将 value 转换为字符串形式加入 MD5 计算
+			var (
+				val    = *target
+				valStr = ""
+			)
+
+			switch val.(type) {
+			case json.Marshaler:
+				bs, err := val.(json.Marshaler).MarshalJSON()
+				if err == nil {
+					valStr = string(bs)
+				}
+			case string:
+				valStr = val.(string)
+			case fmt.Stringer:
+				valStr = val.(fmt.Stringer).String()
+			}
+			if valStr == "" {
+				valStr = fmt.Sprintf("%v", val)
+			}
+			h.Write([]byte(valStr))
+		}
+	}
+
+	// 只遍历有路由的分支或子节点
+	zero := node.zero.Load()
+	if zero != nil && (zero.leaf.Load() || zero.zero.Load() != nil || zero.one.Load() != nil) {
+		collectMD5WithValue(h, zero, prefix+"0", depth+1, maxDepth)
+	}
+
+	one := node.one.Load()
+	if one != nil && (one.leaf.Load() || one.zero.Load() != nil || one.one.Load() != nil) {
+		collectMD5WithValue(h, one, prefix+"1", depth+1, maxDepth)
 	}
 }
 

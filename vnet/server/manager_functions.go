@@ -29,7 +29,7 @@ var (
 			session.storage.Store(sessionStorageKeyLastPing, time.Now())
 			return &FuncCallResponse{Code: 0, Data: fmt.Sprintf("%s,%s",
 				session.network.Router().MD5(),
-				session.network.p2pRouter.MD5())}, nil
+				session.network.p2pRouter.MD5WithValue())}, nil
 		},
 	}
 	funcGetRouteData = FuncCallInfo{
@@ -84,7 +84,6 @@ var (
 				_, ok := session.storage.LoadOrStore(sessionStorageKeyP2PPeer, peer)
 				if !ok {
 					g.Log().Infof(ctx, "registered p2p peer from %s: %s", session.IP, peer)
-					server.peerMappingVersion.Add(1)
 					server.BroadcastPeer(ctx, EventNameP2PPeerUpdate, session, peer)
 					session.network.p2pRouter.Register(fmt.Sprintf("%s/32", session.IP), peer)
 				}

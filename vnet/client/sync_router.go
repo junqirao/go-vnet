@@ -46,7 +46,7 @@ func (c *Client) heartbeatAndSync(ctx context.Context) (err error) {
 		return
 	}
 	// sync p2p peers
-	current = c.p2p.router.MD5()
+	current = c.p2p.router.MD5WithValue()
 	remote = data[1]
 	if remote != current {
 		g.Log().Infof(ctx, "p2p peer router mismatch, current: %s, server: %s", current, remote)
@@ -126,7 +126,7 @@ func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 		}
 
 		g.Log().Infof(ctx, "synced p2p peer mapping from server, version: %s, upsert: %d, delete: %d",
-			c.p2p.router.MD5(), upsert, del)
+			c.p2p.router.MD5WithValue(), upsert, del)
 	}
 	return
 }
