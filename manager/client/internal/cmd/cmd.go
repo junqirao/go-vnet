@@ -11,6 +11,7 @@ import (
 	"github.com/gogf/gf/v2/os/gcmd"
 	"github.com/junqirao/gocomponents/response"
 
+	"go-vnet/common/fs"
 	"go-vnet/common/tls"
 	"go-vnet/manager/client/embed"
 	_ "go-vnet/manager/client/internal/logic"
@@ -75,9 +76,12 @@ var (
 				if err != nil {
 					g.Log().Errorf(ctx, "get ui fs failed: %v", err)
 				} else {
+					// 使用自定义 SPA handler
+					spaHandler := &fs.SpaHandler{FileSystem: uiFS}
+
 					// /ui 路由组
 					s.Group("/ui", func(group *ghttp.RouterGroup) {
-						group.ALL("/*", ghttp.WrapH(http.StripPrefix("/ui", http.FileServer(http.FS(uiFS)))))
+						group.ALL("/*", ghttp.WrapH(http.StripPrefix("/ui", spaHandler)))
 					})
 					g.Log().Infof(ctx, "ui enabled at /ui")
 
