@@ -49,6 +49,7 @@ type (
 		Compress           bool          `yaml:"compress" json:"compress"`
 		Encrypt            bool          `yaml:"encrypt" json:"encrypt"`
 		Manager            ManagerConfig `yaml:"manager" json:"manager"`
+		DeviceMode         string        `yaml:"device_mode" json:"device_mode"`
 	}
 	ManagerConfig struct {
 		Enabled bool   `yaml:"enabled" json:"enabled"`

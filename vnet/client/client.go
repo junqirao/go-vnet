@@ -29,7 +29,6 @@ import (
 const (
 	MaxReconnectInterval = 30
 	HeartbeatInterval    = time.Second * 5
-	SyncRouterInterval   = time.Second * 60
 	MaxErrorToReconnect  = 3
 )
 
@@ -59,6 +58,7 @@ type (
 	Client struct {
 		id       string
 		state    State
+		mode     hub.DeviceMode
 		hub      *hub.Hub
 		ctx      context.Context
 		cfg      *Config
@@ -109,6 +109,7 @@ type (
 	State       uint8
 	RuntimeInfo struct {
 		State          string                            `json:"state"`
+		Mode           string                            `json:"mode"`
 		Session        *session.Session                  `json:"session"`
 		Metrics        *metrics.TransportMetrics         `json:"metrics"`
 		MetricsRecords []*metrics.TransportMetricsRecord `json:"metrics_records"`
@@ -262,13 +263,16 @@ func (c *Client) run(ctx context.Context) (err error) {
 	c.manager = NewManager(sess, control)
 	c.manager.SetEventHandler(c.serverEventHandler)
 
+	c.mode = hub.DeviceModeFromString(c.cfg.DeviceMode)
 	// setup hub
 	c.hub = hub.NewHub(hub.Config{
 		Name:          sess.SessionId,
 		MTU:           sess.DispatchedDevice.MTU,
 		MaxRxEventBuf: 1024,
 		MaxTxEventBuf: 1024,
+		Mode:          c.mode,
 	}, c.dev)
+	g.Log().Infof(ctx, "device mode: %s(%d)", c.mode.String(), c.mode)
 
 	// start sync router loop delay
 	go func() {
@@ -316,6 +320,7 @@ func (c *Client) handshake(ctx context.Context, sr session.SendReceiveCloser) (s
 	payload["compress"] = c.cfg.Compress
 	payload["p2p"] = c.cfg.P2P.Enabled
 	payload["session"] = c.id
+	payload["mode"] = c.mode
 
 	resp := &handshakeResponse{}
 	if err = c.rc.Do(ctx, sr, session.NewHeader(link.SubDeviceId, link.Key), payload, resp); err != nil {

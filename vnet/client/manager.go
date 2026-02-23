@@ -24,6 +24,7 @@ func (c *Client) CollectRuntimeInfo(recordDuration time.Duration) (info *Runtime
 	end := now.Unix()
 	info = &RuntimeInfo{
 		State:          c.state.String(),
+		Mode:           c.mode.String(),
 		Config:         c.cfg,
 		Metrics:        c.transport.metrics,
 		MetricsRecords: c.transport.localMetricsDB.GetRange(start, end),

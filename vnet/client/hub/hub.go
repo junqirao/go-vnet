@@ -16,8 +16,41 @@ var (
 	P2PNotEnabled = errors.New("p2p not enabled")
 )
 
+const (
+	DeviceModeProxyOnly DeviceMode = 1 << iota
+	DeviceModeP2POnly
+	DeviceModeMixed
+)
+
+func DeviceModeFromString(s string) DeviceMode {
+	switch s {
+	case "proxy_only":
+		return DeviceModeProxyOnly
+	case "p2p_only":
+		return DeviceModeP2POnly
+	case "mixed":
+		return DeviceModeMixed
+	default:
+		return DeviceModeMixed
+	}
+}
+
+func (m DeviceMode) String() string {
+	switch m {
+	case DeviceModeProxyOnly:
+		return "proxy_only"
+	case DeviceModeP2POnly:
+		return "p2p_only"
+	case DeviceModeMixed:
+		return "mixed"
+	default:
+		return "unknown"
+	}
+}
+
 type (
-	Hub struct {
+	DeviceMode uint8
+	Hub        struct {
 		ctx context.Context
 		cfg Config
 		sig chan struct{}
@@ -35,12 +68,13 @@ type (
 		latencyManager *LatencyManager
 	}
 	Config struct {
-		Name          string `json:"-"`
-		BatchSize     int    `json:"-"`
-		HeaderSize    int    `json:"-"`
-		MTU           int    `json:"-"`
-		MaxRxEventBuf int    `json:"max_rx_event_buf"`
-		MaxTxEventBuf int    `json:"max_tx_event_buf"`
+		Name          string     `json:"-"`
+		BatchSize     int        `json:"-"`
+		HeaderSize    int        `json:"-"`
+		MTU           int        `json:"-"`
+		MaxRxEventBuf int        `json:"max_rx_event_buf"`
+		MaxTxEventBuf int        `json:"max_tx_event_buf"`
+		Mode          DeviceMode `json:"mode"`
 	}
 )
 

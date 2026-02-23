@@ -2,18 +2,14 @@ package model
 
 import (
 	"github.com/gogf/gf/v2/os/gtime"
-)
 
-const (
-	DeviceModeProxyOnly DeviceMode = 1 << iota
-	DeviceModeP2POnly
-	DeviceModeMixed
+	"go-vnet/vnet/client/hub"
 )
 
 var (
 	DefaultSubDeviceSettings = &SubDeviceSettings{
 		FixedIP:    0,
-		DeviceMode: DeviceModeMixed,
+		DeviceMode: hub.DeviceModeMixed,
 	}
 )
 
@@ -42,13 +38,12 @@ type (
 		Quota     *QuotaDetail `json:"quota"`
 		Bandwidth *QuotaDetail `json:"bandwidth"`
 	}
-	DeviceMode        int
 	SubDeviceSettings struct {
 		// FixedIP allocation, records ip position
 		// e.g. 32  -> x.x.x.32/24
 		// e.g. 262 -> x.x.1.12/16
 		FixedIP int `json:"fixed_ip"`
 		// DeviceMode supports proxy only, p2p only, mixed
-		DeviceMode DeviceMode `json:"device_mode"`
+		DeviceMode hub.DeviceMode `json:"device_mode"`
 	}
 )

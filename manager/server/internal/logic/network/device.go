@@ -60,6 +60,7 @@ func (s *sNetwork) AcquireDevice(ctx context.Context, ss *server.Session, subDev
 		Encrypt:  payload["encrypt"],
 		Compress: payload["compress"],
 		P2P:      payload["p2p"],
+		Mode:     payload["mode"],
 	}
 
 	bw, err := service.Quota().GetById(ctx, subDevice.BandwidthId)

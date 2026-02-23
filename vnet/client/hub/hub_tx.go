@@ -297,46 +297,113 @@ func (c *Destination) negotiate() (err error) {
 	if c.tx != nil {
 		return
 	}
-	tx, err := c.Dial(c.ctx, c.ip)
+
+	// 根据工作模式决定连接策略
+	switch c.ref.cfg.Mode {
+	case DeviceModeP2POnly:
+		return c.negotiateP2POnly()
+	case DeviceModeProxyOnly:
+		return c.negotiateProxyOnly()
+	case DeviceModeMixed:
+		return c.negotiateMixed()
+	default:
+		return fmt.Errorf("unknown device mode: %d", c.ref.cfg.Mode)
+	}
+}
+
+// negotiateP2POnly 只P2P连接，不连接服务器代理
+func (c *Destination) negotiateP2POnly() error {
+	g.Log().Infof(c.ctx, "[TX] mode: P2P only, try dial p2p to dst: %s", c.ip)
+	if c.tryP2P != nil {
+		return c.tryP2P(c.ctx)
+	}
+	return fmt.Errorf("p2p not available to destination: %s", c.ip)
+}
+
+// negotiateProxyOnly 只服务器代理，不进行P2P连接
+func (c *Destination) negotiateProxyOnly() error {
+	tx, err := c.tryProxyConnect()
 	if err != nil {
-		return
+		return err
 	}
-	ups := tx.Upstream()
-	g.Log().Infof(c.ctx, "[TX] send negotiate packet: %s", c.ip)
-	_, err = ups.Write([]byte(c.ip))
+
+	resp, err := c.sendNegotiatePacket(tx)
 	if err != nil {
-		return
+		return err
 	}
-	var buf [1]byte
-	if _, err = ups.Read(buf[:]); err != nil {
-		return
-	}
-	switch buf[0] {
+
+	switch resp {
 	case server.NegotiateResponseQuotaExceeded:
-		// try p2p
-		g.Log().Infof(c.ctx, "[TX] negotiate quota exceeded, try dial p2p to dst: %s", c.ip)
+		g.Log().Infof(c.ctx, "[TX] mode: Proxy only, quota exceeded, return error: %s", c.ip)
+		return fmt.Errorf("proxy quota exceeded and p2p is disabled or working under proxy only mode: %s", c.ip)
+	case server.NegotiateResponseSuccess:
+		return c.handleSuccess(tx)
+	default:
+		g.Log().Infof(c.ctx, "[TX] negotiate failed: %d", resp)
+		return fmt.Errorf("negotiate failed: %d", resp)
+	}
+}
+
+// negotiateMixed 混合模式：先尝试服务器代理，配额超限时尝试P2P
+func (c *Destination) negotiateMixed() error {
+	tx, err := c.tryProxyConnect()
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.sendNegotiatePacket(tx)
+	if err != nil {
+		return err
+	}
+
+	switch resp {
+	case server.NegotiateResponseQuotaExceeded:
+		g.Log().Infof(c.ctx, "[TX] mode: Mixed, negotiate quota exceeded, try dial p2p to dst: %s", c.ip)
 		if c.tryP2P != nil {
 			return c.tryP2P(c.ctx)
 		}
-		err = fmt.Errorf("no connection available to destination: %s", c.ip)
-		return
+		return fmt.Errorf("no connection available to destination: %s", c.ip)
 	case server.NegotiateResponseSuccess:
-		g.Log().Infof(c.ctx, "[TX] negotiate success")
-		c.tx = tx
-		c.hook.AfterDial(c.ctx, c)
-
-		// 启动延迟监控（固定使用15000端口）
-		// 注意：这里使用固定端口，实际应用中可能需要从session或配置中获取
-		if err := c.StartLatencyMonitor(15000); err != nil {
-			g.Log().Warningf(c.ctx, "[LATENCY] start monitor failed: %v", err)
-			// 不影响主流程
-		}
-
-		return
+		return c.handleSuccess(tx)
 	default:
-		g.Log().Infof(c.ctx, "[TX] negotiate failed: %d", buf[0])
-		return fmt.Errorf("negotiate failed: %d", buf[0])
+		g.Log().Infof(c.ctx, "[TX] negotiate failed: %d", resp)
+		return fmt.Errorf("negotiate failed: %d", resp)
 	}
+}
+
+// tryProxyConnect 尝试连接服务器代理
+func (c *Destination) tryProxyConnect() (protocol.ReadWriter, error) {
+	return c.Dial(c.ctx, c.ip)
+}
+
+// sendNegotiatePacket 发送协商包并返回服务器响应
+func (c *Destination) sendNegotiatePacket(tx protocol.ReadWriter) (byte, error) {
+	ups := tx.Upstream()
+	g.Log().Infof(c.ctx, "[TX] send negotiate packet: %s", c.ip)
+	if _, err := ups.Write([]byte(c.ip)); err != nil {
+		return 0, err
+	}
+	var buf [1]byte
+	if _, err := ups.Read(buf[:]); err != nil {
+		return 0, err
+	}
+	return buf[0], nil
+}
+
+// handleSuccess 处理连接成功的后续操作
+func (c *Destination) handleSuccess(tx protocol.ReadWriter) error {
+	g.Log().Infof(c.ctx, "[TX] negotiate success")
+	c.tx = tx
+	c.hook.AfterDial(c.ctx, c)
+
+	// 启动延迟监控（固定使用15000端口）
+	// 注意：这里使用固定端口，实际应用中可能需要从session或配置中获取
+	if err := c.StartLatencyMonitor(15000); err != nil {
+		g.Log().Warningf(c.ctx, "[LATENCY] start monitor failed: %v", err)
+		// 不影响主流程
+	}
+
+	return nil
 }
 
 func (c *Destination) txLoop() {

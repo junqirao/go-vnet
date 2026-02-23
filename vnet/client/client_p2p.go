@@ -293,6 +293,11 @@ func (c *Client) tryP2P(ctx context.Context, dst *hub.Destination) (err error) {
 		err = hub.P2PNotEnabled
 		return
 	}
+	if hub.DeviceModeFromString(c.cfg.DeviceMode) == hub.DeviceModeProxyOnly {
+		g.Log().Infof(ctx, "device mode is under proxy only, skip dial p2p to %s", dst.Ip())
+		err = hub.P2PNotEnabled
+		return
+	}
 	if dst.Type() == protocol.TransportTypeP2P {
 		return
 	}

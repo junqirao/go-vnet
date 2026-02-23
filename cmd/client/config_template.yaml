@@ -5,6 +5,7 @@ address: "127.0.0.1"
 port: 9800
 insecure_skip_verify: true
 public_key: public_key.pem
+device_mode: "" # p2p_only | proxy_only(only work on both side under this mode) | mixed(default)
 
 debug: false
 
