@@ -3,44 +3,26 @@ package main
 import (
 	"context"
 
+	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/os/gctx"
+
 	"go-vnet/common/config"
 	web "go-vnet/manager/server"
 	"go-vnet/vnet/server"
 )
 
 func main() {
-	// todo load from manager server
-	cfg := server.NewConfig()
-	cfg.Servers = append(cfg.Servers,
-		&server.TransportConfig{
-			MappedConfig: config.NewMappedConfig(),
-			Name:         "quic_test",
-			Port:         9800,
-			Address:      "0.0.0.0",
-			Type:         server.TypeQuic,
-		},
-		&server.TransportConfig{
-			MappedConfig: config.NewMappedConfig(),
-			Name:         "tcp_test",
-			Port:         9801,
-			Address:      "0.0.0.0",
-			Type:         server.TypeTCP,
-		},
-	)
-	cfg.P2P = &server.P2PConfig{
-		Addresses: []server.SignalingServerAddress{
-			{
-				IP:        "0.0.0.0",
-				Transport: "tcp",
-				Port:      9901,
-			},
-		},
+	ctx := gctx.GetInitCtx()
+	cfg, err := loadConfigFromFile(ctx)
+	if err != nil {
+		g.Log().Errorf(ctx, "load server config error: %s", err.Error())
+		return
 	}
 
 	// run server
 	s := server.NewServer(cfg)
 	go func() {
-		err := s.Serve(context.Background())
+		err := s.Serve(ctx)
 		if err != nil {
 			panic(err)
 		}
@@ -52,4 +34,23 @@ func main() {
 	web.StartAllNetworks()
 	// run web server
 	web.RunServer()
+}
+
+func loadConfigFromFile(ctx context.Context, opts ...server.ConfigOption) (cfg *server.Config, err error) {
+	tmp := server.NewConfig()
+	v, err := g.Cfg().Get(ctx, "vnet")
+	if err != nil {
+		g.Log().Errorf(ctx, "load server config error: %s", err.Error())
+		return
+	}
+	cfg = server.NewConfig(opts...)
+	if err = v.Struct(tmp); err != nil {
+		return
+	}
+	cfg.Servers = tmp.Servers
+	cfg.P2P = tmp.P2P
+	for _, sc := range cfg.Servers {
+		sc.MappedConfig = config.NewMappedConfig()
+	}
+	return
 }

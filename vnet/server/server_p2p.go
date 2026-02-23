@@ -90,6 +90,9 @@ func (s *p2pSignalingServer) Run(ctx context.Context) (err error) {
 }
 
 func (s *p2pSignalingServer) Close() (err error) {
+	if s.host == nil {
+		return
+	}
 	g.Log().Infof(s.ctx, "p2p signaling server stopped")
 	return s.host.Close()
 }

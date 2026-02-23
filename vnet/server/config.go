@@ -27,20 +27,20 @@ const (
 type (
 	Type   string
 	Config struct {
-		config.MappedConfig
-		Servers []*TransportConfig `json:"servers"`
-		P2P     *P2PConfig         `json:"p2p"`
+		config.MappedConfig `yaml:"-" json:"-"`
+		Servers             []*TransportConfig `yaml:"servers" json:"servers"`
+		P2P                 *P2PConfig         `yaml:"p2p" json:"p2p"`
 	}
 	ConfigOption    func(cfg *Config)
 	TransportConfig struct {
 		config.MappedConfig `json:"-"`
-		Name                string `json:"name"`
-		Port                int    `json:"port"`
-		Address             string `json:"address"`
-		Type                Type   `json:"type"`
+		Name                string `yaml:"name" json:"name"`
+		Port                int    `yaml:"port" json:"port"`
+		Address             string `yaml:"address" json:"address"`
+		Type                Type   `yaml:"type" json:"type"`
 	}
 	P2PConfig struct {
-		Addresses []SignalingServerAddress `json:"addresses"`
+		Addresses []SignalingServerAddress `yaml:"addresses" json:"addresses"`
 	}
 	NetworkLink struct {
 		SubDeviceId uint64 `json:"sub_device_id"`
