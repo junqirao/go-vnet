@@ -10,6 +10,9 @@ device_mode: "" # p2p_only | proxy_only(only work on both side under this mode) 
 debug: false
 
 manager:
+  # 可选：HTTPS证书配置
+  # cert_file: "path/to/cert.crt"
+  # key_file: "path/to/cert.key"
   enabled: true
   listen: "127.0.0.1"
   port: 8001

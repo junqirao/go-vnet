@@ -11,12 +11,18 @@ import (
 	"github.com/gogf/gf/v2/os/gcmd"
 	"github.com/junqirao/gocomponents/response"
 
+	"go-vnet/common/tls"
 	"go-vnet/manager/client/embed"
 	_ "go-vnet/manager/client/internal/logic"
 	_ "go-vnet/manager/client/internal/packed"
 
 	"go-vnet/manager/client/internal/controller/client"
 	"go-vnet/manager/client/internal/controller/middieware"
+)
+
+const (
+	defaultCertFile = "./tmp_client_manager.crt"
+	defaultKeyFile  = "./tmp_client_manager.key"
 )
 
 var (
@@ -26,6 +32,22 @@ var (
 		Brief: "start go vnet client web manager server",
 		Func: func(ctx context.Context, parser *gcmd.Parser) (err error) {
 			s := g.Server()
+
+			// HTTPS
+			certFile := g.Cfg().MustGet(ctx, "manager.cert_file").String()
+			keyFile := g.Cfg().MustGet(ctx, "manager.key_file").String()
+
+			if certFile == "" || keyFile == "" {
+				certFile = defaultCertFile
+				keyFile = defaultKeyFile
+				err := tls.GenerateSelfSignedCertToFile(certFile, keyFile)
+				if err != nil {
+					g.Log().Errorf(ctx, "failed to generate self-signed cert: %s", err.Error())
+					return err
+				}
+			}
+			s.EnableHTTPS(certFile, keyFile)
+
 			s.SetAddr(fmt.Sprintf("%s:%d",
 				g.Cfg().MustGet(ctx, "manager.listen").String(),
 				g.Cfg().MustGet(ctx, "manager.port").Int()))

@@ -1,6 +1,9 @@
 # https://goframe.org/docs/web/server-config-file-template
 server:
   address: ":8000"
+  # 可选：HTTPS证书配置
+  # cert_file: "path/to/cert.crt"
+  # key_file: "path/to/cert.key"
   openapiPath: "/api.json"
   swaggerPath: "/swagger"
 
