@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -25,14 +26,14 @@ func (c *Client) heartbeatAndSync(ctx context.Context) (err error) {
 		g.Log().Errorf(ctx, "failed to execute ping to server: %s", err.Error())
 		return
 	}
-	// g.Log().Infof(ctx, "ping latency: %.2fms", resp.Cost)
+	// update latency
+	c.ping.latencyToServer = fmt.Sprintf("%.2fms", resp.Cost)
+	c.ping.lastHeartbeat = time.Now()
 
 	// update router if hash changed
 	data := strings.Split(resp.Data.(string), ",")
 	current := c.hub.Router().MD5()
 	remote := data[0]
-	// v, _ := strconv.Atoi(data[1])
-	// latestVer := uint64(v)
 	// sync router
 	if remote != current {
 		g.Log().Infof(ctx, "router hash changed, current: %s, server: %s", current, remote)
@@ -214,7 +215,7 @@ func (c *Client) heartbeatAndSyncLoop() {
 		heartbeat.Stop()
 	}()
 
-	errCount := 0
+	c.ping.errorCount = 0
 
 	// do first sync
 	if err := c.heartbeatAndSync(c.ctx); err != nil {
@@ -237,16 +238,16 @@ func (c *Client) heartbeatAndSyncLoop() {
 			// sync router with client context instead of Background
 			if err := c.heartbeatAndSync(c.ctx); err != nil {
 				g.Log().Errorf(c.ctx, "failed to sync router: %s", err.Error())
-				errCount++
-				if errCount >= MaxErrorToReconnect {
+				c.ping.errorCount++
+				if c.ping.errorCount >= MaxErrorToReconnect {
 					heartbeat.Stop()
-					g.Log().Infof(c.ctx, "max errors reached (%d), attempting reconnect", errCount)
+					g.Log().Infof(c.ctx, "max errors reached (%d), attempting reconnect", c.ping.errorCount)
 					go c.reconnectLoop()
 					return
 				}
 			} else {
 				// reset error count on success
-				errCount = 0
+				c.ping.errorCount = 0
 			}
 		}
 	}
@@ -298,5 +299,7 @@ func (c *Client) reconnectLoop() {
 		if interval > MaxReconnectInterval {
 			interval = MaxReconnectInterval
 		}
+		c.ping.reconnectInterval = interval
+		c.ping.retires = tries
 	}
 }

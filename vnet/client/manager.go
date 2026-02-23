@@ -28,16 +28,28 @@ func (c *Client) CollectRuntimeInfo(recordDuration time.Duration) (info *Runtime
 		Metrics:        c.transport.metrics,
 		MetricsRecords: c.transport.localMetricsDB.GetRange(start, end),
 	}
+	info.Heartbeat = &HeartbeatRuntimeInfo{
+		LatencyToServer:   c.ping.latencyToServer,
+		ErrorCount:        c.ping.errorCount,
+		ReconnectInterval: c.ping.reconnectInterval,
+		LastHeartbeat:     c.ping.lastHeartbeat,
+		Retries:           c.ping.retires,
+	}
 	if c.state != StateRunning {
 		return
 	}
 	info.Session = c.session
 	info.P2P = &P2PRuntimeInfo{
 		HostId:         c.p2p.hostId,
-		MappingVersion: c.p2p.router.MD5(),
 		Metrics:        c.p2p.metrics,
 		Connections:    []string{},
 		MetricsRecords: c.p2p.localMetricsDB.GetRange(start, end),
+	}
+	if c.p2p.router != nil {
+		info.P2P.Router = &RouterRuntimeInfo{
+			Routers: c.p2p.router.Keys(),
+			Version: c.p2p.router.MD5(),
+		}
 	}
 	c.p2p.connections.Range(func(key, value any) bool {
 		info.P2P.Connections = append(info.P2P.Connections, key.(*hub.Destination).Ip())

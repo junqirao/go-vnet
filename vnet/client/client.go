@@ -81,15 +81,19 @@ type (
 			localMetricsDB         *metrics.TimeSeriesDB[*metrics.TransportMetricsRecord]
 			signalingServerAddress *server.AddressInfo
 			connections            sync.Map       // dst:*p2pConnInfo
-			router                 *router.Router // ip : peer.AddrInfo
+			router                 *router.Router // ip:peer.AddrInfo
 			host                   host.Host
 			hostId                 string
 		}
 
 		ping struct {
-			server          *hub.PingServer
-			port            int
-			latencyToServer float64 // update by heartbeat loop
+			server            *hub.PingServer
+			port              int
+			latencyToServer   string // update by heartbeat loop
+			lastHeartbeat     time.Time
+			errorCount        int
+			reconnectInterval int
+			retires           int
 		}
 	}
 	internal interface {
@@ -112,6 +116,14 @@ type (
 		P2P            *P2PRuntimeInfo                   `json:"p2p"`
 		Connections    []*ConnectionInfo                 `json:"connections"`
 		Config         *Config                           `json:"config"`
+		Heartbeat      *HeartbeatRuntimeInfo             `json:"heartbeat_runtime_info"`
+	}
+	HeartbeatRuntimeInfo struct {
+		LatencyToServer   string    `json:"latency_to_server"`
+		ErrorCount        int       `json:"error_count"`
+		ReconnectInterval int       `json:"reconnect_interval"`
+		LastHeartbeat     time.Time `json:"last_heartbeat"`
+		Retries           int       `json:"retries"`
 	}
 	RouterRuntimeInfo struct {
 		Routers []string `json:"routers"`
@@ -119,7 +131,7 @@ type (
 	}
 	P2PRuntimeInfo struct {
 		HostId         string                            `json:"host_id"`
-		MappingVersion string                            `json:"mapping_version"`
+		Router         *RouterRuntimeInfo                `json:"router"`
 		Connections    []string                          `json:"connections"`
 		Metrics        *metrics.TransportMetrics         `json:"metrics"`
 		MetricsRecords []*metrics.TransportMetricsRecord `json:"metrics_records"`
