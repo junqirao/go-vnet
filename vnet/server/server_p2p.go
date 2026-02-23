@@ -25,7 +25,8 @@ type (
 		config    *P2PConfig
 		ref       *Server
 		host      host.Host
-		addresses []string
+		addresses []string              // 对外宣布的公网地址
+		announce  []multiaddr.Multiaddr // 配置的公网地址
 		hostId    string
 		router    *router.Router
 	}
@@ -56,18 +57,38 @@ func newP2PSignalingServer(config *P2PConfig, ref *Server) *p2pSignalingServer {
 }
 
 func (s *p2pSignalingServer) Run(ctx context.Context) (err error) {
-	var addresses []multiaddr.Multiaddr
-	for _, address := range s.config.Addresses {
-		addresses = append(addresses, address.MultiAddr())
-	}
-	if len(addresses) == 0 {
+	if len(s.config.Addresses) == 0 {
 		err = fmt.Errorf("no address for p2p server")
 		return
 	}
 
+	// 准备对外宣布的地址列表（配置的公网地址）
+	s.announce = make([]multiaddr.Multiaddr, 0, len(s.config.Addresses))
+	for _, address := range s.config.Addresses {
+		s.announce = append(s.announce, address.MultiAddr())
+	}
+
+	// 准备监听地址 - 监听所有接口，使用配置中的端口
+	listenAdders := make([]multiaddr.Multiaddr, 0, len(s.config.Addresses))
+	for _, address := range s.config.Addresses {
+		// 监听 0.0.0.0（所有接口）而不是公网 IP
+		listenAddr := fmt.Sprintf("/%s/0.0.0.0/%s/%d",
+			map[bool]string{true: "ip6", false: "ip4"}[address.IP == "::"],
+			address.Transport,
+			address.Port)
+		if address.Version != "" {
+			listenAddr += "/" + address.Version
+		}
+		listenAdders = append(listenAdders, multiaddr.StringCast(listenAddr))
+	}
+
 	s.ctx = ctx
 	s.host, err = libp2p.New(
-		libp2p.ListenAddrs(addresses...),
+		libp2p.ListenAddrs(listenAdders...),
+		libp2p.AddrsFactory(func(adders []multiaddr.Multiaddr) []multiaddr.Multiaddr {
+			// 返回对外宣布的公网地址，而不是本地监听地址
+			return s.announce
+		}),
 		libp2p.EnableNATService(),
 		libp2p.EnableRelay(),
 		libp2p.EnableHolePunching(),
@@ -77,8 +98,9 @@ func (s *p2pSignalingServer) Run(ctx context.Context) (err error) {
 		return
 	}
 
-	s.addresses = make([]string, 0)
-	for _, addr := range s.host.Addrs() {
+	// 将配置的公网地址转换为字符串形式，供客户端使用
+	s.addresses = make([]string, 0, len(s.announce))
+	for _, addr := range s.announce {
 		s.addresses = append(s.addresses, addr.String())
 	}
 	s.hostId = s.host.ID().String()

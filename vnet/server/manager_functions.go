@@ -40,7 +40,7 @@ var (
 			return &FuncCallResponse{Code: 0, Data: base64.StdEncoding.EncodeToString(bs)}, nil
 		},
 	}
-	funcGetP2PRelayInfo = FuncCallInfo{
+	funcGetP2PInfo = FuncCallInfo{
 		Name: FuncNameGetP2PPeerInfo,
 		Fn: func(ctx context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
 			s := ctx.Value(consts.CtxKeyServer)

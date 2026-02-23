@@ -67,7 +67,7 @@ func NewServer(cfg *Config) *Server {
 	s.manager.RegisterHandler(
 		funcPing,
 		funcGetRouteData,
-		funcGetP2PRelayInfo,
+		funcGetP2PInfo,
 		funcGetP2PRelayMapping,
 		funcRegisterP2PPeer,
 		funcCloseSession,
