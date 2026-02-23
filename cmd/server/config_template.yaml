@@ -20,3 +20,23 @@ auth:
   apps:
     - appid: "test"
       secret: "test"
+      # 同时修改前端的appid环境变量即可变更
+    - appid: "go_v_net_server_manager_ui_default_appid"
+      secret: "123456"
+
+vnet:
+  servers:
+    - name: "quic-01"
+      address: "0.0.0.0"
+      port: 9800
+      type: "quic"
+    - name: "tcp-01"
+      address: "0.0.0.0"
+      port: 9800
+      type: "tcp"
+  p2p:
+    addresses:
+      - ip: "0.0.0.0"
+        port: 9900
+        transport: "tcp"
+        version: ""
