@@ -14,6 +14,7 @@ type IDeviceV1 interface {
 	CreateDevice(ctx context.Context, req *v1.CreateDeviceReq) (res *v1.CreateDeviceRes, err error)
 	CreateSubDevice(ctx context.Context, req *v1.CreateSubDeviceReq) (res *v1.CreateSubDeviceRes, err error)
 	GetDevice(ctx context.Context, req *v1.GetDeviceReq) (res *v1.GetDeviceRes, err error)
+	GetDevicePublicKey(ctx context.Context, req *v1.GetDevicePublicKeyReq) (res *v1.GetDevicePublicKeyRes, err error)
 	SetSubDeviceQuota(ctx context.Context, req *v1.SetSubDeviceQuotaReq) (res *v1.SetSubDeviceQuotaRes, err error)
 	SetSubDeviceBandwidthQuota(ctx context.Context, req *v1.SetSubDeviceBandwidthQuotaReq) (res *v1.SetSubDeviceBandwidthQuotaRes, err error)
 	GetDeviceList(ctx context.Context, req *v1.GetDeviceListReq) (res *v1.GetDeviceListRes, err error)

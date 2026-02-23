@@ -239,3 +239,11 @@ func (d *sDevice) GetDeviceInfoListPagination(ctx context.Context, page, pageSiz
 	}
 	return
 }
+
+func (d *sDevice) DownloadDevicePubKey(ctx context.Context, deviceId string) (pub string, err error) {
+	dev, err := d.GetDeviceById(ctx, deviceId)
+	if err != nil {
+		return
+	}
+	return gbase64.EncodeString(dev.PublicKey), nil
+}

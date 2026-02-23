@@ -42,6 +42,17 @@ type GetDeviceReq struct {
 
 type GetDeviceRes model.Device
 
+type GetDevicePublicKeyReq struct {
+	g.Meta `path:"/device/:device_id/public_key" tags:"Device" method:"get" summary:"GetDevice Public Key"`
+	middleware.RequiredAuthHeader
+
+	DeviceId string `json:"device_id" v:"required" in:"path"`
+}
+
+type GetDevicePublicKeyRes struct {
+	PublicKey string `json:"public_key"`
+}
+
 type SetSubDeviceQuotaReq struct {
 	g.Meta `path:"/sub/:sub_device_id/quota" tags:"Device" method:"post" summary:"Set sub device quota"`
 	middleware.RequiredAuthHeader
