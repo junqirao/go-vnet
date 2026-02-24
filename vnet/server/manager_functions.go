@@ -6,9 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
+	"github.com/quic-go/quic-go"
 
 	"go-vnet/vnet/server/consts"
 )
@@ -78,14 +82,57 @@ var (
 				err = errors.New("internal type error of value 'server'")
 				return
 			}
+			var p string
 			v, ok := req.Args["peer"]
 			if ok && v != "" {
-				peer := v.(string)
-				_, ok := session.storage.LoadOrStore(sessionStorageKeyP2PPeer, peer)
+				p = v.(string)
+
+				// 从服务端连接中获取真实的远端地址和端口
+				var realRemoteIP string
+				var realPort int
+
+				switch conn := session.conn.(type) {
+				case *quic.Conn:
+					// QUIC 连接
+					remoteAddr := conn.RemoteAddr()
+					if remoteAddr != nil {
+						realRemoteAddr := remoteAddr.String()
+						if host, portStr, err := net.SplitHostPort(realRemoteAddr); err == nil {
+							realRemoteIP = host
+							realPort, _ = net.LookupPort("tcp", portStr)
+						}
+					}
+				case net.Conn:
+					// TCP 连接
+					remoteAddr := conn.RemoteAddr()
+					if remoteAddr != nil {
+						realRemoteAddr := remoteAddr.String()
+						if host, portStr, err := net.SplitHostPort(realRemoteAddr); err == nil {
+							realRemoteIP = host
+							realPort, _ = net.LookupPort("tcp", portStr)
+						}
+					}
+				}
+
+				// 解析客户端发送的 peerInfo，替换为服务端看到的真实地址
+				var peerInfo peer.AddrInfo
+				if err = json.Unmarshal([]byte(p), &peerInfo); err == nil {
+					// 如果获取到了真实IP和端口，使用服务端看到的真实地址
+					if realPort > 0 && realRemoteIP != "" {
+						peerInfo.Addrs = append(peerInfo.Addrs, multiaddr.StringCast(fmt.Sprintf("/ip4/%s/tcp/%d", realRemoteIP, realPort)))
+						if newPeerBytes, err := json.Marshal(peerInfo); err == nil {
+							p = string(newPeerBytes)
+						}
+						g.Log().Infof(ctx, "p2p peer address replaced: virtual=%s, real=%s:%d",
+							session.IP, realRemoteIP, realPort)
+					}
+				}
+
+				_, ok = session.storage.LoadOrStore(sessionStorageKeyP2PPeer, p)
 				if !ok {
-					g.Log().Infof(ctx, "registered p2p peer from %s: %s", session.IP, peer)
-					server.BroadcastPeer(ctx, EventNameP2PPeerUpdate, session, peer)
-					session.network.p2pRouter.Register(fmt.Sprintf("%s/32", session.IP), peer)
+					g.Log().Infof(ctx, "registered p2p peer from %s: %s", session.IP, p)
+					server.BroadcastPeer(ctx, EventNameP2PPeerUpdate, session, p)
+					session.network.p2pRouter.Register(fmt.Sprintf("%s/32", session.IP), p)
 				}
 			}
 			return &FuncCallResponse{Code: 0, Data: nil}, nil

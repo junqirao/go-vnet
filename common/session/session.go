@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"fmt"
+	"net"
 )
 
 type (
@@ -10,6 +11,8 @@ type (
 		Closer
 		Send(data []byte) (err error)
 		Receive(ctx context.Context) (data []byte, err error)
+		LocalAddr() net.Addr
+		RemoteAddr() net.Addr
 	}
 	Closer interface {
 		CloseWithError(err error)

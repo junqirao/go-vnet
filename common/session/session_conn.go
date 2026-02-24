@@ -33,8 +33,7 @@ func (c *connSendReceiver) CloseWithError(err error) {
 		code := 500
 
 		// 如果是 session.Error 类型，提取原始信息
-		var sErr *Error
-		if errors.As(err, &sErr) {
+		if sErr, ok := errors.AsType[*Error](err); ok {
 			msg = sErr.msg
 			code = sErr.Code()
 		}
@@ -92,4 +91,12 @@ func (c *connSendReceiver) Receive(_ context.Context) (data []byte, err error) {
 		data = nil // 错误消息不返回数据
 	}
 	return
+}
+
+func (c *connSendReceiver) LocalAddr() net.Addr {
+	return c.conn.LocalAddr()
+}
+
+func (c *connSendReceiver) RemoteAddr() net.Addr {
+	return c.conn.RemoteAddr()
 }

@@ -70,10 +70,12 @@ func (s *Server) BroadcastPeer(ctx context.Context, eventName string, from *Sess
 	s.sessions.Range(func(key, value any) bool {
 		sess := value.(*Session)
 		total++
-		// ignore self and non-p2p session
-		if sess.SessionId == from.SessionId || !gconv.Bool(sess.ClientInfo.P2P) {
+		// non-p2p session
+		if !gconv.Bool(sess.ClientInfo.P2P) {
 			return true
 		}
+		// do not ignore self cause we need to update local mapping
+		// in nat environment
 		push++
 		data := P2PPeerEventData{
 			Peer: peer,

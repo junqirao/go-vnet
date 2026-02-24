@@ -14,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	"github.com/multiformats/go-multiaddr"
 
 	"go-vnet/common/protocol"
@@ -88,7 +89,21 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 		address = append(address, ma)
 	}
 
+	// 配置连接管理器：管理连接的生命周期和 keepalive
+	// 保持 NAT 映射活跃：30秒无活动后触发 keepalive
+	// 超时时间：5分钟无活动后关闭连接
+	c.p2p.connMgr, err = connmgr.NewConnManager(
+		30,  // 低水位：连接数低于此值时触发 prune
+		100, // 高水位：客户端保持较少连接
+		connmgr.WithGracePeriod(time.Minute*2),
+		connmgr.WithSilencePeriod(time.Second*10),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create connection manager: %v", err)
+	}
+
 	opts = append(opts, libp2p.ListenAddrs(address...))
+	opts = append(opts, libp2p.ConnectionManager(c.p2p.connMgr))
 
 	c.p2p.host, err = libp2p.New(opts...)
 	if err != nil {
@@ -99,9 +114,9 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 	serverAddrInfo := &peer.AddrInfo{}
 	serverAddrInfo.ID, _ = peer.Decode(c.p2p.signalingServerAddress.Id)
 	for _, s := range c.p2p.signalingServerAddress.Addresses {
-		ma, err := multiaddr.NewMultiaddr(fmt.Sprintf("%s/p2p/%s", s, c.p2p.signalingServerAddress.Id))
-		if err != nil {
-			g.Log().Errorf(ctx, "invalid p2p signaling server address: %s, reason: %v", s, err)
+		ma, addrErr := multiaddr.NewMultiaddr(fmt.Sprintf("%s/p2p/%s", s, c.p2p.signalingServerAddress.Id))
+		if addrErr != nil {
+			g.Log().Errorf(ctx, "invalid p2p signaling server address: %s, reason: %v", s, addrErr)
 			continue
 		}
 		serverAddrInfo.Addrs = append(serverAddrInfo.Addrs, ma)

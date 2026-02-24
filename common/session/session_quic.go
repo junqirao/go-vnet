@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -253,8 +254,7 @@ func (q *quicSendReceiver) CloseWithError(err error) {
 	code := 0
 	if err != nil {
 		desc = err.Error()
-		var ee *Error
-		if errors.As(err, &ee) {
+		if ee, ok := errors.AsType[*Error](err); ok {
 			code = ee.Code()
 		}
 	}
@@ -263,4 +263,12 @@ func (q *quicSendReceiver) CloseWithError(err error) {
 
 func SendReceiverFromQuicConn(conn *quic.Conn) SendReceiveCloser {
 	return &quicSendReceiver{Conn: conn, reassembler: nil}
+}
+
+func (q *quicSendReceiver) LocalAddr() net.Addr {
+	return q.Conn.LocalAddr()
+}
+
+func (q *quicSendReceiver) RemoteAddr() net.Addr {
+	return q.Conn.RemoteAddr()
 }

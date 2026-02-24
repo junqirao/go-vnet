@@ -15,6 +15,7 @@ import (
 	"github.com/gogf/gf/v2/encoding/gbase64"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	tun "github.com/sagernet/sing-tun"
 
 	"go-vnet/common/grace"
@@ -84,6 +85,7 @@ type (
 			router                 *router.Router // ip:peer.AddrInfo
 			host                   host.Host
 			hostId                 string
+			connMgr                *connmgr.BasicConnMgr
 		}
 
 		ping struct {
@@ -378,6 +380,10 @@ func (c *Client) ReleaseAll() {
 		c.p2p.host = nil
 	}
 	c.p2p.hostId = ""
+	if c.p2p.connMgr != nil {
+		_ = c.p2p.connMgr.Close()
+		c.p2p.connMgr = nil
+	}
 
 	// 关闭ping服务器
 	if c.ping.server != nil {

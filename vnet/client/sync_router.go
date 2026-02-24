@@ -96,18 +96,20 @@ func (c *Client) syncP2PPeerMapping(ctx context.Context) (err error) {
 				continue
 			}
 
-			// ignore exists
-			if v, ok := c.p2p.router.RouteString(k); ok {
-				curr := v.(*peer.AddrInfo)
-				if curr.ID == c.p2p.host.ID() || curr.ID == pi.ID {
-					continue
-				}
+			// check if already exists and needs update
+			shouldUpdate := true
+			if curr, ok := c.p2p.router.RouteString(strings.Split(k, "/")[0]); ok {
+				currStr, _ := json.Marshal(curr)
+				shouldUpdate = string(currStr) != v
+				g.Log().Infof(ctx, "p2p peer %s already exists, shouldUpdate: %v, cu: %s, new: %s", k, shouldUpdate, currStr, v)
 			}
-			// don't ignore self otherwise will cause an update loop
-			// md5 will never be the same, it's ok to leave it here
-			c.p2p.router.Register(k, pi)
-			g.Log().Infof(ctx, "add p2p peer: %s", k)
-			upsert++
+
+			if shouldUpdate {
+				// don't ignore self otherwise will cause an update loop
+				c.p2p.router.Register(k, pi)
+				g.Log().Infof(ctx, "add p2p peer: %s", k)
+				upsert++
+			}
 		}
 		toDel := map[string]struct{}{}
 		c.p2p.router.Range(func(key string, value any) {
