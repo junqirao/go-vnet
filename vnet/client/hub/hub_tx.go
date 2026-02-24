@@ -380,14 +380,48 @@ func (c *Destination) tryProxyConnect() (protocol.ReadWriter, error) {
 func (c *Destination) sendNegotiatePacket(tx protocol.ReadWriter) (byte, error) {
 	ups := tx.Upstream()
 	g.Log().Infof(c.ctx, "[TX] send negotiate packet: %s", c.ip)
-	if _, err := ups.Write([]byte(c.ip)); err != nil {
+
+	// 创建3秒超时的context
+	ctx, cancel := context.WithTimeout(c.ctx, 3*time.Second)
+	defer cancel()
+
+	type result struct {
+		data byte
+		err  error
+	}
+	resultChan := make(chan result, 1)
+
+	// 在goroutine中执行写入和读取操作
+	go func() {
+		var res result
+		if _, err := ups.Write([]byte(c.ip)); err != nil {
+			res.err = err
+			resultChan <- res
+			return
+		}
+		var buf [1]byte
+		if _, err := ups.Read(buf[:]); err != nil {
+			res.err = err
+			resultChan <- res
+			return
+		}
+		res.data = buf[0]
+		resultChan <- res
+	}()
+
+	// 等待结果或超时
+	select {
+	case res := <-resultChan:
+		if res.err != nil {
+			return 0, res.err
+		}
+		return res.data, nil
+	case <-ctx.Done():
+		// 超时，认为dst不可用，触发fallbackOrReportError
+		err := fmt.Errorf("negotiate timeout for %s", c.ip)
+		c.fallbackOrReportError(err)
 		return 0, err
 	}
-	var buf [1]byte
-	if _, err := ups.Read(buf[:]); err != nil {
-		return 0, err
-	}
-	return buf[0], nil
 }
 
 // handleSuccess 处理连接成功的后续操作
