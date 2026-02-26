@@ -166,6 +166,8 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 	}
 	g.Log().Info(ctx, "successfully connected to p2p signaling server")
 	c.backgroundTryDialP2P()
+	// 启动定期刷新地址的任务，确保NAT映射保持活跃
+	c.startPeriodicAddressRefresh()
 	return
 }
 
@@ -403,4 +405,66 @@ func (c *Client) OnFallback(ctx context.Context, dst *hub.Destination, rw protoc
 			info.cancel()
 		}
 	}
+}
+
+// startPeriodicAddressRefresh 启动定期刷新NAT地址的任务
+// 这样可以确保NAT映射保持活跃，新客户端可以连接到现有的P2P网络
+func (c *Client) startPeriodicAddressRefresh() {
+	if !c.cfg.P2P.Enabled {
+		return
+	}
+
+	// 从配置获取刷新间隔，默认120秒（2分钟）
+	refreshInterval := time.Second * time.Duration(c.cfg.P2P.AddressRefresh)
+	if refreshInterval < time.Second*30 {
+		refreshInterval = time.Second * 30 // 最小30秒
+	}
+
+	g.Log().Infof(c.ctx, "starting periodic p2p address refresh (interval: %v)", refreshInterval)
+
+	go func() {
+		ticker := time.NewTicker(refreshInterval)
+		defer ticker.Stop()
+
+		// 首次延迟30秒开始刷新，避免启动时立即刷新
+		time.Sleep(time.Second * 30)
+
+		for {
+			select {
+			case <-c.ctx.Done():
+				g.Log().Infof(c.ctx, "periodic p2p address refresh stopped")
+				return
+			case <-c.sig:
+				g.Log().Infof(c.ctx, "periodic p2p address refresh stopped by signal")
+				return
+			case <-ticker.C:
+				c.refreshP2PAddress()
+			}
+		}
+	}()
+}
+
+// refreshP2PAddress 向服务器请求刷新自己的P2P地址
+func (c *Client) refreshP2PAddress() {
+	if c.manager == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.ctx, time.Second*10)
+	defer cancel()
+
+	g.Log().Debugf(ctx, "refreshing p2p address...")
+
+	resp, err := c.manager.CallFunc(ctx, server.FuncNameRefreshP2PAddress)
+	if err != nil {
+		g.Log().Errorf(ctx, "failed to refresh p2p address: %v", err)
+		return
+	}
+
+	if resp.Code != 0 {
+		g.Log().Errorf(ctx, "refresh p2p address returned error code: %d", resp.Code)
+		return
+	}
+
+	g.Log().Debugf(ctx, "p2p address refreshed successfully")
 }

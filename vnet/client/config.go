@@ -21,6 +21,7 @@ var (
 				Enabled:        true,
 				ListenAddr:     []string{},
 				TryInterval:    30,
+				AddressRefresh: 120, // 默认2分钟刷新一次
 				ActiveDialPeer: false,
 			},
 			Encrypt:  true,
@@ -59,7 +60,8 @@ type (
 	P2PConfig struct {
 		Enabled        bool     `yaml:"enabled" json:"enabled"`
 		ListenAddr     []string `yaml:"listen_addr" json:"listen_addr"`
-		TryInterval    int      `yaml:"try_interval" json:"try_interval"`
+		TryInterval    int      `yaml:"try_interval" json:"try_interval"`       // 尝试P2P连接的间隔（秒）
+		AddressRefresh int      `yaml:"address_refresh" json:"address_refresh"` // 地址刷新间隔（秒），默认120秒（2分钟）
 		ActiveDialPeer bool     `yaml:"active_dial_peer" json:"active_dial_peer"`
 	}
 	ConfigOption func(cfg *Config)

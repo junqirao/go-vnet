@@ -21,10 +21,111 @@ const (
 	FuncNamePing              = "ping"
 	FuncNameGetRouterData     = "get_router_data"
 	FuncNameRegisterP2PPeer   = "register_p2p_peer"
+	FuncNameRefreshP2PAddress = "refresh_p2p_address"
 	FuncNameGetP2PPeerInfo    = "get_p2p_peer_info"
 	FuncNameGetP2PPeerMapping = "get_p2p_relay_mapping"
 	FuncNameCloseSession      = "close_session"
 )
+
+// getNATAddressFromConn 从连接中获取NAT地址
+func getNATAddressFromConn(conn any) (ip string, port int, ok bool) {
+	switch c := conn.(type) {
+	case *quic.Conn:
+		remoteAddr := c.RemoteAddr()
+		if remoteAddr != nil {
+			realRemoteAddr := remoteAddr.String()
+			if host, portStr, err := net.SplitHostPort(realRemoteAddr); err == nil {
+				return host, getPortFromString(portStr), true
+			}
+		}
+	case net.Conn:
+		remoteAddr := c.RemoteAddr()
+		if remoteAddr != nil {
+			realRemoteAddr := remoteAddr.String()
+			if host, portStr, err := net.SplitHostPort(realRemoteAddr); err == nil {
+				return host, getPortFromString(portStr), true
+			}
+		}
+	}
+	return "", 0, false
+}
+
+// getPortFromString 从字符串中提取端口号
+func getPortFromString(portStr string) int {
+	port, _ := net.LookupPort("tcp", portStr)
+	return port
+}
+
+// updateP2PPeerAddress 更新P2P peer地址并广播
+func updateP2PPeerAddress(ctx context.Context, session *Session, server *Server, peerInfo *peer.AddrInfo, isRefresh bool) (string, error) {
+	// 从连接中获取NAT地址
+	realRemoteIP, realPort, hasNATAddr := getNATAddressFromConn(session.conn)
+
+	// 获取原始地址列表
+	originalAddrs := make([]string, 0, len(peerInfo.Addrs))
+	for _, addr := range peerInfo.Addrs {
+		originalAddrs = append(originalAddrs, addr.String())
+	}
+
+	// 检查是否需要添加NAT地址
+	if hasNATAddr && realPort > 0 && realRemoteIP != "" {
+		newNATAddr := multiaddr.StringCast(fmt.Sprintf("/ip4/%s/tcp/%d", realRemoteIP, realPort))
+
+		// 检查地址是否已存在
+		addrExists := false
+		for _, addr := range peerInfo.Addrs {
+			if addr.Equal(newNATAddr) {
+				addrExists = true
+				break
+			}
+		}
+
+		if addrExists {
+			if isRefresh {
+				g.Log().Debugf(ctx, "p2p peer %s: NAT address %s:%d already exists, skipping refresh",
+					session.IP, realRemoteIP, realPort)
+			} else {
+				g.Log().Debugf(ctx, "p2p peer %s: NAT address %s:%d already exists",
+					session.IP, realRemoteIP, realPort)
+			}
+		} else {
+			// 将新的NAT地址添加到列表前面
+			peerInfo.Addrs = append([]multiaddr.Multiaddr{newNATAddr}, peerInfo.Addrs...)
+			if isRefresh {
+				g.Log().Infof(ctx, "p2p peer %s: refreshed NAT address to %s:%d", session.IP, realRemoteIP, realPort)
+			} else {
+				g.Log().Infof(ctx, "p2p peer %s: adding server-observed NAT address %s:%d (original: %v)",
+					session.IP, realRemoteIP, realPort, originalAddrs)
+			}
+		}
+	} else {
+		if isRefresh {
+			g.Log().Warningf(ctx, "p2p peer %s: cannot observe NAT address, skipping refresh", session.IP)
+			return "", fmt.Errorf("cannot observe NAT address")
+		} else {
+			g.Log().Warningf(ctx, "p2p peer %s: no NAT address observed from connection (original: %v)",
+				session.IP, originalAddrs)
+		}
+	}
+
+	// 序列化更新后的peerInfo
+	newPeerBytes, err := json.Marshal(peerInfo)
+	if err != nil {
+		g.Log().Errorf(ctx, "failed to marshal peer info: %v", err)
+		return "", fmt.Errorf("failed to marshal peer info: %v", err)
+	}
+
+	newPeerStr := string(newPeerBytes)
+
+	// 更新存储
+	session.storage.Store(sessionStorageKeyP2PPeer, newPeerStr)
+
+	// 更新路由
+	session.network.p2pRouter.Register(fmt.Sprintf("%s/32", session.IP), newPeerStr)
+
+	server.BroadcastPeer(ctx, EventNameP2PPeerUpdate, session, newPeerStr)
+	return newPeerStr, nil
+}
 
 var (
 	funcPing = FuncCallInfo{
@@ -87,54 +188,67 @@ var (
 			if ok && v != "" {
 				p = v.(string)
 
-				// 从服务端连接中获取真实的远端地址和端口
-				var realRemoteIP string
-				var realPort int
-
-				switch conn := session.conn.(type) {
-				case *quic.Conn:
-					// QUIC 连接
-					remoteAddr := conn.RemoteAddr()
-					if remoteAddr != nil {
-						realRemoteAddr := remoteAddr.String()
-						if host, portStr, err := net.SplitHostPort(realRemoteAddr); err == nil {
-							realRemoteIP = host
-							realPort, _ = net.LookupPort("tcp", portStr)
-						}
-					}
-				case net.Conn:
-					// TCP 连接
-					remoteAddr := conn.RemoteAddr()
-					if remoteAddr != nil {
-						realRemoteAddr := remoteAddr.String()
-						if host, portStr, err := net.SplitHostPort(realRemoteAddr); err == nil {
-							realRemoteIP = host
-							realPort, _ = net.LookupPort("tcp", portStr)
-						}
-					}
-				}
-
-				// 解析客户端发送的 peerInfo，替换为服务端看到的真实地址
+				// 解析客户端发送的 peerInfo
 				var peerInfo peer.AddrInfo
-				if err = json.Unmarshal([]byte(p), &peerInfo); err == nil {
-					// 如果获取到了真实IP和端口，使用服务端看到的真实地址
-					if realPort > 0 && realRemoteIP != "" {
-						peerInfo.Addrs = append(peerInfo.Addrs, multiaddr.StringCast(fmt.Sprintf("/ip4/%s/tcp/%d", realRemoteIP, realPort)))
-						if newPeerBytes, err := json.Marshal(peerInfo); err == nil {
-							p = string(newPeerBytes)
-						}
-						g.Log().Infof(ctx, "p2p peer address replaced: virtual=%s, real=%s:%d",
-							session.IP, realRemoteIP, realPort)
+				if err = json.Unmarshal([]byte(p), &peerInfo); err != nil {
+					g.Log().Errorf(ctx, "failed to unmarshal peer info: %v", err)
+					return &FuncCallResponse{Code: 1, Data: "invalid peer info"}, nil
+				}
+
+				// 更新P2P peer地址（首次注册）
+				newPeerStr, err := updateP2PPeerAddress(ctx, session, server, &peerInfo, false)
+				if err != nil {
+					// 首次注册即使失败也记录，不返回错误
+					g.Log().Warningf(ctx, "failed to update p2p peer address during registration: %v", err)
+				}
+
+				// 如果updateP2PPeerAddress返回空字符串，使用原始peerInfo
+				if newPeerStr == "" {
+					if peerBytes, err := json.Marshal(peerInfo); err == nil {
+						newPeerStr = string(peerBytes)
 					}
 				}
 
-				_, ok = session.storage.LoadOrStore(sessionStorageKeyP2PPeer, p)
+				_, ok = session.storage.LoadOrStore(sessionStorageKeyP2PPeer, newPeerStr)
 				if !ok {
-					g.Log().Infof(ctx, "registered p2p peer from %s: %s", session.IP, p)
-					server.BroadcastPeer(ctx, EventNameP2PPeerUpdate, session, p)
-					session.network.p2pRouter.Register(fmt.Sprintf("%s/32", session.IP), p)
+					g.Log().Infof(ctx, "registered p2p peer from %s", session.IP)
 				}
 			}
+			return &FuncCallResponse{Code: 0, Data: nil}, nil
+		},
+	}
+	funcRefreshP2PAddress = FuncCallInfo{
+		Name: FuncNameRefreshP2PAddress,
+		Fn: func(ctx context.Context, session *Session, req *FuncCallRequest) (resp *FuncCallResponse, err error) {
+			s := ctx.Value(consts.CtxKeyServer)
+			server, ok := s.(*Server)
+			if !ok {
+				err = errors.New("internal type error of value 'server'")
+				return
+			}
+
+			// 从存储中获取当前的peerInfo
+			v, ok := session.storage.Load(sessionStorageKeyP2PPeer)
+			if !ok {
+				g.Log().Warningf(ctx, "no p2p peer info found for %s, nothing to refresh", session.IP)
+				return &FuncCallResponse{Code: 0, Data: nil}, nil
+			}
+
+			currentPeerStr := v.(string)
+
+			// 解析当前的peerInfo
+			var peerInfo peer.AddrInfo
+			if err = json.Unmarshal([]byte(currentPeerStr), &peerInfo); err != nil {
+				g.Log().Errorf(ctx, "failed to unmarshal current peer info: %v", err)
+				return &FuncCallResponse{Code: 1, Data: "failed to unmarshal peer info"}, nil
+			}
+
+			// 更新P2P peer地址（刷新）
+			_, err = updateP2PPeerAddress(ctx, session, server, &peerInfo, true)
+			if err != nil {
+				return &FuncCallResponse{Code: 0, Data: nil}, nil // 刷新失败不返回错误
+			}
+
 			return &FuncCallResponse{Code: 0, Data: nil}, nil
 		},
 	}

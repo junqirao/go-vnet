@@ -70,6 +70,7 @@ func NewServer(cfg *Config) *Server {
 		funcGetP2PInfo,
 		funcGetP2PRelayMapping,
 		funcRegisterP2PPeer,
+		funcRefreshP2PAddress,
 		funcCloseSession,
 	)
 
