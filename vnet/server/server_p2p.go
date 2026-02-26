@@ -109,6 +109,8 @@ func (s *p2pSignalingServer) Run(ctx context.Context) (err error) {
 		libp2p.EnableNATService(),
 		libp2p.EnableRelay(),
 		libp2p.EnableHolePunching(),
+		libp2p.EnableAutoNATv2(),
+		libp2p.NATPortMap(),
 	)
 	if err != nil {
 		err = fmt.Errorf("failed to create host: %v", err)

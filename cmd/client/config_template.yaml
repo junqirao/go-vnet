@@ -21,3 +21,11 @@ manager:
 
 p2p:
   enabled: false
+  # 监听地址（本地）
+  # 注意：在NAT环境下，libp2p会自动发现公网地址并通过服务器交换
+  listen_addr:
+    - "/ip4/0.0.0.0/tcp/0"
+  # 尝试P2P连接的间隔（秒）
+  try_interval: 30
+  # 是否主动拨号对等节点
+  active_dial_peer: false

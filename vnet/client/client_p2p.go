@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
@@ -71,6 +72,7 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 			libp2p.EnableNATService(),
 			libp2p.EnableRelay(),
 			libp2p.EnableHolePunching(),
+			libp2p.EnableAutoNATv2(),
 		}
 		localListenAddr []string
 	)
@@ -89,14 +91,34 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 		address = append(address, ma)
 	}
 
+	// 配置地址工厂函数：过滤掉回环地址，保留可观察到的地址
+	opts = append(opts, libp2p.AddrsFactory(func(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
+		var result []multiaddr.Multiaddr
+		for _, addr := range addrs {
+			s := addr.String()
+			// 过滤掉回环地址和未指定地址
+			if strings.Contains(s, "/ip4/127.0.0.1") || strings.Contains(s, "/ip6/::1") {
+				continue
+			}
+			// 过滤掉纯内网地址（保留可能被其他客户端通过NAT访问的地址）
+			// 注意：libp2p的NAT服务会自动添加服务器看到的公网地址
+			result = append(result, addr)
+		}
+		// 限制返回的地址数量，避免过多地址
+		if len(result) > 4 {
+			result = result[:4]
+		}
+		return result
+	}))
+
 	// 配置连接管理器：管理连接的生命周期和 keepalive
-	// 保持 NAT 映射活跃：30秒无活动后触发 keepalive
-	// 超时时间：5分钟无活动后关闭连接
+	// 保持 NAT 映射活跃：20秒无活动后触发 keepalive
+	// 超时时间：4分钟无活动后关闭连接（防止NAT映射过期）
 	c.p2p.connMgr, err = connmgr.NewConnManager(
-		30,  // 低水位：连接数低于此值时触发 prune
-		100, // 高水位：客户端保持较少连接
-		connmgr.WithGracePeriod(time.Minute*2),
-		connmgr.WithSilencePeriod(time.Second*10),
+		20,                                     // 低水位：连接数低于此值时触发 prune
+		100,                                    // 高水位：客户端保持较多连接以支持P2P
+		connmgr.WithGracePeriod(time.Minute*1), // 缩短优雅期，更快清理连接
+		connmgr.WithSilencePeriod(time.Second*15), // 延长静默期，避免频繁触发
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create connection manager: %v", err)
