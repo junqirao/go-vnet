@@ -20,11 +20,12 @@ manager:
     - 127.0.0.1
 
 p2p:
-  enabled: false
+  enabled: true  # 启用P2P功能
   # 监听地址（本地）
   # 注意：在NAT环境下，libp2p会自动发现公网地址并通过服务器交换
   listen_addr:
-    - "/ip4/0.0.0.0/tcp/0"
+    - "/ip4/0.0.0.0/tcp/0"         # TCP监听
+    - "/ip4/0.0.0.0/udp/0/quic-v1" # UDP/QUIC监听
   # 尝试P2P连接的间隔（秒）
   try_interval: 30
   # NAT地址刷新间隔（秒），定期向服务器刷新自己的NAT地址
@@ -32,7 +33,7 @@ p2p:
   # 建议设置为60-180秒之间，默认120秒（2分钟）
   address_refresh: 120
   # 是否主动拨号对等节点
-  active_dial_peer: false
+  active_dial_peer: true  # 建议开启主动拨号
 
 # NAT穿透说明：
 # 1. libp2p会自动尝试NAT打洞（需要服务器作为信令节点）

@@ -73,13 +73,16 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 			libp2p.EnableRelay(),
 			libp2p.EnableHolePunching(),
 			libp2p.EnableAutoNATv2(),
+			libp2p.NATPortMap(),
 		}
 		localListenAddr []string
 	)
 
 	localListenAddr = append(localListenAddr, c.cfg.P2P.ListenAddr...)
 	if len(localListenAddr) == 0 {
+		// 默认同时监听 TCP 和 UDP
 		localListenAddr = append(localListenAddr, "/ip4/0.0.0.0/tcp/0")
+		localListenAddr = append(localListenAddr, "/ip4/0.0.0.0/udp/0/quic-v1")
 	}
 
 	for _, s := range localListenAddr {
@@ -100,25 +103,22 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 			if strings.Contains(s, "/ip4/127.0.0.1") || strings.Contains(s, "/ip6/::1") {
 				continue
 			}
-			// 过滤掉纯内网地址（保留可能被其他客户端通过NAT访问的地址）
-			// 注意：libp2p的NAT服务会自动添加服务器看到的公网地址
+			// 保留公网可达的地址，包括TCP和UDP
 			result = append(result, addr)
 		}
-		// 限制返回的地址数量，避免过多地址
-		if len(result) > 4 {
-			result = result[:4]
+		// 增加地址数量限制以包含UDP地址
+		if len(result) > 6 {
+			result = result[:6]
 		}
 		return result
 	}))
 
-	// 配置连接管理器：管理连接的生命周期和 keepalive
-	// 保持 NAT 映射活跃：20秒无活动后触发 keepalive
-	// 超时时间：4分钟无活动后关闭连接（防止NAT映射过期）
+	// 配置连接管理器：优化用于混合TCP/UDP环境
 	c.p2p.connMgr, err = connmgr.NewConnManager(
-		20,                                     // 低水位：连接数低于此值时触发 prune
-		100,                                    // 高水位：客户端保持较多连接以支持P2P
-		connmgr.WithGracePeriod(time.Minute*1), // 缩短优雅期，更快清理连接
-		connmgr.WithSilencePeriod(time.Second*15), // 延长静默期，避免频繁触发
+		30,                                        // 低水位
+		150,                                       // 高水位：支持更多连接类型
+		connmgr.WithGracePeriod(time.Minute*2),    // 优雅期
+		connmgr.WithSilencePeriod(time.Second*20), // 延长静默期
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create connection manager: %v", err)
@@ -145,6 +145,11 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 	}
 
 	g.Log().Infof(ctx, "connecting to p2p signaling server: %s", serverAddrInfo.ID.ShortString())
+
+	g.Log().Infof(ctx, "attempting to connect to signaling server with %d addresses", len(serverAddrInfo.Addrs))
+	for i, addr := range serverAddrInfo.Addrs {
+		g.Log().Debugf(ctx, "address %d: %s", i, addr.String())
+	}
 
 	err = c.p2p.host.Connect(c.ctx, *serverAddrInfo)
 	if err != nil {
