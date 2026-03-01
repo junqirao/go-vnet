@@ -74,6 +74,8 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 			libp2p.EnableHolePunching(),
 			libp2p.EnableAutoNATv2(),
 			libp2p.NATPortMap(),
+			// 启用默认传输（包括UDP）
+			libp2p.DefaultTransports,
 		}
 		localListenAddr []string
 	)
@@ -115,10 +117,14 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 
 	// 配置连接管理器：优化用于混合TCP/UDP环境
 	c.p2p.connMgr, err = connmgr.NewConnManager(
-		30,                                        // 低水位
-		150,                                       // 高水位：支持更多连接类型
-		connmgr.WithGracePeriod(time.Minute*2),    // 优雅期
-		connmgr.WithSilencePeriod(time.Second*20), // 延长静默期
+		// 低水位
+		30,
+		// 高水位：支持更多连接类型
+		150,
+		// 优雅期
+		connmgr.WithGracePeriod(time.Minute*2),
+		// 延长静默期
+		connmgr.WithSilencePeriod(time.Second*20),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create connection manager: %v", err)

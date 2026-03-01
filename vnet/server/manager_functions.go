@@ -69,43 +69,75 @@ func updateP2PPeerAddress(ctx context.Context, session *Session, server *Server,
 
 	// 检查是否需要添加NAT地址
 	if hasNATAddr && realPort > 0 && realRemoteIP != "" {
-		newNATAddr := multiaddr.StringCast(fmt.Sprintf("/ip4/%s/tcp/%d", realRemoteIP, realPort))
+		// 获取服务器配置的所有P2P地址
+		var newNATAddrs []multiaddr.Multiaddr
+		if server.cfg.P2P != nil {
+			for _, serverAddr := range server.cfg.P2P.Addresses {
+				// 根据配置生成对应协议的地址
+				switch serverAddr.Transport {
+				case "tcp":
+					newAddr := multiaddr.StringCast(fmt.Sprintf("/ip4/%s/tcp/%d", realRemoteIP, realPort))
+					newNATAddrs = append(newNATAddrs, newAddr)
+				case "udp":
+					if serverAddr.Version == "quic-v1" {
+						newAddr := multiaddr.StringCast(fmt.Sprintf("/ip4/%s/udp/%d/quic-v1", realRemoteIP, realPort))
+						newNATAddrs = append(newNATAddrs, newAddr)
+					} else {
+						newAddr := multiaddr.StringCast(fmt.Sprintf("/ip4/%s/udp/%d", realRemoteIP, realPort))
+						newNATAddrs = append(newNATAddrs, newAddr)
+					}
+				}
+			}
+		} else {
+			// 如果没有配置，使用默认TCP地址
+			newNATAddrs = append(newNATAddrs, multiaddr.StringCast(fmt.Sprintf("/ip4/%s/tcp/%d", realRemoteIP, realPort)))
+		}
 
-		// 检查地址是否已存在
-		addrExists := false
-		for _, addr := range peerInfo.Addrs {
-			if addr.Equal(newNATAddr) {
-				addrExists = true
-				break
+		// 检查并添加新地址
+		addedCount := 0
+		for _, newNATAddr := range newNATAddrs {
+			// 检查地址是否已存在
+			addrExists := false
+			for _, addr := range peerInfo.Addrs {
+				if addr.Equal(newNATAddr) {
+					addrExists = true
+					break
+				}
+			}
+
+			if !addrExists {
+				// 将新的NAT地址添加到列表前面
+				peerInfo.Addrs = append([]multiaddr.Multiaddr{newNATAddr}, peerInfo.Addrs...)
+				addedCount++
+				g.Log().Debugf(ctx, "p2p peer %s: added NAT address %s", session.IP, newNATAddr.String())
 			}
 		}
 
-		if addrExists {
+		if addedCount > 0 {
 			if isRefresh {
-				g.Log().Debugf(ctx, "p2p peer %s: NAT address %s:%d already exists, skipping refresh",
-					session.IP, realRemoteIP, realPort)
+				g.Log().Infof(ctx, "p2p peer %s: refreshed %d NAT addresses for IP %s:%d",
+					session.IP, addedCount, realRemoteIP, realPort)
 			} else {
-				g.Log().Debugf(ctx, "p2p peer %s: NAT address %s:%d already exists",
-					session.IP, realRemoteIP, realPort)
+				g.Log().Infof(ctx, "p2p peer %s: added %d server-observed NAT addresses %s:%d (original: %v)",
+					session.IP, addedCount, realRemoteIP, realPort, originalAddrs)
 			}
 		} else {
-			// 将新的NAT地址添加到列表前面
-			peerInfo.Addrs = append([]multiaddr.Multiaddr{newNATAddr}, peerInfo.Addrs...)
 			if isRefresh {
-				g.Log().Infof(ctx, "p2p peer %s: refreshed NAT address to %s:%d", session.IP, realRemoteIP, realPort)
+				g.Log().Debugf(ctx, "p2p peer %s: all NAT addresses already exist, skipping refresh",
+					session.IP)
 			} else {
-				g.Log().Infof(ctx, "p2p peer %s: adding server-observed NAT address %s:%d (original: %v)",
-					session.IP, realRemoteIP, realPort, originalAddrs)
+				g.Log().Debugf(ctx, "p2p peer %s: all NAT addresses already exist",
+					session.IP)
 			}
 		}
 	} else {
 		if isRefresh {
 			g.Log().Warningf(ctx, "p2p peer %s: cannot observe NAT address, skipping refresh", session.IP)
 			return "", fmt.Errorf("cannot observe NAT address")
-		} else {
-			g.Log().Warningf(ctx, "p2p peer %s: no NAT address observed from connection (original: %v)",
-				session.IP, originalAddrs)
 		}
+
+		g.Log().Warningf(ctx, "p2p peer %s: no NAT address observed from connection (original: %v)",
+			session.IP, originalAddrs)
 	}
 
 	// 序列化更新后的peerInfo
