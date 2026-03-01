@@ -108,10 +108,10 @@ func (s *p2pSignalingServer) Run(ctx context.Context) (err error) {
 		}),
 		libp2p.ConnectionManager(s.connMgr), // 连接管理器
 		libp2p.EnableNATService(),
-		libp2p.EnableRelay(),
 		libp2p.EnableHolePunching(),
 		libp2p.EnableAutoNATv2(),
 		libp2p.NATPortMap(),
+		libp2p.DefaultTransports, // 启用默认传输（包括WebRTC）
 	)
 	if err != nil {
 		err = fmt.Errorf("failed to create host: %v", err)

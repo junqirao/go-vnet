@@ -74,7 +74,6 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 			libp2p.EnableHolePunching(),
 			libp2p.EnableAutoNATv2(),
 			libp2p.NATPortMap(),
-			// 启用默认传输（包括UDP）
 			libp2p.DefaultTransports,
 		}
 		localListenAddr []string

@@ -58,11 +58,17 @@ type (
 		Port    int    `yaml:"port" json:"port"`
 	}
 	P2PConfig struct {
-		Enabled        bool     `yaml:"enabled" json:"enabled"`
-		ListenAddr     []string `yaml:"listen_addr" json:"listen_addr"`
-		TryInterval    int      `yaml:"try_interval" json:"try_interval"`       // 尝试P2P连接的间隔（秒）
-		AddressRefresh int      `yaml:"address_refresh" json:"address_refresh"` // 地址刷新间隔（秒），默认120秒（2分钟）
-		ActiveDialPeer bool     `yaml:"active_dial_peer" json:"active_dial_peer"`
+		Enabled        bool              `yaml:"enabled" json:"enabled"`
+		ListenAddr     []string          `yaml:"listen_addr" json:"listen_addr"`
+		TryInterval    int               `yaml:"try_interval" json:"try_interval"`       // 尝试P2P连接的间隔（秒）
+		AddressRefresh int               `yaml:"address_refresh" json:"address_refresh"` // 地址刷新间隔（秒），默认120秒（2分钟）
+		ActiveDialPeer bool              `yaml:"active_dial_peer" json:"active_dial_peer"`
+		ICEServers     []ICEServerConfig `yaml:"ice_servers" json:"ice_servers"` // STUN/TURN服务器配置
+	}
+	ICEServerConfig struct {
+		URLs       []string `yaml:"urls" json:"urls"`             // STUN/TURN服务器URL
+		Username   string   `yaml:"username" json:"username"`     // TURN服务器用户名（可选）
+		Credential string   `yaml:"credential" json:"credential"` // TURN服务器密码（可选）
 	}
 	ConfigOption func(cfg *Config)
 )

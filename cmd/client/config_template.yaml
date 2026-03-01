@@ -36,3 +36,16 @@ p2p:
   address_refresh: 120
   # 是否主动拨号对等节点
   active_dial_peer: true  # 建议开启主动拨号
+  # STUN/TURN服务器配置（可选，用于改善NAT穿透）
+  ice_servers:
+    # 公共STUN服务器（免费）
+    - urls:
+        - "stun:stun.l.google.com:19302"
+        - "stun:stun1.l.google.com:19302"
+        - "stun:stun2.l.google.com:19302"
+    # TURN服务器配置（需要自建或使用付费服务）
+    # - urls:
+    #     - "turn:your-turn-server.com:3478?transport=udp"
+    #     - "turn:your-turn-server.com:3478?transport=tcp"
+    #   username: "your-username"
+    #   credential: "your-password"
