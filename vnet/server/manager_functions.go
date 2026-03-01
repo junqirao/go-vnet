@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
@@ -73,20 +74,7 @@ func updateP2PPeerAddress(ctx context.Context, session *Session, server *Server,
 		var newNATAddrs []multiaddr.Multiaddr
 		if server.cfg.P2P != nil {
 			for _, serverAddr := range server.cfg.P2P.Addresses {
-				// 根据配置生成对应协议的地址
-				switch serverAddr.Transport {
-				case "tcp":
-					newAddr := multiaddr.StringCast(fmt.Sprintf("/ip4/%s/tcp/%d", realRemoteIP, realPort))
-					newNATAddrs = append(newNATAddrs, newAddr)
-				case "udp":
-					if serverAddr.Version == "quic-v1" {
-						newAddr := multiaddr.StringCast(fmt.Sprintf("/ip4/%s/udp/%d/quic-v1", realRemoteIP, realPort))
-						newNATAddrs = append(newNATAddrs, newAddr)
-					} else {
-						newAddr := multiaddr.StringCast(fmt.Sprintf("/ip4/%s/udp/%d", realRemoteIP, realPort))
-						newNATAddrs = append(newNATAddrs, newAddr)
-					}
-				}
+				newNATAddrs = append(newNATAddrs, multiaddr.StringCast(replaceAddress(serverAddr, realRemoteIP, strconv.Itoa(realPort))))
 			}
 		} else {
 			// 如果没有配置，使用默认TCP地址

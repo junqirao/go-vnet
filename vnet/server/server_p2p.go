@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
@@ -64,24 +65,24 @@ func (s *p2pSignalingServer) Run(ctx context.Context) (err error) {
 		return
 	}
 
-	// 准备对外宣布的地址列表（配置的公网地址）
-	s.announce = make([]multiaddr.Multiaddr, 0, len(s.config.Addresses))
-	for _, address := range s.config.Addresses {
-		s.announce = append(s.announce, address.MultiAddr())
-	}
-
 	// 准备监听地址 - 监听所有接口，使用配置中的端口
 	listenAdders := make([]multiaddr.Multiaddr, 0, len(s.config.Addresses))
 	for _, address := range s.config.Addresses {
-		// 监听 0.0.0.0（所有接口）而不是公网 IP
-		listenAddr := fmt.Sprintf("/%s/0.0.0.0/%s/%d",
-			map[bool]string{true: "ip6", false: "ip4"}[address.IP == "::"],
-			address.Transport,
-			address.Port)
-		if address.Version != "" {
-			listenAddr += "/" + address.Version
+		addr, err := multiaddr.NewMultiaddr(address)
+		if err != nil {
+			return err
 		}
-		listenAdders = append(listenAdders, multiaddr.StringCast(listenAddr))
+		listenAdders = append(listenAdders, addr)
+	}
+
+	// 将配置的公网地址转换为字符串形式，供客户端使用
+	s.addresses = make([]string, 0, len(s.config.Addresses))
+	for _, addr := range s.config.Addresses {
+		s.addresses = append(s.addresses, replaceAddress(addr, s.config.AnnounceAddress, ""))
+	}
+	s.announce = make([]multiaddr.Multiaddr, 0, len(s.config.Addresses))
+	for _, addr := range s.addresses {
+		s.announce = append(s.announce, multiaddr.StringCast(addr))
 	}
 
 	s.ctx = ctx
@@ -117,11 +118,6 @@ func (s *p2pSignalingServer) Run(ctx context.Context) (err error) {
 		return
 	}
 
-	// 将配置的公网地址转换为字符串形式，供客户端使用
-	s.addresses = make([]string, 0, len(s.announce))
-	for _, addr := range s.announce {
-		s.addresses = append(s.addresses, addr.String())
-	}
 	s.hostId = s.host.ID().String()
 
 	g.Log().Infof(ctx, "p2p signaling server started: %s", s.ID())
@@ -147,4 +143,19 @@ func (s *p2pSignalingServer) ID() string {
 
 func (s *p2pSignalingServer) Addresses() []string {
 	return s.addresses
+}
+
+func replaceAddress(ma, addr, port string) string {
+	// "/ip4/%s/udp/%d/quic-v1"
+	parts := strings.Split(ma, "/")
+	if len(parts) < 5 {
+		return ma
+	}
+	if addr != "" {
+		parts[2] = addr
+	}
+	if port != "" {
+		parts[4] = port
+	}
+	return strings.Join(parts, "/")
 }

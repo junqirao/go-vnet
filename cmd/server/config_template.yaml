@@ -38,8 +38,9 @@ vnet:
       port: 9800
       type: "tcp"
   p2p:
+    announce_address: "your_real_public_ip_address_must_not_be_empty!"
     addresses:
-      - ip: "your_real_ip" # 必须是真实ip不要使用0.0.0.0
-        port: 9900
-        transport: "tcp"
-        version: ""
+      - "/ip4/0.0.0.0/tcp/9900"
+      - "/ip4/0.0.0.0/udp/9900/quic-v1"
+      - "/ip4/0.0.0.0/udp/9901/quic-v1/webtransport"
+      - "/ip4/0.0.0.0/udp/9902/webrtc-direct"

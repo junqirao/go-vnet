@@ -40,7 +40,8 @@ type (
 		Type                Type   `yaml:"type" json:"type"`
 	}
 	P2PConfig struct {
-		Addresses []SignalingServerAddress `yaml:"addresses" json:"addresses"`
+		AnnounceAddress string   `yaml:"announce_address" json:"announce_address"` // announce_address
+		Addresses       []string `yaml:"addresses" json:"addresses"`
 	}
 	NetworkLink struct {
 		SubDeviceId uint64 `json:"sub_device_id"`
