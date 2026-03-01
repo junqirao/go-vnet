@@ -85,6 +85,8 @@ func (c *Client) connectP2PSignalingServer(ctx context.Context) (err error) {
 		// 默认同时监听 TCP 和 UDP
 		localListenAddr = append(localListenAddr, "/ip4/0.0.0.0/tcp/0")
 		localListenAddr = append(localListenAddr, "/ip4/0.0.0.0/udp/0/quic-v1")
+		localListenAddr = append(localListenAddr, "/ip4/0.0.0.0/udp/0/quic-v1/webtransport")
+		localListenAddr = append(localListenAddr, "/ip4/0.0.0.0/udp/0/webrtc-direct")
 	}
 
 	for _, s := range localListenAddr {
